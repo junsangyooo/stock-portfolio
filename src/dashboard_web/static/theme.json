@@ -1,0 +1,32 @@
+{
+  "name": "dark-slate-v2-elevation",
+  "description": "Elevation 기반 다크 테마. 경계를 '선'이 아니라 '면 대비 + 그림자'로 표현. colors는 --xxx + --xxx-rgb 로, tokens는 --xxx 로 server가 주입. 이 JSON만 고치면 전체 디자인(색·모서리·그림자·간격)이 한 번에 바뀜.",
+  "colors": {
+    "bg":          "#0b0e14",
+    "panel":       "#171d28",
+    "elevated":    "#212a38",
+    "grid":        "#1e2531",
+    "line":        "#283140",
+    "line-strong": "#3a4556",
+    "fg":          "#e8eef6",
+    "dim":         "#9aa7b8",
+    "muted":       "#6b7888",
+    "cyan":        "#45d1e6",
+    "pink":        "#ff8db1",
+    "green":       "#4ade80",
+    "yellow":      "#f0c454",
+    "orange":      "#ff9852",
+    "red":         "#fb5e6b",
+    "purple":      "#b392f0"
+  },
+  "tokens": {
+    "radius-sm":    "5px",
+    "radius-md":    "9px",
+    "radius-lg":    "14px",
+    "border-w":     "1px",
+    "shadow-sm":    "0 1px 2px rgba(0,0,0,0.40)",
+    "shadow-md":    "0 4px 14px rgba(0,0,0,0.45)",
+    "shadow-lg":    "0 14px 40px rgba(0,0,0,0.55)",
+    "ring":         "0 0 0 2px rgba(69,209,230,0.35)"
+  }
+}

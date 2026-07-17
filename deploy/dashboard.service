@@ -1,0 +1,19 @@
+[Unit]
+Description=portfolio-dashboard (FastAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/portfolio-dashboard
+EnvironmentFile=/home/ubuntu/dotclaude/secrets/.env
+Environment="ANTHROPIC_API_KEY="
+ExecStart=/home/ubuntu/portfolio-dashboard/.venv/bin/python -m src.dashboard_web.server --port 8888 --host 127.0.0.1
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/home/ubuntu/portfolio-dashboard/data/logs/dashboard.log
+StandardError=append:/home/ubuntu/portfolio-dashboard/data/logs/dashboard.log
+
+[Install]
+WantedBy=multi-user.target

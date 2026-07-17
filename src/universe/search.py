@@ -1,0 +1,115 @@
+"""In-memory universe search.
+
+Loads data/universe/{kr,us}.json once per process (and every ~6h to pick up
+nightly refreshes). All searches hit memory — no external API call.
+
+API:
+  search(q, region=None, limit=20) → list[item]
+  get(symbol_id) → item | None
+"""
+from __future__ import annotations
+
+import json
+import time
+from threading import Lock
+from typing import List, Optional
+
+from ..core.paths import UNIVERSE_DIR
+
+_CACHE_TTL_S = 6 * 3600
+
+_lock = Lock()
+_items: List[dict] = []
+_by_id: dict[str, dict] = {}
+_loaded_at: float = 0.0
+
+
+def _is_stale() -> bool:
+    return (time.time() - _loaded_at) > _CACHE_TTL_S
+
+
+def _load_locked() -> None:
+    """Caller must hold _lock."""
+    global _items, _by_id, _loaded_at
+    items: List[dict] = []
+    for fname in ("kr.json", "us.json"):
+        p = UNIVERSE_DIR / fname
+        if not p.exists():
+            continue
+        try:
+            payload = json.loads(p.read_text())
+            for it in payload.get("items", []):
+                items.append(it)
+        except Exception:
+            continue
+    _items = items
+    _by_id = {it["symbol_id"]: it for it in items}
+    _loaded_at = time.time()
+
+
+def _ensure_loaded() -> None:
+    with _lock:
+        if not _items or _is_stale():
+            _load_locked()
+
+
+def get(symbol_id: str) -> Optional[dict]:
+    _ensure_loaded()
+    return _by_id.get(symbol_id)
+
+
+def search(q: str, region: Optional[str] = None, limit: int = 20) -> List[dict]:
+    """Substring match (case-insensitive) on code | name_kr | name_en.
+
+    region ∈ {'KR', 'US'} restricts to that side. None = both.
+    Prioritization: exact code > prefix > substring.
+    """
+    q = (q or "").strip()
+    if not q:
+        return []
+    _ensure_loaded()
+
+    q_lower = q.lower()
+    region_filter = region.upper() if region else None
+
+    exact: List[dict] = []
+    prefix: List[dict] = []
+    contains: List[dict] = []
+    seen: set[str] = set()
+
+    for it in _items:
+        if region_filter and not it["symbol_id"].startswith(region_filter + ":"):
+            continue
+        sid = it["symbol_id"]
+        if sid in seen:
+            continue
+        code = (it.get("code") or "").lower()
+        nk = (it.get("name_kr") or "").lower()
+        ne = (it.get("name_en") or "").lower()
+
+        if code == q_lower:
+            exact.append(it); seen.add(sid); continue
+        if code.startswith(q_lower) or nk.startswith(q_lower) or ne.startswith(q_lower):
+            prefix.append(it); seen.add(sid); continue
+        if q_lower in code or q_lower in nk or q_lower in ne:
+            contains.append(it); seen.add(sid); continue
+
+    ranked = exact + prefix + contains
+    return ranked[:limit]
+
+
+def reload() -> int:
+    """Force-reload universe cache. Returns total item count."""
+    with _lock:
+        _load_locked()
+        return len(_items)
+
+
+def stats() -> dict:
+    _ensure_loaded()
+    by_region: dict[str, int] = {}
+    for it in _items:
+        r = it["symbol_id"].split(":", 1)[0]
+        by_region[r] = by_region.get(r, 0) + 1
+    return {"total": len(_items), "by_region": by_region,
+            "loaded_at": _loaded_at}

@@ -1,0 +1,40 @@
+"""Bridge last stored ts → today for all held symbols."""
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from typing import Iterable
+
+from ..source.registry import for_symbol
+from ..store import ohlcv_store
+
+KST = timezone(timedelta(hours=9))
+
+
+def _ymd(d: datetime) -> str:
+    return d.strftime("%Y-%m-%d")
+
+
+def fill_one(symbol_id: str) -> int:
+    src = for_symbol(symbol_id)
+    if src is None:
+        return 0
+    last = ohlcv_store.last_ts(symbol_id)
+    today = datetime.now(KST)
+    if last <= 0:
+        start = today - timedelta(days=365 * 3 + 10)
+    else:
+        start = datetime.fromtimestamp(last, tz=KST) + timedelta(days=1)
+        if start > today:
+            return 0
+    bars = src.get_daily(symbol_id, _ymd(start), _ymd(today))
+    return ohlcv_store.write(symbol_id, bars)
+
+
+def fill_many(symbol_ids: Iterable[str]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for sid in symbol_ids:
+        try:
+            out[sid] = fill_one(sid)
+        except Exception:
+            out[sid] = -1
+    return out

@@ -1,0 +1,100 @@
+"""Theme catalog loader + integrity validation (L2).
+
+Loads ``themes.json`` (the single source of truth for theme definitions,
+keywords, related-edges and source sets) into ``Theme`` dataclasses and
+validates referential integrity (every related-edge points to a real theme).
+
+See docs/qualitative-analysis-design.md §1.
+"""
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
+
+_CATALOG_PATH = Path(__file__).resolve().parent / "themes.json"
+
+
+@dataclass
+class Theme:
+    """One theme entry from themes.json.
+
+    Attributes:
+        theme_id:   stable id, e.g. "battery".
+        name_kr:    Korean display name.
+        active:     whether sources are fully collected for this theme.
+        shadow:     "shadow" theme — no held stock, related-signal only.
+        always_on:  injected into every stock evaluation (macro backbone).
+        definition: one-line scope description.
+        keywords:   {"ko": [...], "en": [...]} — also used for ETF name rules.
+        related:    list of {theme, relation, weight} edges.
+        sources:    {"research": [...], "social": [...], "news": [...]}.
+    """
+
+    theme_id: str
+    name_kr: str
+    definition: str
+    active: bool = False
+    shadow: bool = False
+    always_on: bool = False
+    keywords: dict = field(default_factory=dict)
+    related: list = field(default_factory=list)
+    sources: dict = field(default_factory=dict)
+
+
+@dataclass
+class Catalog:
+    version: int
+    updated: str
+    themes: dict  # theme_id -> Theme
+
+    def active_themes(self) -> list[Theme]:
+        return [t for t in self.themes.values() if t.active]
+
+    def get(self, theme_id: str) -> Optional[Theme]:
+        return self.themes.get(theme_id)
+
+    def validate(self) -> None:
+        """Raise ValueError on referential / range violations."""
+        for t in self.themes.values():
+            for edge in t.related:
+                if edge.get("theme") not in self.themes:
+                    raise ValueError(
+                        f"{t.theme_id} -> unknown related theme "
+                        f"'{edge.get('theme')}'"
+                    )
+                w = edge.get("weight")
+                if w is None or not (0.0 <= float(w) <= 1.0):
+                    raise ValueError(
+                        f"{t.theme_id} -> {edge.get('theme')} weight {w} "
+                        "out of [0,1]"
+                    )
+            if t.shadow and t.active:
+                raise ValueError(f"shadow theme '{t.theme_id}' must be inactive")
+
+
+def load_catalog(path: Optional[Path] = None) -> Catalog:
+    """Load + validate the theme catalog. Defaults to bundled themes.json."""
+    p = Path(path) if path else _CATALOG_PATH
+    raw = json.loads(p.read_text(encoding="utf-8"))
+    themes: dict[str, Theme] = {}
+    for entry in raw["themes"]:
+        t = Theme(
+            theme_id=entry["theme_id"],
+            name_kr=entry["name_kr"],
+            definition=entry.get("definition", ""),
+            active=bool(entry.get("active", False)),
+            shadow=bool(entry.get("shadow", False)),
+            always_on=bool(entry.get("always_on", False)),
+            keywords=entry.get("keywords", {}),
+            related=entry.get("related", []),
+            sources=entry.get("sources", {}),
+        )
+        if t.theme_id in themes:
+            raise ValueError(f"duplicate theme_id '{t.theme_id}'")
+        themes[t.theme_id] = t
+    cat = Catalog(version=raw.get("version", 0),
+                  updated=raw.get("updated", ""), themes=themes)
+    cat.validate()
+    return cat

@@ -1,0 +1,50 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.env
+
+
+# ── Runtime data (Oracle 단방향, NEVER git add) ─────────────────────
+data/portfolio.db
+data/portfolio.db-*
+data/universe/
+data/market/
+data/analysis/
+data/signals/
+data/logs/
+data/backup/
+
+# Legacy paths (kept for safety until backups are confirmed deleted)
+data/raw/
+data/processed/
+data/backtest/
+data/live/
+data/paper/
+data/live_*/
+data/paper_*/
+data/stock/
+data/training/
+
+# ── ML artifacts ────────────────────────────────────────────────────
+models/
+
+# ── Catch-all by extension (defense in depth) ───────────────────────
+*.parquet
+*.csv
+!data/sample/*.csv
+*.log
+*.pid
+*.png
+
+# Editor / notebooks
+notebooks/.ipynb_checkpoints/
+
+# ── Docs symlinked to Obsidian Vault (local-only, breaks on Oracle) ──
+docs/
+
+# ── Local caches (DART corp codes, etc.) — never git add ─────────────
+docs_cache/
+
+# session signing secret (Oracle-generated, never commit)
+data/.session_secret

@@ -1,0 +1,114 @@
+"""SQLite for portfolio-dashboard.
+
+Relational data ONLY:
+  - accounts                user-defined accounts (계좌)
+  - holdings                (account_id, symbol_id) with avg_cost, qty
+  - balances                (account_id, currency) cash
+  - snapshots               (date, account_id, currency) daily history
+  - holding_themes          (symbol_id, theme_id) qualitative theme mapping (L1)
+
+Symbol master lives in data/universe/*.json (not in SQLite — too volatile,
+loaded into memory by src/universe).
+Market data lives in data/market/* (parquet, json).
+"""
+from __future__ import annotations
+
+import sqlite3
+from contextlib import contextmanager
+from typing import Iterator
+
+from ...core.paths import DB_PATH, ensure_dirs
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS accounts (
+  account_id    TEXT PRIMARY KEY,
+  name          TEXT NOT NULL,
+  account_type  TEXT NOT NULL,            -- 'ISA' | 'GENERAL' | 'PENSION' | 'OVERSEAS' | 'OTHER'
+  broker        TEXT,
+  base_currency TEXT NOT NULL DEFAULT 'KRW',
+  sort_order    INTEGER NOT NULL,
+  note          TEXT,
+  created_at    INTEGER NOT NULL,
+  pin_hash      TEXT                       -- secret-salted sha256 of 6-digit PIN (NULL = no PIN set)
+);
+
+CREATE TABLE IF NOT EXISTS holdings (
+  account_id    TEXT NOT NULL REFERENCES accounts(account_id) ON DELETE CASCADE,
+  symbol_id     TEXT NOT NULL,            -- 'KR:005930' | 'US:AAPL'
+  avg_cost      REAL,
+  qty           REAL,
+  note          TEXT,
+  added_at      INTEGER NOT NULL,
+  sort_order    INTEGER NOT NULL,
+  PRIMARY KEY (account_id, symbol_id)
+);
+CREATE INDEX IF NOT EXISTS idx_holdings_symbol ON holdings(symbol_id);
+
+CREATE TABLE IF NOT EXISTS balances (
+  account_id    TEXT NOT NULL REFERENCES accounts(account_id) ON DELETE CASCADE,
+  currency      TEXT NOT NULL,
+  amount        REAL NOT NULL DEFAULT 0,
+  updated_at    INTEGER NOT NULL,
+  PRIMARY KEY (account_id, currency)
+);
+
+CREATE TABLE IF NOT EXISTS snapshots (
+  date          TEXT NOT NULL,            -- 'YYYY-MM-DD' KST
+  account_id    TEXT NOT NULL,
+  currency      TEXT NOT NULL,
+  eval          REAL NOT NULL DEFAULT 0,
+  cost          REAL NOT NULL DEFAULT 0,
+  pnl           REAL NOT NULL DEFAULT 0,
+  cash          REAL NOT NULL DEFAULT 0,
+  total_assets  REAL NOT NULL DEFAULT 0,
+  PRIMARY KEY (date, account_id, currency)
+);
+CREATE INDEX IF NOT EXISTS idx_snapshots_date ON snapshots(date);
+CREATE INDEX IF NOT EXISTS idx_snapshots_account ON snapshots(account_id);
+
+CREATE TABLE IF NOT EXISTS holding_themes (
+  symbol_id   TEXT NOT NULL,             -- 'KR:247540' (per-symbol, account-agnostic)
+  theme_id    TEXT NOT NULL,             -- 'battery' (see src/agents/news/themes.json)
+  relation    TEXT NOT NULL,             -- 'primary' | 'related'
+  weight      REAL NOT NULL DEFAULT 1.0, -- 0.0~1.0 evaluation weight
+  source      TEXT NOT NULL DEFAULT 'auto', -- 'auto' | 'manual'
+  updated_at  TEXT NOT NULL,
+  PRIMARY KEY (symbol_id, theme_id)
+);
+CREATE INDEX IF NOT EXISTS idx_holding_themes_theme ON holding_themes(theme_id);
+"""
+
+
+_initialized = False
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after the initial schema."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(accounts)").fetchall()}
+    if "pin_hash" not in cols:
+        conn.execute("ALTER TABLE accounts ADD COLUMN pin_hash TEXT")
+        conn.commit()
+
+
+def _init_once() -> None:
+    global _initialized
+    if _initialized:
+        return
+    ensure_dirs()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.executescript(SCHEMA)
+        _migrate(conn)
+        conn.commit()
+    _initialized = True
+
+
+@contextmanager
+def connect() -> Iterator[sqlite3.Connection]:
+    _init_once()
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        yield conn
+    finally:
+        conn.close()
