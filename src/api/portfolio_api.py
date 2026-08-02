@@ -44,7 +44,7 @@ def _set_session_cookie(response: Response, account_id: str) -> None:
 
 def require_account(account_id: str, request: Request) -> str:
     """Dependency guarding per-account routes. 404 if the account doesn't
-    exist; 401 if it has a PIN but the request lacks a valid session cookie.
+    exist; 403 if it has a PIN but the request lacks a valid session cookie.
     Accounts with no PIN set are treated as open."""
     if not account_store.get(account_id):
         raise HTTPException(404, f"account not found: {account_id}")
@@ -52,7 +52,10 @@ def require_account(account_id: str, request: Request) -> str:
         return account_id  # no PIN yet → open
     token = request.cookies.get(_COOKIE_PREFIX + account_id)
     if not security.verify_session_token(account_id, token):
-        raise HTTPException(401, "PIN required")
+        # 403, not 401: the same origin sits behind nginx HTTP Basic Auth, and
+        # a 401 makes the browser drop its cached Basic credentials -> Basic
+        # login popup on every PIN gate.
+        raise HTTPException(403, "PIN required")
     return account_id
 
 
