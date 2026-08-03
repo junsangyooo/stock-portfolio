@@ -87,7 +87,7 @@ state    (LLM = Sonnet, 게이트) 장기추세 요약·watchlist·sentiment 갱
 
 | 시각 | 잡 | 역할 |
 |---|---|---|
-| 매시 정각 | backup | `portfolio.db` 24h 회전 백업 |
+| 21:05 | backup | `portfolio.db` 일 1회 백업 (요일별 7일 회전) |
 | 21:00 | `news.daily_job` | 뉴스 수집·digest·state (holdings-driven) |
 | 21:10 | `fundamental_job` | 재무 backfill (보유 종목) |
 | 21:15 | `etf_job` | ETF 일별 스냅샷 |
