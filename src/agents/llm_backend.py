@@ -1,14 +1,18 @@
-"""LLM backend — Claude CLI invocation for the agent stack.
+"""LLM backend — Claude CLI + local open-weight invocation for the agent stack.
 
-CLI ONLY policy (user global rule). The Anthropic API path is intentionally
-removed; we rely exclusively on the local `claude -p` subprocess so all calls
-bill against the Claude subscription and never against API credits.
+NO PAID API policy (user global rule). Judgment calls go through the local
+`claude -p` subprocess so they bill against the Claude subscription and
+never against API credits. Mechanical work (news digest/state) runs on an
+open-weight model served by llama.cpp on this host — free, and it keeps the
+subscription budget for the layers that actually decide something.
 
 Contents:
   - ``_Backend``           ABC for swappable backends
   - ``ClaudeCliBackend``   subprocess wrapper around `claude -p`
+  - ``LocalLlamaBackend``  HTTP client for the on-host llama.cpp server
   - ``_parse_json``        lenient JSON extractor (handles fenced blocks)
-  - constants              ``FAST_MODEL`` (Haiku 4.5), ``SLOW_MODEL`` (Sonnet 4.6)
+  - constants              ``FAST_MODEL`` (Haiku 4.5), ``SLOW_MODEL`` (Sonnet 4.6),
+                           ``LOCAL_URL`` / ``LOCAL_TIMEOUT_S``
 
 Migrated from an earlier trading module during the 2026-05
 cleanup. Its ``Decision`` dataclass,
@@ -22,10 +26,17 @@ import json
 import os
 import shutil
 import subprocess
+import sys
+import urllib.error
+import urllib.request
 from abc import ABC, abstractmethod
 
 
 FAST_MODEL = "claude-haiku-4-5-20251001"
+
+# On-host llama.cpp server (docker, 127.0.0.1 only — never exposed).
+LOCAL_URL = os.getenv("LOCAL_LLM_URL", "http://127.0.0.1:8080")
+LOCAL_TIMEOUT_S = 1800  # measured worst case ~14 min for a 40-item digest
 
 
 def _find_claude() -> str | None:
@@ -110,6 +121,63 @@ class ClaudeCliBackend(_Backend):
                     f"claude CLI AUTH error (re-login needed): {err_blob}")
             raise RuntimeError(f"claude CLI exit {r.returncode}: {err_blob}")
         return r.stdout.strip()
+
+
+class LocalLlamaBackend(_Backend):
+    """OpenAI-compatible client for the llama.cpp server running on this host.
+
+    Deliberately generous timeout: the box is a 4-core Ampere with no GPU, so
+    a full 40-item digest measured ~14 min (prefill 25 tok/s, generation down
+    to ~2 tok/s once the context is long). Nothing here is interactive — the
+    caller is a nightly batch — so slow is fine, silent is not: every failure
+    raises so the caller can fall back to Claude.
+    """
+
+    name = "local_llama"
+
+    def __init__(self, url: str = LOCAL_URL, model: str = "local"):
+        self.url = url.rstrip("/")
+        self.model = model
+
+    def call(self, system: str, user: str, timeout_s: float = LOCAL_TIMEOUT_S,
+             model: str | None = None) -> str:
+        body = json.dumps({
+            "messages": [{"role": "system", "content": system},
+                         {"role": "user", "content": user}],
+            "temperature": 0.2,
+            "max_tokens": 1200,
+        }).encode()
+        req = urllib.request.Request(
+            self.url + "/v1/chat/completions", data=body,
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout_s) as r:
+                data = json.load(r)
+        except urllib.error.URLError as e:
+            raise RuntimeError(f"local llama unreachable at {self.url}: {e}")
+        except TimeoutError:
+            raise RuntimeError(f"local llama timeout ({timeout_s}s)")
+        try:
+            return data["choices"][0]["message"]["content"].strip()
+        except (KeyError, IndexError, AttributeError):
+            raise RuntimeError(f"local llama bad response: {str(data)[:200]}")
+
+
+def local_or_claude(system: str, user: str, *, claude_model: str,
+                    timeout_s: float = LOCAL_TIMEOUT_S,
+                    claude_timeout_s: float = 300) -> tuple[str, str]:
+    """Run on the local model, fall back to Claude on any failure.
+
+    Returns ``(raw_text, backend_name)`` so callers can log which one served.
+    Used by the mechanical news stages; judgment stages call Claude directly.
+    """
+    try:
+        return LocalLlamaBackend().call(system, user, timeout_s=timeout_s), "local_llama"
+    except Exception as e:  # noqa: BLE001 — any local fault must not lose the run
+        print(f"[llm] local backend failed ({str(e)[:150]}), falling back to Claude",
+              file=sys.stderr)
+    return (ClaudeCliBackend(model=claude_model).call(
+        system, user, timeout_s=claude_timeout_s, model=claude_model), "claude_cli")
 
 
 def _parse_json(text: str) -> dict:

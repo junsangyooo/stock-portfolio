@@ -18,7 +18,7 @@ from datetime import date as _date, datetime, timezone, timedelta
 from typing import Optional
 
 from ...core.paths import analysis_news_state_path
-from ..llm_backend import ClaudeCliBackend, SLOW_MODEL, _parse_json
+from ..llm_backend import SLOW_MODEL, local_or_claude, _parse_json
 
 _KST = timezone(timedelta(hours=9))
 _HORIZON_DAYS = 7
@@ -157,9 +157,13 @@ def update_state(theme_id: str, theme_name: str, digest: dict,
                        for d in today_devs)
     first_build = not prev.get("horizon_summary")
     if recent and (fresh_signal or first_build):
-        backend = backend or ClaudeCliBackend(model=SLOW_MODEL)
-        raw = backend.call(_SYSTEM, _build_prompt(theme_name, prev, recent),
-                           timeout_s=timeout_s, model=SLOW_MODEL)
+        prompt = _build_prompt(theme_name, prev, recent)
+        if backend is not None:                   # tests inject their own
+            raw = backend.call(_SYSTEM, prompt, timeout_s=timeout_s,
+                               model=SLOW_MODEL)
+        else:
+            raw, _ = local_or_claude(_SYSTEM, prompt, claude_model=SLOW_MODEL,
+                                     claude_timeout_s=timeout_s)
         data = _parse_json(raw)
         new["horizon_summary"] = data.get("horizon_summary", prev.get("horizon_summary", ""))
         new["watchlist"] = data.get("watchlist", [])[:5]

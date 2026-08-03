@@ -10,11 +10,14 @@ from __future__ import annotations
 import json
 
 from ...core.paths import signals_news_path, analysis_news_daily_path
-from ..llm_backend import ClaudeCliBackend, FAST_MODEL, _parse_json
+from ..llm_backend import FAST_MODEL, local_or_claude, _parse_json
 
 _SUMMARY_TRUNC = 400  # chars of raw summary fed to the LLM
 
-# Cost control: dedup/curation is mechanical → Haiku is enough (was Sonnet).
+# Dedup/curation is mechanical, so it runs on the on-host open-weight model
+# (free) and only falls back to Haiku when that is down. Measured on this box:
+# 40-item digest, JSON valid 9/9, same picks as Haiku on 8 of 9 overlapping
+# items. _MODEL is the fallback target, not the primary.
 _MODEL = FAST_MODEL
 
 # The LLM keeps only 5~8 items regardless, so feeding all raw signals (a busy
@@ -108,9 +111,13 @@ def make_daily_digest(theme_id: str, theme_name: str, raw_items: list[dict],
         return {"theme": theme_id, "date": date, "n_raw": 0,
                 "items": [], "dropped_dup": 0}
     work = _rank_and_cap(raw_items)  # idx below is relative to `work`
-    backend = backend or ClaudeCliBackend(model=_MODEL)
-    raw = backend.call(_SYSTEM, _build_prompt(theme_name, work),
-                       timeout_s=timeout_s, model=_MODEL)
+    prompt = _build_prompt(theme_name, work)
+    if backend is not None:                       # tests inject their own
+        raw = backend.call(_SYSTEM, prompt, timeout_s=timeout_s, model=_MODEL)
+        served_by = getattr(backend, "name", "injected")
+    else:
+        raw, served_by = local_or_claude(_SYSTEM, prompt, claude_model=_MODEL,
+                                         claude_timeout_s=timeout_s)
     data = _parse_json(raw)
     items = []
     for sel in data.get("selected", []):
@@ -128,7 +135,8 @@ def make_daily_digest(theme_id: str, theme_name: str, raw_items: list[dict],
             "novelty": bool(sel.get("novelty", False)),
         })
     return {"theme": theme_id, "date": date, "n_raw": len(raw_items),
-            "items": items, "dropped_dup": int(data.get("dropped_dup", 0))}
+            "items": items, "dropped_dup": int(data.get("dropped_dup", 0)),
+            "served_by": served_by}
 
 
 def write_daily_digest(digest: dict) -> str:
