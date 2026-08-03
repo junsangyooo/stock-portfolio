@@ -22,6 +22,9 @@ from .paths import DATA
 _SECRET_FILE = DATA / ".session_secret"
 _secret_cache: bytes | None = None
 
+COOKIE_PREFIX = "pdash_a_"
+SESSION_TTL = 30 * 86400   # 30 days — cookie lifetime and token expiry
+
 
 def _secret() -> bytes:
     global _secret_cache
@@ -56,8 +59,7 @@ def verify_pin(account_id: str, pin: str, stored_hash: str | None) -> bool:
 
 def make_session_token(account_id: str) -> str:
     """Signed token proving the holder authenticated this account.
-    Format: '{account_id}|{issued_ts}|{hmac_sig}'. No server-side expiry —
-    the cookie is a session cookie (cleared when the browser closes)."""
+    Format: '{account_id}|{issued_ts}|{hmac_sig}', valid for SESSION_TTL."""
     payload = f"{account_id}|{int(time.time())}"
     sig = hmac.new(_secret(), payload.encode(), hashlib.sha256).hexdigest()
     return f"{payload}|{sig}"
@@ -74,7 +76,21 @@ def verify_session_token(account_id: str, token: str | None) -> bool:
         return False
     expect = hmac.new(_secret(), f"{tok_acct}|{issued}".encode(),
                       hashlib.sha256).hexdigest()
-    return hmac.compare_digest(sig, expect)
+    if not hmac.compare_digest(sig, expect):
+        return False
+    try:
+        return time.time() - int(issued) <= SESSION_TTL
+    except ValueError:
+        return False
+
+
+def has_any_session(cookies) -> bool:
+    """True if any pdash_a_* cookie carries a valid token. Used by the global
+    /api gate: proving one account unlocks the shared market/analysis data."""
+    return any(
+        verify_session_token(name[len(COOKIE_PREFIX):], value)
+        for name, value in cookies.items() if name.startswith(COOKIE_PREFIX)
+    )
 
 
 def is_valid_pin_format(pin: str) -> bool:

@@ -21,9 +21,11 @@ import logging
 import re
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+from src.core import security
 
 STATIC = Path(__file__).resolve().parent / "static"
 THEME_PATH = STATIC / "theme.json"
@@ -52,6 +54,26 @@ try:
     app.include_router(api_router)
 except Exception as exc:  # pragma: no cover
     logging.warning("api router not mounted: %s", exc)
+
+
+# /api/* is closed by default — a request needs a valid account session cookie
+# (any account). Nothing else guards these routes: /api/analysis/*/run spends
+# LLM budget and /api/accounts writes the portfolio. The exceptions below are
+# the entry points that have to work before you own a cookie.
+_OPEN_API = {
+    ("GET", "/api/accounts"),                 # account list — names only
+    ("GET", "/api/analysis/news/feed"),       # landing page news, no PII
+}
+
+
+@app.middleware("http")
+async def api_session_gate(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/api/") and (request.method, path) not in _OPEN_API:
+        is_pin_post = request.method == "POST" and path.endswith("/auth")
+        if not is_pin_post and not security.has_any_session(request.cookies):
+            return JSONResponse({"detail": "PIN required"}, status_code=403)
+    return await call_next(request)
 
 
 _NO_CACHE_HEADERS = {

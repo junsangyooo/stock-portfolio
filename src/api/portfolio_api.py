@@ -2,9 +2,9 @@
 
 Auth model: each account has an optional 6-digit PIN (pin_hash). Hitting a
 protected route requires a valid session cookie (pdash_a_{id}); you get one
-by POSTing the PIN to /api/accounts/{id}/auth. The cookie is a session
-cookie (no Max-Age → cleared when the browser closes). Accounts with no PIN
-set are open (used only transiently before a PIN is assigned).
+by POSTing the PIN to /api/accounts/{id}/auth. The cookie lives for
+security.SESSION_TTL. Accounts with no PIN set are open (used only
+transiently before a PIN is assigned).
 
 Public routes:  GET / (list, no balances) · POST / (create) · POST /{id}/auth
 Protected:      everything else for a specific account
@@ -30,7 +30,7 @@ from ..universe import search as uni_search
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
-_COOKIE_PREFIX = "pdash_a_"
+_COOKIE_PREFIX = security.COOKIE_PREFIX
 
 
 def _set_session_cookie(response: Response, account_id: str) -> None:
@@ -38,7 +38,7 @@ def _set_session_cookie(response: Response, account_id: str) -> None:
         _COOKIE_PREFIX + account_id,
         security.make_session_token(account_id),
         httponly=True, samesite="lax", secure=True, path="/",
-        # no max_age / expires → session cookie (dies with the browser)
+        max_age=security.SESSION_TTL,
     )
 
 
