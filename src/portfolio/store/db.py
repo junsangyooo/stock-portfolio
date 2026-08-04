@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS holdings (
   avg_cost      REAL,
   qty           REAL,
   note          TEXT,
+  name          TEXT,                     -- display-name override (NULL = use the universe name)
   added_at      INTEGER NOT NULL,
   sort_order    INTEGER NOT NULL,
   PRIMARY KEY (account_id, symbol_id)
@@ -87,6 +88,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(accounts)").fetchall()}
     if "pin_hash" not in cols:
         conn.execute("ALTER TABLE accounts ADD COLUMN pin_hash TEXT")
+        conn.commit()
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(holdings)").fetchall()}
+    if "name" not in cols:
+        conn.execute("ALTER TABLE holdings ADD COLUMN name TEXT")
         conn.commit()
 
 

@@ -3,7 +3,7 @@
 Runs collect -> digest -> state for every theme in the collection set. This is
 the BATCH half of the flow (the on-demand half is per-symbol evaluate, triggered
 by the UI). Theme-level work (not per-symbol): cost scales with #themes, and the
-theme set is derived from holdings (see _themes_to_collect) so it shrinks/grows
+theme set is derived from holdings (mapping.live_themes) so it shrinks/grows
 with the portfolio. evaluate is intentionally NOT here — it runs when the user
 clicks the analysis button.
 
@@ -18,37 +18,19 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 
+from ...core.kst import KST as _KST
 from ...core.notify import discord
 from .catalog import load_catalog
 from .collect import collect_theme
 from .digest import make_daily_digest, write_daily_digest, load_signals_for_date
+from .mapping import live_themes
 from .state import load_state, update_state, write_state
-
-_KST = timezone(timedelta(hours=9))
 
 
 def _log(msg: str) -> None:
     print(msg, file=sys.stderr)
-
-
-def _themes_to_collect(cat) -> list:
-    """Collection set = holdings-driven (§ holdings-driven activation).
-
-    A theme is collected iff some current holding maps to it as ``primary``,
-    plus always-on backbones (macro). Replaces the static ``active`` flag so
-    adding/removing a holding grows/shrinks the news footprint automatically
-    (no themes.json edit, which is git-tracked and must not mutate at runtime).
-    themes.json ``active`` stays as the taxonomy of taggable themes.
-    """
-    from ...portfolio.store.db import connect
-    from .mapping import held_primary_theme_ids
-
-    with connect() as c:
-        held = held_primary_theme_ids(c)
-    return [t for t in cat.themes.values()
-            if not t.shadow and (t.always_on or t.theme_id in held)]
 
 
 def run_theme(theme, date: str, *, do_collect: bool = True) -> dict:
@@ -123,14 +105,14 @@ def _notify(date: str, results: list[dict], *, did_collect: bool) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--theme", default=None, help="single theme_id (default: all active)")
+    ap.add_argument("--theme", default=None, help="single theme_id (default: all live)")
     ap.add_argument("--no-collect", action="store_true", help="skip crawling, digest existing only")
     ap.add_argument("--date", default=None, help="YYYY-MM-DD (default: today KST)")
     args = ap.parse_args()
 
     cat = load_catalog()
     date = args.date or datetime.now(_KST).strftime("%Y-%m-%d")
-    themes = ([cat.get(args.theme)] if args.theme else _themes_to_collect(cat))
+    themes = ([cat.get(args.theme)] if args.theme else live_themes(cat))
     themes = [t for t in themes if t]
     if not themes:
         print(json.dumps({"error": "no themes"}), file=sys.stderr)

@@ -51,7 +51,7 @@ class TestCollectFacts(unittest.TestCase):
 
     def test_json_serialisable(self):
         out = chart_agent.collect_facts("KR:TESTUP", daily_df=_uptrend(), persist=False)
-        parsed = json.loads(chart_agent.to_json(out))
+        parsed = json.loads(json.dumps(out, default=str))
         self.assertEqual(parsed["symbol_id"], "KR:TESTUP")
 
     def test_empty_frame_no_crash(self):

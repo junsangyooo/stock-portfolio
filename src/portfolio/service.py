@@ -57,7 +57,8 @@ def aggregate(account_id: str, *, spark_n: int = 30) -> dict:
             "symbol_id": sid,
             "market": meta.get("market"),
             "code": meta.get("code"),
-            "name_kr": meta.get("name_kr"),
+            # a per-holding override wins over the universe name
+            "name_kr": h.get("name") or meta.get("name_kr"),
             "name_en": meta.get("name_en"),
             "currency": ccy,
             "sector": meta.get("sector"),

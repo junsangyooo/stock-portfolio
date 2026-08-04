@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import time
 from threading import Lock
-from typing import Dict, Iterable, Optional
+from typing import Dict, Optional
 
 from ...core.paths import QUOTE_DIR, ensure_dirs
 from ..source.base import Quote
@@ -52,18 +52,6 @@ def set_quote(q: Quote) -> None:
         _load_disk()
         _cache[q.symbol_id] = q
         _flush_locked()
-
-
-def set_many(quotes: Iterable[Quote]) -> int:
-    with _lock:
-        _load_disk()
-        n = 0
-        for q in quotes:
-            _cache[q.symbol_id] = q
-            n += 1
-        if n:
-            _flush_locked()
-        return n
 
 
 def get(symbol_id: str, *, max_age_s: int = 0) -> Optional[Quote]:

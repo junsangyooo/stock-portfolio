@@ -25,34 +25,17 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from ...core.paths import analysis_path
+from ...core.kst import KST as _KST
+from ..verdict import clamp_confidence, clamp_score, label_from_score, persist
 from ...market.store import valuation_store, financials_store, sector_store, etf_store
 from ...market import fundamental_metrics
 from ..llm_backend import ClaudeCliBackend, SLOW_MODEL, _parse_json
 
-_KST = timezone(timedelta(hours=9))
-
-# 5-level label vocabulary, identical to the news agent (Judge normalizes).
-_LABELS = ("strong_sell", "sell", "neutral", "buy", "strong_buy")
-
 _RULES = (Path(__file__).parent / "fundamental_rules.md").read_text(encoding="utf-8")
-
-
-def label_from_score(score: float) -> str:
-    s = max(-1.0, min(1.0, float(score)))
-    if s < -0.5:
-        return "strong_sell"
-    if s < -0.1:
-        return "sell"
-    if s <= 0.1:
-        return "neutral"
-    if s <= 0.5:
-        return "buy"
-    return "strong_buy"
 
 
 def _valuation_band(symbol_id: str, valuation: dict) -> dict:
@@ -270,12 +253,8 @@ def _judge(symbol_id: str, name: str, inputs: dict, *,
     raw = backend.call(_SYSTEM, user, timeout_s=timeout_s, model=SLOW_MODEL)
     data = _parse_json(raw)
 
-    score = max(-1.0, min(1.0, float(data.get("score", 0))))
-    conf = data.get("confidence", 0.5)
-    try:
-        conf = max(0.0, min(1.0, float(conf)))
-    except (TypeError, ValueError):
-        conf = 0.5
+    score = clamp_score(data.get("score", 0))
+    conf = clamp_confidence(data.get("confidence", 0.5))
     return {
         "status": "ok",
         "score": round(score, 4),
@@ -335,12 +314,8 @@ def _judge_etf(symbol_id: str, name: str, inputs: dict, *,
                       ensure_ascii=False, default=str)
     raw = backend.call(_ETF_SYSTEM, user, timeout_s=timeout_s, model=SLOW_MODEL)
     data = _parse_json(raw)
-    score = max(-1.0, min(1.0, float(data.get("score", 0))))
-    conf = data.get("confidence", 0.5)
-    try:
-        conf = max(0.0, min(1.0, float(conf)))
-    except (TypeError, ValueError):
-        conf = 0.5
+    score = clamp_score(data.get("score", 0))
+    conf = clamp_confidence(data.get("confidence", 0.5))
     # ETF axes use different keys; pass through as-is (UI tolerates extras).
     return {
         "status": "ok",
@@ -386,8 +361,4 @@ def evaluate_symbol(symbol_id: str, *, name: Optional[str] = None,
         "inputs": inputs,
         "generated_at": datetime.now(_KST).isoformat(),
     }
-    path = analysis_path("fundamental", symbol_id, date.replace("-", ""))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(result, ensure_ascii=False, indent=1),
-                    encoding="utf-8")
-    return result
+    return persist("fundamental", symbol_id, date, result)

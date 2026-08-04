@@ -11,18 +11,7 @@ from typing import Optional
 
 import yfinance as yf  # type: ignore
 
-from ...universe import search as uni_search
-from ...core.paths import split_symbol
-
-
-def _yf_ticker(symbol_id: str) -> str:
-    market, code = split_symbol(symbol_id)
-    item = uni_search.get(symbol_id)
-    if item and item.get("yf_ticker"):
-        return item["yf_ticker"]
-    if market == "US":
-        return code
-    return f"{code}.KS"
+from .yfinance_source import _yf_ticker
 
 
 def fetch(symbol_id: str) -> dict:

@@ -5,10 +5,9 @@ Routes:
   GET /a/{id}        — account.html (per-account view)
   GET /stock         — account.html (legacy alias, will be dropped later)
   /api/universe/*    — symbol master search
-  /api/accounts/*    — account CRUD + holdings + balances + snapshots
-  /api/market/*      — ohlcv + quote
-  /api/analysis/*    — chart/fundamental/news (Phase 2 stub)
-  /static/*          — static assets
+  /api/accounts/*    — account CRUD + holdings + balances + snapshots + chat
+  /api/market/*      — ohlcv + quotes
+  /api/analysis/*    — chart / fundamental / news / judge verdicts + news feed
 
 Run:
   python -m src.dashboard_web.server --port 8888 --host 127.0.0.1
@@ -23,30 +22,19 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from src.core import security
 
 STATIC = Path(__file__).resolve().parent / "static"
 THEME_PATH = STATIC / "theme.json"
 
-# Built-in fallback palette. theme.json is the single source of truth, but if
-# it's missing or mid-write/corrupt we still emit a usable :root so the page
-# never renders unstyled. Kept here (server) — NOT duplicated into the static
-# HTML, so the pages stay free of hardcoded color literals.
-_FALLBACK_COLORS = {
-    "bg": "#0e1117", "panel": "#161b22", "elevated": "#1c222b",
-    "grid": "#21262d", "line": "#30363d", "line-strong": "#484f58",
-    "fg": "#e6edf3", "dim": "#8a96a8", "muted": "#6e7681",
-    "cyan": "#4dd0e1", "pink": "#ff8db1", "green": "#56d364",
-    "yellow": "#e3b341", "orange": "#ff9852", "red": "#f85149",
-    "purple": "#b392f0",
-}
-
 # Matches <head>, <head lang="ko">, <HEAD ...> etc.
 _HEAD_RE = re.compile(r"<head\b[^>]*>", re.IGNORECASE)
 
-app = FastAPI(title="portfolio-dashboard")
+# Interactive docs off: they sit outside /api/* so the PIN gate never sees them,
+# and on a public origin they would publish the whole API surface.
+app = FastAPI(title="portfolio-dashboard",
+              docs_url=None, redoc_url=None, openapi_url=None)
 
 # All /api/* routes live behind a single aggregate router.
 try:
@@ -95,18 +83,19 @@ def _hex_to_rgb_csv(hex_str: str) -> str:
 
 
 def _load_theme() -> dict:
-    """Full theme dict (colors + tokens). On failure returns the fallback
-    palette under a 'colors' key so the page is never left unstyled."""
-    if not THEME_PATH.exists():
-        return {"colors": _FALLBACK_COLORS, "tokens": {}}
+    """Full theme dict (colors + tokens) from theme.json, the single source of
+    truth for every design literal.
+
+    No built-in fallback palette on purpose: theme.json ships with the code, so
+    it can only be missing or corrupt if the deploy itself is broken, and a
+    hardcoded second palette would silently serve the wrong (stale) design
+    while looking healthy. An unstyled page plus this error line is the honest
+    failure."""
     try:
-        t = json.loads(THEME_PATH.read_text())
-    except Exception as exc:
-        logging.warning("theme.json parse failed, using fallback palette: %s", exc)
-        return {"colors": _FALLBACK_COLORS, "tokens": {}}
-    if not (t.get("colors") or {}):
-        t["colors"] = _FALLBACK_COLORS
-    return t
+        return json.loads(THEME_PATH.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        logging.error("theme.json unusable, serving unstyled: %s", exc)
+        return {}
 
 
 def _theme_style_tag() -> str:
@@ -156,10 +145,6 @@ def account_page(account_id: str) -> HTMLResponse:
 @app.get("/stock", response_class=HTMLResponse)
 def stock_legacy() -> HTMLResponse:
     return _serve("account.html")
-
-
-if STATIC.exists():
-    app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
 def main() -> None:

@@ -100,16 +100,6 @@ class TestLookAheadGuard(unittest.TestCase):
         self.assertIsNone(engine.last_closed_date(self.weekly.iloc[0:0]))
 
 
-class TestCacheKey(unittest.TestCase):
-    def test_stable_and_param_ordered(self):
-        k1 = engine.cache_key("KR:005930", "1d", "rsi", {"length": 14}, "2026-05-24")
-        k2 = engine.cache_key("KR:005930", "1d", "rsi", {"length": 14}, "2026-05-24")
-        self.assertEqual(k1, k2)
-        # param order should not matter
-        ka = engine.cache_key("US:AAPL", "1w", "macd", {"fast": 12, "slow": 26}, "x")
-        kb = engine.cache_key("US:AAPL", "1w", "macd", {"slow": 26, "fast": 12}, "x")
-        self.assertEqual(ka, kb)
-
 
 if __name__ == "__main__":
     unittest.main()

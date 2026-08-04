@@ -66,7 +66,7 @@ def test_financials_upsert_and_sort(tmp_paths):
     assert added == 0
     df2 = financials_store.read(sid)
     assert df2[df2["period"] == "2024Q3"]["revenue"].iloc[0] == 350.0
-    assert financials_store.latest(sid)["period"] == "2024FY"
+    assert financials_store.rows_as_dicts(sid)[-1]["period"] == "2024FY"
 
 
 def test_period_sort_key():

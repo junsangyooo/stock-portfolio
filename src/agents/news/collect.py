@@ -11,7 +11,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
+
+from ...core.kst import KST as _KST
 from typing import Optional
 
 from ...core.paths import signals_news_path
@@ -20,7 +22,6 @@ from .sources.arxiv import fetch_arxiv
 from .sources.og_image import enrich_images
 from .sources.rss import fetch_rss
 
-_KST = timezone(timedelta(hours=9))
 
 _LEAD_LAG = {"research": "leading", "social": "coincident", "news": "lagging"}
 

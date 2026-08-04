@@ -1,7 +1,7 @@
 """Fundamental backfill — fetch L1 valuation + L2 financials for a symbol.
 
-Routing (per design):
-  KR  valuation  ← pykrx   (historical daily series)
+Routing:
+  KR  valuation  ← derived from DART financials + OHLCV closes (kr_valuation)
       financials ← DART    (corp_code → finstate_all)
   US  valuation  ← yfinance.info snapshot (appended per fetch date)
       financials ← yfinance quarterly statements
@@ -11,7 +11,7 @@ Idempotent: stores append/upsert and dedup. Safe to call repeatedly.
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import List
 
 from ..source.yfinance_source import YFinanceSource
@@ -19,7 +19,6 @@ from ..store import valuation_store, financials_store, ohlcv_store
 from .. import kr_valuation, fundamental_metrics
 from ...core.paths import split_symbol
 
-KST = timezone(timedelta(hours=9))
 
 _yf = YFinanceSource()
 _dart = None  # lazy: only constructed when a KR symbol needs DART

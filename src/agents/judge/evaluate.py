@@ -3,7 +3,7 @@
 Reads three domains' deterministic facts + (when present) recently-cached
 domain verdicts and asks claude to apply judge_rules.md ONCE to produce a
 unified verdict. NO orchestration / no sub-agent fan-out — see
-docs/judge-analysis-design.md for the rationale (single call beats 4× for
+judge_rules.md for the rationale (single call beats 4× for
 this workload).
 
 Pipeline:
@@ -15,7 +15,7 @@ Pipeline:
                     verdict with cross_reads
   evaluate_symbol   assemble → judge → persist to data/analysis/judge/...
 
-Output schema is documented in docs/judge-analysis-design.md §③.
+Output schema is what _judge() below returns.
 Ops (design §⑥): claude -p failures retry once, then fall back to a heuristic
 synthesis of cached_verdicts (no LLM); every call is logged to
 data/logs/judge.log (latency, score, rule IDs, missing domains).
@@ -25,16 +25,17 @@ from __future__ import annotations
 import json
 import logging
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from ...core.paths import analysis_path
+from ...core.kst import KST as _KST
+from ..verdict import (
+    LABELS as _LABELS, clamp_confidence, clamp_score, label_from_score, persist,
+)
 from ..llm_backend import ClaudeCliBackend, SLOW_MODEL, _parse_json
 
-_KST = timezone(timedelta(hours=9))
 
-_LABELS = ("strong_sell", "sell", "neutral", "buy", "strong_buy")
 _ACTIONS = ("exit", "trim", "hold", "watch", "add")
 _PRICED_IN = ("unpriced", "partially_priced", "mostly_priced")
 _HORIZONS = ("immediate", "near", "mid", "long")
@@ -60,19 +61,6 @@ def _get_log() -> logging.Logger:
         _log.setLevel(logging.INFO)
         _log.propagate = False
     return _log
-
-
-def label_from_score(score: float) -> str:
-    s = max(-1.0, min(1.0, float(score)))
-    if s < -0.5:
-        return "strong_sell"
-    if s < -0.1:
-        return "sell"
-    if s <= 0.1:
-        return "neutral"
-    if s <= 0.5:
-        return "buy"
-    return "strong_buy"
 
 
 # ── input assembly ──────────────────────────────────────────────────────────
@@ -296,8 +284,8 @@ def _fallback_verdict(inputs: dict, reason: str) -> dict:
         return out
 
     wsum = sum(_FALLBACK_W[k] for k in cached)
-    score = sum(_FALLBACK_W[k] * float(v["score"]) for k, v in cached.items()) / wsum
-    score = max(-1.0, min(1.0, score))
+    score = clamp_score(
+        sum(_FALLBACK_W[k] * float(v["score"]) for k, v in cached.items()) / wsum)
     confs = [float(v.get("confidence") or 0.3) for v in cached.values()]
     used = ", ".join(_DOMAIN_KO[k] for k in cached)
     return {
@@ -366,12 +354,8 @@ def _judge(symbol_id: str, name: str, inputs: dict, *,
     if data is None:
         return _fallback_verdict(inputs, str(last_err))
 
-    score = max(-1.0, min(1.0, float(data.get("score", 0))))
-    conf = data.get("confidence", 0.5)
-    try:
-        conf = max(0.0, min(1.0, float(conf)))
-    except (TypeError, ValueError):
-        conf = 0.5
+    score = clamp_score(data.get("score", 0))
+    conf = clamp_confidence(data.get("confidence", 0.5))
 
     return {
         "status": "ok",
@@ -432,8 +416,4 @@ def evaluate_symbol(symbol_id: str, *, name: Optional[str] = None,
         latency_s, ",".join(missing) or "-",
         "yes" if inputs.get("holding_context") else "no",
         ",".join(verdict.get("methodology") or []) or "-")
-    path = analysis_path("judge", symbol_id, date.replace("-", ""))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(result, ensure_ascii=False, indent=1),
-                    encoding="utf-8")
-    return result
+    return persist("judge", symbol_id, date, result)

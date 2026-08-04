@@ -19,11 +19,12 @@ class TestApiGate(unittest.TestCase):
 
     def test_closed_without_cookie(self):
         for method, path in [
-            ("GET", "/api/market/quote/KR/005930"),
+            ("GET", "/api/market/quotes?symbols=KR:005930"),
             ("GET", "/api/analysis/summary"),
             ("POST", "/api/analysis/chart/KR/005930/run"),
             ("POST", "/api/accounts"),
-            ("POST", "/api/universe/refresh"),
+            ("POST", "/api/accounts/junisa/chat"),
+            ("GET", "/api/universe/search?q=samsung"),
         ]:
             r = self.c.request(method, path)
             self.assertEqual(r.status_code, 403, f"{method} {path} not gated")
@@ -37,11 +38,12 @@ class TestApiGate(unittest.TestCase):
 
     def test_cookie_opens_shared_data(self):
         name, value = self.cookie
-        r = self.c.get("/api/market/quote/KR/005930", cookies={name: value})
+        r = self.c.get("/api/analysis/summary?symbols=KR:005930",
+                       cookies={name: value})
         self.assertNotEqual(r.status_code, 403)
 
     def test_forged_cookie_rejected(self):
-        r = self.c.get("/api/market/quote/KR/005930",
+        r = self.c.get("/api/analysis/summary?symbols=KR:005930",
                        cookies={security.COOKIE_PREFIX + "junisa": "junisa|1|deadbeef"})
         self.assertEqual(r.status_code, 403)
 

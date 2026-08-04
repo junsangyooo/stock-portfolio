@@ -5,7 +5,7 @@
 - 단일 진실 분리: **portfolio**(계좌·보유) vs **market**(시장 데이터) vs **universe**(종목 마스터) vs **analysis**(분석)
 - 동일 종목이 여러 계좌에 있어도 시장 데이터·분석은 종목 단위로 **딱 1벌**
 - 분석 파이프라인 LIVE: 에이전트 3종(chart / fundamental / news) + judge 통합 + 야간 verdict 워밍 배치
-- **LLM 백엔드 = Claude CLI 구독만** (API 절대 금지 — 정액제)
+- **유료 LLM API 절대 금지** — 판단은 Claude CLI 구독, 기계적 작업은 온호스트 open-weight
 
 
 ---
@@ -30,15 +30,16 @@
 
 ```
 src/
-├── core/                 공용 유틸 (config, paths, notify, security=PIN·세션토큰)
+├── core/                 공용 유틸 (paths, kst, notify, security=PIN·세션토큰)
 ├── universe/             종목 마스터 (builder / search / refresh_job)
 ├── market/               시장 데이터 (source / store / pipeline)
 ├── portfolio/            계좌·보유·잔고 (store / service / snapshot_job)
-├── api/                  FastAPI 라우터 (universe / portfolio / market / analysis)
+├── api/                  FastAPI 라우터 — 얇은 read/dispatch (universe / accounts / market / analysis / chat)
 ├── agents/               분석 에이전트 (chart / fundamental / news / judge, 룰북 = *_rules.md)
+│   ├── verdict.py            4에이전트 공통 라벨·clamp·산출물 저장
 │   ├── verdict_job.py        야간 verdict 워밍 배치
-│   └── llm_backend.py        Claude CLI subprocess (FAST=Haiku 4.5, SLOW=Sonnet 4.6)
-└── dashboard_web/        server.py(라우터 mount) + static(landing / account)
+│   └── llm_backend.py        Claude CLI subprocess + 로컬 llama.cpp
+└── dashboard_web/        server.py(라우터 mount + PIN 게이트 + theme 주입) + static
 
 data/                     운영 데이터 (Oracle 단방향, gitignore)
 ├── portfolio.db          accounts / holdings / balances / snapshots / holding_themes
@@ -53,19 +54,19 @@ data/                     운영 데이터 (Oracle 단방향, gitignore)
 |---|---|---|---|
 | **chart** | facts=순수함수 / verdict=LLM | Sonnet | 종목 분석 버튼 · 야간 배치 |
 | **fundamental** | DART 파생 재무 verdict | Sonnet | 야간 배치 |
-| **news** | 아래 뉴스 파이프라인 참조 | Haiku/Sonnet | 매일 batch + 종목 evaluate |
+| **news** | 아래 뉴스 파이프라인 참조 | 로컬(배치) / Sonnet(종목) | 매일 batch + 종목 evaluate |
 | **judge** | 크로스도메인 종합 verdict | Sonnet | 야간 배치 · 버튼 |
 
 ## 뉴스(정성) 파이프라인 — holdings-driven
 
-매일 06:00 KST `news.daily_job`이 **테마 단위**로 `collect → digest → state`를 돈다.
+매일 05:00 KST `news.daily_job`이 **테마 단위**로 `collect → digest → state`를 돈다.
 
 ```
 collect  (규칙기반, NO LLM)  RSS·arXiv 크롤 → 키워드 필터 → url dedup → jsonl
   ↓
-digest   (LLM = Haiku)        원시 시그널 중복병합 + 상위 5~8건 선별·요약·중요도
+digest   (LLM = 로컬)         원시 시그널 중복병합 + 상위 5~8건 선별·요약·중요도
   ↓
-state    (LLM = Sonnet, 게이트) 장기추세 요약·watchlist·sentiment 갱신 (slow memory)
+state    (LLM = 로컬, 게이트)  장기추세 요약·watchlist·sentiment 갱신 (slow memory)
 ```
 
 **수집 대상 테마 = 보유 종목에서 도출** (2026-07-17~):
@@ -77,18 +78,18 @@ state    (LLM = Sonnet, 게이트) 장기추세 요약·watchlist·sentiment 갱
 
 **비용 최적화**:
 
-- **digest = Haiku 4.5** (중복병합·선별은 기계적 태스크 → 상위 모델 불필요)
+- **digest·state = 온호스트 open-weight** (중복병합·선별·요약은 기계적 태스크 → 구독 예산은 판단 계층에. 실패 시 Claude 자동 폴백)
 - digest 투입은 테마당 **상위 40건 상한** (lead_lag 우선순위 + 최신순 규칙 pre-rank, 어차피 5~8건만 남음)
 - **state = 이벤트 게이트** — 당일 digest에 중요도≥4 또는 novelty 신호가 없으면 결정적 decay만 수행하고 LLM은 skip (조용한 테마는 자연히 주 2~3회, 사건 있는 날은 즉시 반영)
 
-> **LLM 백엔드 불변식**: 모든 호출은 `ClaudeCliBackend`(`claude -p`) 구독. `ANTHROPIC_API_KEY`는 subprocess env에서 빈값 강제. API 절대 금지.
+> **LLM 백엔드 불변식**: 유료 API 절대 금지. 판단(judge·chart·fundamental·news evaluate·테마 매핑)은 `ClaudeCliBackend`(`claude -p`) 구독, 기계적 작업(뉴스 digest·state)은 온호스트 open-weight. `ANTHROPIC_API_KEY`는 subprocess env에서 빈값 강제.
 
 ## systemd / cron (Oracle, UTC)
 
 | 시각 | 잡 | 역할 |
 |---|---|---|
 | 21:05 | backup | `portfolio.db` 일 1회 백업 (요일별 7일 회전) |
-| 21:00 | `news.daily_job` | 뉴스 수집·digest·state (holdings-driven) |
+| 20:00 | `news.daily_job` | 뉴스 수집·digest·state (holdings-driven, 로컬 LLM ~1h) |
 | 21:10 | `fundamental_job` | 재무 backfill (보유 종목) |
 | 21:15 | `etf_job` | ETF 일별 스냅샷 |
 | 21:20 | `snapshot_job` | 계좌 자산 스냅샷 (OHLCV gap-fill 후) |
@@ -112,9 +113,9 @@ state    (LLM = Sonnet, 게이트) 장기추세 요약·watchlist·sentiment 갱
 GET  /                                     landing (홈)
 GET  /a/{account_id}                        계좌 페이지 (PIN 게이트)
 
-GET  /api/universe/search|symbol|refresh
-CRUD /api/accounts/**                       계좌·보유·잔고·스냅샷
-GET  /api/market/ohlcv|quote|quotes
+GET  /api/universe/search|stats
+CRUD /api/accounts/**                       계좌·보유·잔고·스냅샷·PIN·chat
+GET  /api/market/ohlcv|quotes
 GET  /api/analysis/{kind}/{market}/{code}   verdict·facts·feed·summary
 POST /api/analysis/{kind}/{market}/{code}/run   비동기 agent 실행
 ```

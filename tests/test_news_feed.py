@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone, timedelta
 
-from src.api.analysis import _published_iso, news_feed
+from src.agents.news.feed import build as news_feed, published_iso as _published_iso
 
 _KST = timezone(timedelta(hours=9))
 
@@ -32,11 +32,17 @@ def _write_jsonl(path, recs):
 
 
 def test_feed_merges_cross_theme_and_joins_importance(tmp_path, monkeypatch):
+    from src.agents.news import feed as F
+    from src.agents.news.catalog import load_catalog
     from src.core import paths as P
     monkeypatch.setattr(P, "signals_news_path",
                         lambda theme, ym: tmp_path / "sig" / theme / f"{ym}.jsonl")
     monkeypatch.setattr(P, "analysis_news_daily_path",
                         lambda theme, d: tmp_path / "ana" / theme / f"{d}.json")
+    # the live set is holdings-driven (DB); pin it so the feed is tested alone
+    cat = load_catalog()
+    monkeypatch.setattr(F, "live_themes",
+                        lambda c: [cat.get("battery"), cat.get("semiconductor")])
 
     now = datetime.now(_KST)
     ym = now.strftime("%Y%m")

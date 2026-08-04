@@ -1,7 +1,7 @@
-"""Discord webhook notifier — `send`, `send_embed`, `alert`, `heartbeat`.
+"""Discord webhook notifier — `send`, `send_embed`.
 
-Env: DISCORD_WEBHOOK_URL  (silent no-op when missing)
-Rate-limited per `key` to prevent spam.
+Env: DISCORD_WEBHOOK_URL  (silent no-op when missing). When unset — cron runs
+with a minimal env — the URL is read from the secrets .env file instead.
 """
 from __future__ import annotations
 
@@ -14,8 +14,6 @@ from pathlib import Path
 import httpx
 
 log = logging.getLogger(__name__)
-
-_LAST_SENT: dict[str, float] = {}
 
 
 def _url() -> str | None:
@@ -34,41 +32,19 @@ def _url() -> str | None:
     return None
 
 
-def send(text: str, key: str = "default", min_interval_s: float = 0.0,
-         username: str = "portfolio-dashboard") -> bool:
-    """Send plain-text message. Discord max 2000 chars.
-    `key` + `min_interval_s` provide per-bucket rate limiting (0 = no limit)."""
+def send(text: str, username: str = "portfolio-dashboard") -> bool:
+    """Send plain-text message. Discord max 2000 chars."""
     u = _url()
     if not u:
         log.debug("discord: webhook not set, skipping")
         return False
-    if min_interval_s > 0:
-        now = time.time()
-        if (now - _LAST_SENT.get(key, 0)) < min_interval_s:
-            log.debug(f"discord: rate-limited key={key}")
-            return False
     try:
         r = httpx.post(u, json={"content": text[:1990], "username": username},
                        timeout=10)
-        ok = r.status_code in (200, 204)
+        return r.status_code in (200, 204)
     except Exception as e:
         log.warning(f"discord: send error {e}")
         return False
-    if ok and min_interval_s > 0:
-        _LAST_SENT[key] = time.time()
-    return ok
-
-
-def heartbeat(svc: str, every_s: float = 3600.0) -> bool:
-    """Send a periodic heartbeat (silent if rate-limited)."""
-    return send(f"💚 **{svc}** heartbeat ok", key=f"hb_{svc}",
-                min_interval_s=every_s)
-
-
-def alert(svc: str, msg: str) -> bool:
-    """Send an alert with 5-min cooldown per (svc, msg) bucket."""
-    return send(f"⚠️ **{svc}**\n{msg}", key=f"alert_{svc}_{msg[:30]}",
-                min_interval_s=300.0)
 
 
 def send_embed(title: str, description: str = "",

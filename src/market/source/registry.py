@@ -1,7 +1,6 @@
 """Pick the right Source adapter for a symbol."""
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import Optional
 
 from .base import Source
@@ -10,14 +9,8 @@ from .yfinance_source import YFinanceSource
 from ...core.paths import split_symbol
 
 
-@lru_cache(maxsize=4)
-def _pykrx() -> PykrxSource:
-    return PykrxSource()
-
-
-@lru_cache(maxsize=4)
-def _yfinance() -> YFinanceSource:
-    return YFinanceSource()
+_pykrx = PykrxSource()
+_yfinance = YFinanceSource()
 
 
 def for_symbol(symbol_id: str) -> Optional[Source]:
@@ -25,11 +18,11 @@ def for_symbol(symbol_id: str) -> Optional[Source]:
         return None
     market, _ = split_symbol(symbol_id)
     if market == "KR":
-        return _pykrx()
-    return _yfinance()
+        return _pykrx
+    return _yfinance
 
 
 def yfinance_for(symbol_id: str) -> YFinanceSource:
     """Force-yfinance, used for intraday on KR symbols (pykrx has no
-    intraday)."""
-    return _yfinance()
+    intraday). Takes the symbol only to read like its sibling above."""
+    return _yfinance

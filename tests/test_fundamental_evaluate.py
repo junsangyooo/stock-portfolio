@@ -104,9 +104,9 @@ def test_assemble_display_wraps_inputs_and_series(monkeypatch):
 
 def test_evaluate_symbol_persists(tmp_path, monkeypatch):
     import src.agents.fundamental.evaluate as mod
+    import src.agents.verdict as verdict
     monkeypatch.setattr(mod, "assemble_inputs", lambda sid: _INPUTS)
-    written = {}
-    monkeypatch.setattr(mod, "analysis_path",
+    monkeypatch.setattr(verdict, "analysis_path",
                         lambda kind, sid, d: tmp_path / f"{kind}_{d}.json")
     stub = _StubBackend(_GOOD)
     res = mod.evaluate_symbol("KR:005930", name="삼성전자",

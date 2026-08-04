@@ -1,16 +1,23 @@
-"""KR adapter — pykrx for daily OHLCV + close-as-quote fallback."""
+"""KR adapter — pykrx for daily OHLCV + close-as-quote fallback.
+
+KR valuation does NOT come from here: pykrx's fundamental endpoints stopped
+returning usable data, so PER/PBR/EPS are derived from DART filings instead
+(see market/kr_valuation.py).
+"""
 from __future__ import annotations
 
+import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 from pykrx import stock as pkx  # type: ignore
 
-from .base import Source, OHLCVBar, Quote, ValuationPoint
+from .base import Source, OHLCVBar, Quote
+from ...core.kst import KST
 from ...core.paths import split_symbol
 
-KST = timezone(timedelta(hours=9))
+log = logging.getLogger(__name__)
 
 
 def _ymd(s: str) -> str:
@@ -26,7 +33,8 @@ class PykrxSource(Source):
             return []
         try:
             df = pkx.get_market_ohlcv_by_date(_ymd(start), _ymd(end), code)
-        except Exception:
+        except Exception as e:  # noqa: BLE001 — pykrx scrapes KRX; stay soft
+            log.warning("pykrx get_daily %s failed: %s", symbol_id, e)
             return []
         bars: List[OHLCVBar] = []
         for ts_pd, row in df.iterrows():
@@ -41,47 +49,6 @@ class PykrxSource(Source):
             ))
         return bars
 
-    def get_valuation(self, symbol_id: str, start: str,
-                      end: str) -> List[ValuationPoint]:
-        """L1 daily valuation via pykrx. get_market_fundamental gives
-        BPS/PER/PBR/EPS/DIV/DPS per date; get_market_cap gives 시가총액.
-        PSR is not provided by KRX → left None."""
-        market, code = split_symbol(symbol_id)
-        if market != "KR":
-            return []
-        try:
-            fund = pkx.get_market_fundamental(_ymd(start), _ymd(end), code)
-        except Exception:
-            return []
-        if fund is None or fund.empty:
-            return []
-        try:
-            cap = pkx.get_market_cap(_ymd(start), _ymd(end), code)
-        except Exception:
-            cap = None
-
-        def _f(row, key):
-            try:
-                v = float(row[key])
-                return v if v == v else None  # drop NaN
-            except (KeyError, TypeError, ValueError):
-                return None
-
-        points: List[ValuationPoint] = []
-        for ts_pd, row in fund.iterrows():
-            dt = ts_pd.to_pydatetime().replace(tzinfo=KST)
-            mcap = None
-            if cap is not None and ts_pd in cap.index:
-                mcap = _f(cap.loc[ts_pd], "시가총액")
-            points.append(ValuationPoint(
-                ts=int(dt.timestamp()),
-                per=_f(row, "PER"), pbr=_f(row, "PBR"), psr=None,
-                eps=_f(row, "EPS"), bps=_f(row, "BPS"),
-                dps=_f(row, "DPS"), div_yield=_f(row, "DIV"),
-                market_cap=mcap,
-            ))
-        return points
-
     def get_quote(self, symbol_id: str) -> Optional[Quote]:
         """pykrx has no live tick. Returns the most recent close as a
         delayed proxy so charts have something to render."""
@@ -92,7 +59,8 @@ class PykrxSource(Source):
         start = (datetime.now(KST) - timedelta(days=10)).strftime("%Y%m%d")
         try:
             df = pkx.get_market_ohlcv_by_date(start, end, code)
-        except Exception:
+        except Exception as e:  # noqa: BLE001 — pykrx scrapes KRX; stay soft
+            log.warning("pykrx get_quote %s failed: %s", symbol_id, e)
             return None
         if df.empty:
             return None

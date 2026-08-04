@@ -5,6 +5,8 @@ For 'US:AAPL' we just pass code directly.
 """
 from __future__ import annotations
 
+import logging
+
 import time
 from typing import List, Optional
 
@@ -47,6 +49,9 @@ def _yf_ticker(symbol_id: str) -> str:
     return f"{code}.KS"  # safe default for KR
 
 
+log = logging.getLogger(__name__)
+
+
 class YFinanceSource(Source):
     name = "yfinance"
 
@@ -55,7 +60,8 @@ class YFinanceSource(Source):
         try:
             t = yf.Ticker(ticker)
             df = t.history(start=start, end=end, interval="1d", auto_adjust=False)
-        except Exception:
+        except Exception as e:  # noqa: BLE001 — yfinance is scrape-flaky
+            log.warning("yfinance %s failed: %s", symbol_id, e)
             return []
         if df is None or df.empty:
             return []
@@ -78,7 +84,8 @@ class YFinanceSource(Source):
         try:
             t = yf.Ticker(ticker)
             df = t.history(period=period, interval=interval, auto_adjust=False)
-        except Exception:
+        except Exception as e:  # noqa: BLE001 — yfinance is scrape-flaky
+            log.warning("yfinance %s failed: %s", symbol_id, e)
             return []
         if df is None or df.empty:
             return []
@@ -103,7 +110,8 @@ class YFinanceSource(Source):
         ticker = _yf_ticker(symbol_id)
         try:
             info = yf.Ticker(ticker).info or {}
-        except Exception:
+        except Exception as e:  # noqa: BLE001 — yfinance is scrape-flaky
+            log.warning("yfinance %s failed: %s", symbol_id, e)
             return []
         if not info:
             return []
@@ -139,7 +147,8 @@ class YFinanceSource(Source):
             inc = t.quarterly_financials
             bs = t.quarterly_balance_sheet
             cf = t.quarterly_cashflow
-        except Exception:
+        except Exception as e:  # noqa: BLE001 — yfinance is scrape-flaky
+            log.warning("yfinance %s failed: %s", symbol_id, e)
             return []
 
         def _val(df, field, col):
@@ -203,5 +212,6 @@ class YFinanceSource(Source):
                 prev = float(df["Close"].iloc[-2]) if len(df) >= 2 else price
             return Quote(symbol_id=symbol_id, price=price, prev_close=prev,
                          ts=int(time.time()))
-        except Exception:
+        except Exception as e:  # noqa: BLE001 — yfinance is scrape-flaky
+            log.warning("yfinance %s failed: %s", symbol_id, e)
             return None

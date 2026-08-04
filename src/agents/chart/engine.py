@@ -3,9 +3,9 @@ against look-ahead bias (D6).
 
 We store ONLY daily bars (src/market/store/ohlcv_store). Weekly/monthly are
 derived on the fly via the existing resampler. The single most important rule
-(D6, docs/chart-analysis-design.md): a signal must never be computed on an
-in-progress (not-yet-closed) weekly/monthly bar — that is peeking at the
-future. `drop_incomplete_bar` enforces this.
+(D6): a signal must never be computed on an in-progress (not-yet-closed)
+weekly/monthly bar — that is peeking at the future. `drop_incomplete_bar`
+enforces this.
 """
 from __future__ import annotations
 
@@ -15,16 +15,10 @@ from typing import Optional
 import pandas as pd
 
 from ...market.pipeline import resampler
-from ...market.store import ohlcv_store
 
 # Our timeframe labels -> resampler period names.
 TF_TO_PERIOD = {"1w": "week", "1mo": "month"}
 TIMEFRAMES = ("1d", "1w", "1mo")
-
-
-def load_ohlcv(symbol_id: str, n: int = 0) -> pd.DataFrame:
-    """Load daily OHLCV for a symbol (cols: ts, open, high, low, close, volume)."""
-    return ohlcv_store.read(symbol_id, n)
 
 
 def to_timeframe(df_daily: pd.DataFrame, tf: str) -> pd.DataFrame:
@@ -78,12 +72,3 @@ def last_closed_date(df: pd.DataFrame) -> Optional[str]:
         return None
     last_ts = int(df["ts"].iloc[-1])
     return datetime.fromtimestamp(last_ts, tz=timezone.utc).strftime("%Y-%m-%d")
-
-
-def cache_key(
-    symbol_id: str, tf: str, indicator: str, params: dict, last_closed: Optional[str]
-) -> str:
-    """Deterministic cache key. Past closed bars are immutable, so a key keyed on
-    the last closed bar date is stable until a new bar closes (D6 caching)."""
-    pstr = ",".join(f"{k}={params[k]}" for k in sorted(params))
-    return f"{symbol_id}|{tf}|{indicator}|{pstr}|{last_closed}"

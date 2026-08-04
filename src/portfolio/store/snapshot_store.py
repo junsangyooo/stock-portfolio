@@ -1,12 +1,13 @@
 """snapshots (date, account_id, currency) — daily history."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+
+from ...core.kst import KST
 from typing import Dict, List
 
 from .db import connect
 
-KST = timezone(timedelta(hours=9))
 
 
 def today_kst() -> str:
@@ -63,9 +64,7 @@ def read(account_id: str, currency: str = "KRW", days: int = 90) -> List[dict]:
 
 def maybe_snapshot_today(account_id: str, per_currency: Dict[str, dict]) -> bool:
     today = today_kst()
-    if has_for(today, account_id):
-        # Re-write to capture mid-day changes (still single row per ccy/account).
-        write(today, account_id, per_currency)
-        return False
+    first = not has_for(today, account_id)
+    # Always re-write to capture mid-day changes (still one row per ccy/account).
     write(today, account_id, per_currency)
-    return True
+    return first

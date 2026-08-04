@@ -10,11 +10,14 @@ API:
 from __future__ import annotations
 
 import json
+import logging
 import time
 from threading import Lock
 from typing import List, Optional
 
 from ..core.paths import UNIVERSE_DIR
+
+log = logging.getLogger(__name__)
 
 _CACHE_TTL_S = 6 * 3600
 
@@ -38,10 +41,9 @@ def _load_locked() -> None:
             continue
         try:
             payload = json.loads(p.read_text())
-            for it in payload.get("items", []):
-                items.append(it)
-        except Exception:
-            continue
+            items.extend(payload.get("items", []))
+        except (json.JSONDecodeError, OSError) as e:
+            log.error("universe %s unreadable, searching without it: %s", fname, e)
     _items = items
     _by_id = {it["symbol_id"]: it for it in items}
     _loaded_at = time.time()
@@ -96,13 +98,6 @@ def search(q: str, region: Optional[str] = None, limit: int = 20) -> List[dict]:
 
     ranked = exact + prefix + contains
     return ranked[:limit]
-
-
-def reload() -> int:
-    """Force-reload universe cache. Returns total item count."""
-    with _lock:
-        _load_locked()
-        return len(_items)
 
 
 def stats() -> dict:

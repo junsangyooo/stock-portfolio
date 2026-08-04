@@ -1,13 +1,14 @@
 """Bridge last stored ts → today for all held symbols."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+
+from ...core.kst import KST
 from typing import Iterable
 
 from ..source.registry import for_symbol
 from ..store import ohlcv_store
 
-KST = timezone(timedelta(hours=9))
 
 
 def _ymd(d: datetime) -> str:

@@ -19,13 +19,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
+
+from ...core.kst import KST as _KST
 from typing import Optional
 
 from . import fundamental_backfill
 from ...portfolio.store.holding_store import all_symbol_ids
 
-_KST = timezone(timedelta(hours=9))
 
 
 def _refresh_sector(sid: str) -> Optional[str]:

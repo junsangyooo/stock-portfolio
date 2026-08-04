@@ -11,13 +11,15 @@ Sources:
 from __future__ import annotations
 
 import json
+import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import List
 
+from ..core.kst import KST
 from ..core.paths import UNIVERSE_DIR, ensure_dirs
 
-KST = timezone(timedelta(hours=9))
+log = logging.getLogger(__name__)
 
 
 def _safe(v) -> str:
@@ -76,8 +78,8 @@ def build_kr() -> List[dict]:
                  _safe(r.get("Name")),
                  _safe(r.get("Sector")) if "Sector" in r else "",
                  yf_suffix=".KS")
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001 — one dead exchange must not kill the rest
+        log.error("universe KOSPI listing failed: %s", e)
 
     # KOSDAQ
     try:
@@ -88,8 +90,8 @@ def build_kr() -> List[dict]:
                  _safe(r.get("Name")),
                  _safe(r.get("Sector")) if "Sector" in r else "",
                  yf_suffix=".KQ")
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001
+        log.error("universe KOSDAQ listing failed: %s", e)
 
     # KR ETF
     try:
@@ -101,8 +103,8 @@ def build_kr() -> List[dict]:
                  sector="ETF",
                  is_etf=True,
                  yf_suffix=".KS")
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001
+        log.error("universe KR ETF listing failed: %s", e)
 
     return list(out.values())
 
@@ -141,8 +143,8 @@ def build_us() -> List[dict]:
                      _safe(r.get("Symbol") or r.get("Code")),
                      _safe(r.get("Name")),
                      _safe(r.get("Sector")) if "Sector" in r else "")
-        except Exception:
-            continue
+        except Exception as e:  # noqa: BLE001 — one dead exchange must not kill the rest
+            log.error("universe %s listing failed: %s", ex, e)
 
     return list(out.values())
 
@@ -152,25 +154,23 @@ def build_us() -> List[dict]:
 def refresh(region: str = "all") -> dict:
     ensure_dirs()
     started = time.time()
-    summary: dict = {"started_at": _now_iso(), "regions": {}}
+    summary: dict = {"started_at": _now_iso(), "regions": {}, "kept_previous": []}
 
-    if region in ("all", "kr"):
-        items = build_kr()
-        _atomic_write(
-            UNIVERSE_DIR / "kr.json",
-            {"updated_at": _now_iso(), "region": "kr", "n": len(items),
-             "items": items},
-        )
-        summary["regions"]["kr"] = len(items)
-
-    if region in ("all", "us"):
-        items = build_us()
-        _atomic_write(
-            UNIVERSE_DIR / "us.json",
-            {"updated_at": _now_iso(), "region": "us", "n": len(items),
-             "items": items},
-        )
-        summary["regions"]["us"] = len(items)
+    for reg, build in (("kr", build_kr), ("us", build_us)):
+        if region not in ("all", reg):
+            continue
+        items = build()
+        path = UNIVERSE_DIR / f"{reg}.json"
+        # Every listing source can be down at once. Writing the resulting empty
+        # master over a good one would blank search until the next run, so the
+        # previous file wins and the run reports it instead of exiting clean.
+        if not items and path.exists():
+            log.error("universe %s built 0 items — keeping the previous file", reg)
+            summary["kept_previous"].append(reg)
+            continue
+        _atomic_write(path, {"updated_at": _now_iso(), "region": reg,
+                             "n": len(items), "items": items})
+        summary["regions"][reg] = len(items)
 
     summary["elapsed_s"] = round(time.time() - started, 2)
     _atomic_write(UNIVERSE_DIR / "updated_at.json", summary)

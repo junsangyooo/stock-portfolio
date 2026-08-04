@@ -95,11 +95,3 @@ def _row_to_dict(row) -> dict:
 def rows_as_dicts(symbol_id: str, n: int = 0) -> List[dict]:
     df = read(symbol_id, n=n)
     return [_row_to_dict(df.iloc[i]) for i in range(len(df))]
-
-
-def latest(symbol_id: str) -> dict:
-    """Most recent period row as a dict (or empty)."""
-    df = read(symbol_id, n=1)
-    if df.empty:
-        return {}
-    return _row_to_dict(df.iloc[-1])

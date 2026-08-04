@@ -195,13 +195,56 @@ a { color: inherit; text-decoration: none; }
   border-color: var(--cyan);
   font-weight: 700;
 }
-.filter-bar .fb-chip.on.green { background: var(--green); border-color: var(--green); }
-.filter-bar .fb-chip.on.red   { background: var(--red);   border-color: var(--red); }
 .filter-bar .fb-count {
   margin-left: auto;
   color: var(--dim);
   font-size: 10px;
   letter-spacing: 1px;
+}
+/* chip group — market chips form one segmented block, pnl/holding another */
+.filter-bar .fb-group { display: inline-flex; gap: 4px; align-items: center; }
+.filter-bar .fb-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line);
+  margin: 0 6px;
+}
+/* ETF = independent toggle (combines with every other filter), so it gets a
+   checkbox look instead of a chip to say "this one is not exclusive". */
+.filter-bar .fb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--dim);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  padding: 3px 9px 3px 6px;
+  cursor: pointer;
+}
+.filter-bar .fb-toggle .box {
+  width: 11px; height: 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  display: inline-block;
+  line-height: 9px;
+  text-align: center;
+  font-size: 9px;
+}
+.filter-bar .fb-toggle:hover { color: var(--fg); border-color: var(--dim); }
+.filter-bar .fb-toggle.on {
+  color: var(--purple);
+  border-color: var(--purple);
+  border-style: solid;
+  font-weight: 700;
+}
+.filter-bar .fb-toggle.on .box {
+  background: var(--purple);
+  border-color: var(--purple);
+  color: var(--panel);
 }
 
 /* hidden by client filter (kept in DOM so _refresh still works) */
@@ -473,7 +516,7 @@ a { color: inherit; text-decoration: none; }
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(var(--bg-rgb), 0.85);
+  background: rgba(var(--fg-rgb), 0.35);
   backdrop-filter: blur(2px);
   z-index: 1000;
   display: flex;
@@ -531,8 +574,6 @@ a { color: inherit; text-decoration: none; }
 
 .modal-body {
   flex: 1;
-  display: grid;
-  grid-template-columns: 240px 1fr;
   min-height: 0;
 }
 
@@ -663,8 +704,8 @@ a { color: inherit; text-decoration: none; }
 /* 📰 connected news list (cheap signals feed) */
 .na-siglist { display: flex; flex-direction: column; margin-top: 4px; }
 .na-sig-row { display: grid; grid-template-columns: 38px 40px 70px 1fr; gap: 8px; align-items: start;
-  font-size: 11px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
-.na-sig-row.lk:hover { background: rgba(255,255,255,0.03); }
+  font-size: 11px; padding: 6px 0; border-bottom: 1px solid rgba(var(--fg-rgb), 0.07); }
+.na-sig-row.lk:hover { background: rgba(var(--fg-rgb), 0.04); }
 .na-sig-date { color: var(--dim); font-size: 10px; }
 .na-sig-th { color: var(--purple); }
 .na-sig-pt { color: var(--muted); line-height: 1.5; }
@@ -677,7 +718,7 @@ a { color: inherit; text-decoration: none; }
 .fa-axes { display: flex; flex-direction: column; gap: 9px; }
 .fa-axis { display: grid; grid-template-columns: 58px 1fr; gap: 3px 8px; align-items: center; }
 .fa-axis-name { font-size: 11px; color: var(--fg); font-weight: 700; }
-.fa-bar { height: 7px; border-radius: 4px; background: rgba(255,255,255,0.07); overflow: hidden; }
+.fa-bar { height: 7px; border-radius: 4px; background: rgba(var(--fg-rgb), 0.08); overflow: hidden; }
 .fa-bar > i { display: block; height: 100%; border-radius: 4px; background: var(--dim); transition: width .3s; }
 .fa-bar > i.good { background: var(--green); }
 .fa-bar > i.mid { background: var(--cyan); }
@@ -761,7 +802,7 @@ a { color: inherit; text-decoration: none; }
 .ajob { display: flex; flex-direction: column; gap: 7px; padding: 14px 12px; border: 1px solid var(--line); border-radius: var(--radius-md, 9px); }
 .ajob-head { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--fg); }
 .ajob-sec { color: var(--dim); }
-.ajob-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.07); overflow: hidden; }
+.ajob-bar { height: 6px; border-radius: 3px; background: rgba(var(--fg-rgb), 0.08); overflow: hidden; }
 .ajob-bar > i { display: block; height: 100%; background: var(--cyan); border-radius: 3px; transition: width .8s linear; }
 .ajob-eta { font-size: 10px; color: var(--muted); }
 
@@ -769,7 +810,7 @@ a { color: inherit; text-decoration: none; }
 .jd-card {
   border: 1px solid var(--line-strong); border-radius: var(--radius-md, 9px);
   padding: 14px 12px; display: flex; flex-direction: column; gap: 12px;
-  background: rgba(255,255,255,0.02);
+  background: rgba(var(--fg-rgb), 0.03);
 }
 .jd-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
 .jd-verdict { font-size: 17px; font-weight: 700; letter-spacing: 2px; line-height: 1.3; }
@@ -802,18 +843,11 @@ a { color: inherit; text-decoration: none; }
 .cv-lvrow b { color: var(--dim); margin-right: 2px; }
 .cv-scn {
   font-size: 11px; line-height: 1.6; padding: 5px 9px; border-radius: 5px;
-  border-left: 3px solid var(--line); margin-bottom: 5px; background: rgba(255,255,255,0.03);
+  border-left: 3px solid var(--line); margin-bottom: 5px; background: rgba(var(--fg-rgb), 0.04);
 }
 .cv-scn.bull { border-left-color: var(--green); } .cv-scn.bull b { color: var(--green); }
 .cv-scn.bear { border-left-color: var(--red); } .cv-scn.bear b { color: var(--red); }
 .cv-scn.base { border-left-color: var(--cyan); } .cv-scn.base b { color: var(--cyan); }
-
-/* chart overlay toggle (지지/저항 등) */
-.ovl-toggle {
-  font-size: 10px; color: var(--dim); letter-spacing: 1px;
-  display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none;
-}
-.ovl-toggle input { accent-color: var(--cyan); margin: 0; cursor: pointer; }
 
 /* 📈 analysis panel: legend + section subtitles for readability */
 .ca-legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 9px; color: var(--dim); }
@@ -855,27 +889,6 @@ a { color: inherit; text-decoration: none; }
   background: rgba(var(--grid-rgb), 0.3);
   border: 1px solid var(--grid);
 }
-
-.ex-actions {
-  border-right: 1px solid var(--line);
-  padding: 14px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  overflow-y: auto;
-}
-.ex-actions::-webkit-scrollbar { width: 4px; }
-.ex-actions::-webkit-scrollbar-thumb { background: var(--line); }
-
-.ex-actions .sc-action {
-  flex-direction: column;
-  padding: 10px 4px;
-  min-height: 58px;
-  gap: 4px;
-}
-.ex-actions .sc-action .ico { font-size: 16px; line-height: 1; }
-.ex-actions .sc-action .name { font-size: 10px; }
-.ex-actions .sc-action .lbl { display: none; }
 
 /* expand / delete / edit buttons on each card (left side) */
 .sc-card-tools {
@@ -1210,19 +1223,6 @@ a { color: inherit; text-decoration: none; }
 .assets-row .v.down { color: var(--red); }
 .assets-row .v.total { color: var(--cyan); font-weight: 700; }
 .assets-row .ccy-block.usd .v.total { color: var(--purple); }
-.assets-row .edit-btn {
-  background: transparent;
-  border: 1px solid var(--line);
-  color: var(--dim);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  padding: 4px 10px;
-  cursor: pointer;
-  letter-spacing: 1px;
-  margin-left: auto;
-}
-.assets-row .edit-btn:hover { color: var(--yellow); border-color: var(--yellow); }
-
 /* ───── Assets edit modal — re-uses add-dialog frame ───── */
 .account-dialog {
   max-width: 460px;
@@ -1268,20 +1268,6 @@ a { color: inherit; text-decoration: none; }
   .ex-nav button { flex: 1 1 0; padding: 6px 4px; }
   .ex-nav button .ico { font-size: 14px; }
   .ex-pane { padding: 8px 10px !important; }
-  .ex-actions {
-    border-right: none;
-    border-bottom: 1px solid var(--line);
-    flex-direction: row;
-    flex-wrap: wrap;
-    overflow-x: visible;
-    overflow-y: auto;
-    max-height: 24vh;
-  }
-  .ex-actions .sc-action {
-    flex: 0 0 calc(25% - 5px);
-    min-width: 60px;
-    min-height: 48px;
-  }
   .ex-chart { min-height: 220px; }
 }
 
@@ -1472,7 +1458,6 @@ a { color: inherit; text-decoration: none; }
 }
 .sc-action:hover { background: rgba(var(--purple-rgb), 0.08); border-color: var(--purple); }
 .sc-action .ico { font-size: 13px; line-height: 1; }
-.sc-action .lbl { display: none; }
 .sc-action .name { color: var(--purple); font-weight: 700; font-size: 10px; letter-spacing: 1px; }
 /* 통합 분석 버튼 (버튼 4개 → 1개): 차트 옆 컬럼을 채우는 세로형 */
 .sc-action-analysis { flex-direction: column; gap: 8px; }
@@ -1513,6 +1498,87 @@ a { color: inherit; text-decoration: none; }
   justify-content: space-between;
 }
 .footer-bar .green { color: var(--green); }
+
+/* ─────────────────────────────────────────────────────────────
+   CLAUDE CHAT — right slide-in panel (portfolio-wide Q&A)
+   ───────────────────────────────────────────────────────────── */
+.chat-panel {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  width: 380px;
+  max-width: 92vw;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-left: var(--border-w) solid var(--line-strong);
+  box-shadow: var(--shadow-lg);
+  transform: translateX(100%);
+  transition: transform .22s ease;
+}
+body.chat-open .chat-panel { transform: translateX(0); }
+body.chat-open { padding-right: 388px; }
+@media (max-width: 900px) {
+  body.chat-open { padding-right: 4px; }   /* panel overlays instead of pushing */
+}
+.chat-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px; letter-spacing: 1px; color: var(--fg);
+}
+.chat-head .sub { color: var(--dim); font-size: 10px; letter-spacing: 0; }
+.chat-head button {
+  background: transparent; border: none; color: var(--dim);
+  font-size: 15px; cursor: pointer; font-family: inherit;
+}
+.chat-log {
+  flex: 1; overflow-y: auto;
+  padding: 12px; display: flex; flex-direction: column; gap: 10px;
+}
+.chat-msg {
+  font-size: 11.5px; line-height: 1.65;
+  padding: 8px 10px; border-radius: var(--radius-md);
+  white-space: pre-wrap; word-break: break-word;
+}
+.chat-msg.user {
+  align-self: flex-end; max-width: 88%;
+  background: rgba(var(--cyan-rgb), 0.12);
+  border: 1px solid rgba(var(--cyan-rgb), 0.35);
+  color: var(--fg);
+}
+.chat-msg.bot {
+  background: var(--elevated);
+  border: 1px solid var(--line);
+  color: var(--fg);
+}
+.chat-msg.err { border-color: var(--red); color: var(--red); }
+.chat-msg.think { color: var(--dim); }
+.chat-empty { color: var(--dim); font-size: 11px; line-height: 1.8; }
+.chat-empty .ex {
+  display: block; margin-top: 6px; cursor: pointer;
+  border: 1px dashed var(--line-strong); border-radius: var(--radius-sm);
+  padding: 5px 8px; color: var(--fg);
+}
+.chat-empty .ex:hover { border-color: var(--cyan); color: var(--cyan); }
+.chat-input {
+  border-top: 1px solid var(--line);
+  padding: 8px; display: flex; gap: 6px; align-items: flex-end;
+}
+.chat-input textarea {
+  flex: 1; resize: none; height: 54px;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  font-family: 'JetBrains Mono', monospace; font-size: 11.5px;
+  padding: 6px 8px; outline: none;
+}
+.chat-input textarea:focus { border-color: var(--cyan); box-shadow: var(--ring); }
+.chat-input button {
+  background: var(--cyan); color: var(--panel); border: none;
+  border-radius: var(--radius-sm); padding: 8px 12px; cursor: pointer;
+  font-family: inherit; font-size: 11px; font-weight: 700; letter-spacing: 1px;
+}
+.chat-input button:disabled { background: var(--line-strong); cursor: default; }
 </style>
 </head>
 <body>
@@ -1535,6 +1601,13 @@ a { color: inherit; text-decoration: none; }
         ⚙
       </button>
     </div>
+    <button id="btn-chat" class="pill" title="포트폴리오 대화 (Claude)"
+            style="cursor:pointer; background:transparent; color:var(--purple);
+                   border:1px solid var(--purple); padding:3px 10px;
+                   font-family:inherit; font-size:11px; letter-spacing:1px;
+                   margin-left:auto; margin-right:12px;">
+      💬 Claude
+    </button>
     <div class="clock" id="clock">--:--:--</div>
   </div>
 
@@ -1551,7 +1624,8 @@ a { color: inherit; text-decoration: none; }
         <div class="search-dropdown" id="search-dropdown" hidden></div>
       </div>
       <button class="tb-btn" id="btn-add">＋ 포트폴리오에 추가</button>
-      <button class="tb-btn ghost" id="btn-reorder" title="순서 변경 모드">⇅ 정렬 모드</button>
+      <!-- 순서 변경은 ⚙ 설정에서 시작한다. 이 버튼은 변경 모드 중에만 [✓ 완료]로 노출. -->
+      <button class="tb-btn" id="btn-reorder" hidden>✓ 완료</button>
       <select class="tb-select" id="sort-select" title="정렬 기준">
         <option value="custom">정렬: 사용자 정의</option>
         <option value="value">정렬: 평가금액 ▾</option>
@@ -1560,7 +1634,6 @@ a { color: inherit; text-decoration: none; }
         <option value="name">정렬: 이름 ▾</option>
       </select>
       <button class="tb-btn ghost" id="btn-refresh">↻ 새로고침</button>
-      <button class="tb-btn ghost" id="btn-settings">⚙ 설정</button>
     </div>
     <!-- per-currency assets row (populated by JS) -->
     <div class="assets-row" id="assets-row"></div>
@@ -1570,17 +1643,29 @@ a { color: inherit; text-decoration: none; }
 <!-- QUICK FILTER BAR -->
 <div class="filter-bar" id="filter-bar">
   <input class="fb-q" id="fb-search" type="text" placeholder="빠른 검색 (이름·코드)…" autocomplete="off">
-  <button class="fb-chip" data-filter="market" data-value="">전체</button>
-  <button class="fb-chip" data-filter="market" data-value="KOSPI">KOSPI</button>
-  <button class="fb-chip" data-filter="market" data-value="KOSDAQ">KOSDAQ</button>
-  <button class="fb-chip" data-filter="market" data-value="NASDAQ">NASDAQ</button>
-  <button class="fb-chip" data-filter="market" data-value="NYSE">NYSE</button>
-  <button class="fb-chip" data-filter="kind" data-value="etf">ETF</button>
-  <button class="fb-chip" data-filter="pnl" data-value="positive">+ 수익</button>
-  <button class="fb-chip" data-filter="pnl" data-value="negative">− 손실</button>
+  <!-- ETF: independent (AND) filter — checkbox UI, sits left of the market group -->
+  <button class="fb-toggle" data-filter="kind" data-value="etf">
+    <span class="box"></span>ETF만
+  </button>
+  <span class="fb-sep"></span>
+  <span class="fb-group">
+    <button class="fb-chip" data-filter="market" data-value="">전체</button>
+    <button class="fb-chip" data-filter="market" data-value="KOSPI">KOSPI</button>
+    <button class="fb-chip" data-filter="market" data-value="KOSDAQ">KOSDAQ</button>
+    <button class="fb-chip" data-filter="market" data-value="NASDAQ">NASDAQ</button>
+    <button class="fb-chip" data-filter="market" data-value="NYSE">NYSE</button>
+  </span>
+  <span class="fb-sep"></span>
+  <span class="fb-group">
+    <button class="fb-chip" data-filter="pnl" data-value="positive">+ 수익</button>
+    <button class="fb-chip" data-filter="pnl" data-value="negative">− 손실</button>
+  </span>
+  <span class="fb-sep"></span>
   <!-- 보유 vs 관심 (미보유) -->
-  <button class="fb-chip" data-filter="holding" data-value="held">📊 보유</button>
-  <button class="fb-chip" data-filter="holding" data-value="watch">★ 관심</button>
+  <span class="fb-group">
+    <button class="fb-chip" data-filter="holding" data-value="held">📊 보유</button>
+    <button class="fb-chip" data-filter="holding" data-value="watch">★ 관심</button>
+  </span>
   <div class="fb-mode-seg" id="fb-mode-seg" title="카드 표시 방식">
     <button data-mode="card" class="active">카드</button>
     <button data-mode="list">리스트</button>
@@ -1594,9 +1679,22 @@ a { color: inherit; text-decoration: none; }
 <div class="reorder-banner" id="reorder-banner">⇅ 순서 변경 모드 — 좌측 ≡ 핸들을 드래그해 위·아래로 옮긴 뒤 [✓ 완료]를 누르세요</div>
 
 <div class="footer-bar">
-  <div><span class="green">●</span> stock module: <span style="color:var(--yellow);">design preview</span> · 백엔드 미연동</div>
+  <div><span class="green">●</span> portfolio-dashboard</div>
   <div>레이아웃: 노트북 2열 · 모바일 1열</div>
   <div>last render <span id="footer-ts">—</span></div>
+</div>
+
+<!-- CLAUDE CHAT PANEL — portfolio-wide Q&A (context assembled server-side) -->
+<div class="chat-panel" id="chat-panel">
+  <div class="chat-head">
+    <span>💬 포트폴리오 대화 <span class="sub">· 계좌 + 뉴스 컨텍스트</span></span>
+    <button id="chat-close" aria-label="닫기">✕</button>
+  </div>
+  <div class="chat-log" id="chat-log"></div>
+  <div class="chat-input">
+    <textarea id="chat-text" placeholder="예: 지금 손실 큰 종목들 공통점이 뭐야?  (Enter 전송 · Shift+Enter 줄바꿈)"></textarea>
+    <button id="chat-send">전송</button>
+  </div>
 </div>
 
 <!-- ─────────────────────────────────────────────────────────────
@@ -2843,15 +2941,11 @@ function renderAssetsRow() {
   });
   row.appendChild(curveBtn);
 
-  const editBtn = el('button', { className: 'edit-btn' }, ['✎ 예수금']);
-  editBtn.addEventListener('click', () => {
-    if (window.openAccountModal) window.openAccountModal();
-  });
-  row.appendChild(editBtn);
+  // 예수금 수정은 헤더 ⚙ 설정 모달로 이동 (툴바 밀도 축소)
 }
 
 async function renderAll() {
-  if (await loadPortfolio() === false) return;   // 401 → PIN gate shown
+  if (await loadPortfolio() === false) return;   // 403 → PIN gate shown
   renderAssetsRow();
   const grid = document.getElementById('stock-grid');
   clear(grid);
@@ -3004,14 +3098,6 @@ document.getElementById('btn-refresh').addEventListener('click', async () => {
   await renderAll();
 });
 
-document.getElementById('btn-settings').addEventListener('click', () => {
-  alert('설정 — 추후 구현');
-});
-
-document.getElementById('sort-select').addEventListener('change', e => {
-  document.getElementById('footer-ts').textContent = 'sort: ' + e.target.value + ' (정렬 로직 추후)';
-});
-
 renderAll();
 // NOTE: quotes are fetched on-demand only (page load, ↻ refresh button,
 // holding add/edit, analysis request). No background polling by design.
@@ -3086,8 +3172,7 @@ renderAll();
     window._inReorderMode = true;
     grid.classList.add('reorder-mode');
     reorderBanner.classList.add('on');
-    reorderBtn.textContent = '✓ 완료';
-    reorderBtn.classList.remove('ghost');
+    reorderBtn.hidden = false;
     Array.from(grid.children).forEach(c => c.setAttribute('draggable', 'true'));
     sortSel.disabled = true;
     // force 'custom' sort so DOM order represents real order
@@ -3102,8 +3187,7 @@ renderAll();
     window._inReorderMode = false;
     grid.classList.remove('reorder-mode');
     reorderBanner.classList.remove('on');
-    reorderBtn.textContent = '⇅ 정렬 모드';
-    reorderBtn.classList.add('ghost');
+    reorderBtn.hidden = true;
     Array.from(grid.children).forEach(c => c.removeAttribute('draggable'));
     sortSel.disabled = false;
 
@@ -3133,6 +3217,8 @@ renderAll();
     if (window._inReorderMode) exitReorderMode();
     else enterReorderMode();
   });
+  // ⚙ 설정 모달에서 순서 변경을 시작한다.
+  window.startReorder = enterReorderMode;
 
   // ── SORT ──
   function applySort() {
@@ -3206,14 +3292,14 @@ renderAll();
   }
   window._applyFilters = applyFilters;
 
-  // chip clicks
-  document.querySelectorAll('.filter-bar .fb-chip').forEach(chip => {
+  // chip clicks (includes the ETF checkbox toggle — same data-filter contract)
+  document.querySelectorAll('.filter-bar [data-filter]').forEach(chip => {
     chip.addEventListener('click', () => {
       const f = chip.dataset.filter;
       const v = chip.dataset.value;
       if (filters[f] === v && v !== '') filters[f] = '';
       else filters[f] = v;
-      document.querySelectorAll('.filter-bar .fb-chip[data-filter="' + f + '"]')
+      document.querySelectorAll('.filter-bar [data-filter="' + f + '"]')
         .forEach(c => c.classList.toggle('on', c.dataset.value === filters[f] && filters[f] !== ''));
       // "전체" should always look "on" when no filter is set
       if (f === 'market' && filters.market === '') {
@@ -4263,14 +4349,6 @@ renderAll();
     value: '밸류', profitability: '수익성', growth: '성장성',
     stability: '안정성', shareholder_return: '주주환원',
   };
-  // fallback key metrics from the assembled inputs (used if the agent did not
-  // return metric_explanations — proves the pipeline even on a thin verdict).
-  const FIN_METRICS = [
-    ['per', 'PER', 2], ['pbr', 'PBR', 2], ['roe', 'ROE', 3],
-    ['operating_margin', '영업이익률', 3], ['net_margin', '순이익률', 3],
-    ['debt_ratio', '부채비율', 1], ['current_ratio', '유동비율', 1],
-    ['revenue_yoy', '매출YoY', 3], ['div_yield', '배당수익률', 2],
-  ];
   function _finNum(v, dp) {
     return (v == null || Number.isNaN(v)) ? '—' : Number(v).toFixed(dp);
   }
@@ -4624,13 +4702,6 @@ renderAll();
   const ALIGN_KO = {
     aligned_up: '정렬 상승', aligned_down: '정렬 하락', conflict: 'TF 충돌', mixed: '혼조',
   };
-  const STANCE_KO = {
-    actionable_long: '매수 유효', watch: '관망', actionable_short: '매도 유효', stay_out: '진입 보류',
-  };
-  const STANCE_CLS = {
-    actionable_long: 'bull', watch: '', actionable_short: 'bear', stay_out: 'warn',
-  };
-
   function renderChartVerdict(pane, body, date) {
     const lbl = body.label || 'neutral';
     const lv = body.levels || {};
@@ -5261,7 +5332,7 @@ window.deleteHolding = async function (stock) {
         setStatus('추가 실패: ' + (d.detail || r.statusText), 'err');
         return;
       }
-      setStatus('추가 완료 · ' + (d.backfill && d.backfill.daily_bars) + ' 일봉 backfill', 'ok');
+      setStatus('추가 완료 · ' + (d.backfill_bars ?? 0) + ' 일봉 backfill', 'ok');
       await renderAll();
       setTimeout(() => { modal.hidden = true; reset(); }, 600);
     } catch (e) {
@@ -5321,7 +5392,6 @@ window.deleteHolding = async function (stock) {
   const stockCode = document.getElementById('pm-stock-code');
   const stockCur = document.getElementById('pm-stock-cur');
   const stockHold = document.getElementById('pm-stock-holding');
-  const prevTitle = document.getElementById('pm-preview-title');
   const prevAvg = document.getElementById('pm-prev-avg');
   const prevQty = document.getElementById('pm-prev-qty');
   const prevPnlRow = document.getElementById('pm-prev-pnl-row');
@@ -5341,7 +5411,7 @@ window.deleteHolding = async function (stock) {
   function confirmFullSellout(stockName) {
     return new Promise(resolve => {
       const overlay = el('div', {
-        style: 'position:fixed; inset:0; background:rgba(var(--bg-rgb), 0.85);' +
+        style: 'position:fixed; inset:0; background:rgba(var(--fg-rgb), 0.35);' +
                ' z-index:10000; display:flex; align-items:center; justify-content:center;'
       });
       const box = el('div', {
@@ -5779,7 +5849,7 @@ window.deleteHolding = async function (stock) {
     if (modal) return modal;
     const overlay = el('div', {
       id: 'new-account-modal',
-      style: 'position:fixed; inset:0; background:rgba(var(--bg-rgb), 0.85); ' +
+      style: 'position:fixed; inset:0; background:rgba(var(--fg-rgb), 0.35); ' +
              'display:flex; align-items:center; justify-content:center; z-index:9999;'
     });
     const box = el('div', {
@@ -5931,12 +6001,14 @@ window.deleteHolding = async function (stock) {
     return overlay;
   }
   btnNew.addEventListener('click', buildModal);
+  // landing's "＋ 계좌 추가" links here with ?new=1 — open the modal on arrival
+  if (new URLSearchParams(location.search).get('new') === '1') buildModal();
 
   // ── 현재 계좌 설정 (PIN 변경 / 삭제) ──
   const btnSettings = document.getElementById('btn-account-settings');
   if (btnSettings) btnSettings.addEventListener('click', () => {
     const overlay = el('div', {
-      style: 'position:fixed; inset:0; background:rgba(var(--bg-rgb), 0.85);' +
+      style: 'position:fixed; inset:0; background:rgba(var(--fg-rgb), 0.35);' +
              ' z-index:9999; display:flex; align-items:center; justify-content:center;'
     });
     const box = el('div', {
@@ -5958,9 +6030,28 @@ window.deleteHolding = async function (stock) {
       }, ['✕']),
     ]));
 
+    // 포트폴리오 관리 — 툴바에서 옮겨온 항목들
+    const rowStyle =
+      'width:100%; padding:9px; margin-bottom:6px; text-align:left;' +
+      ' background:transparent; color:var(--fg); border:1px solid var(--line-strong);' +
+      ' border-radius:var(--radius-sm); cursor:pointer; font-family:inherit;' +
+      ' font-size:12px; letter-spacing:1px;';
+    box.appendChild(el('div', {
+      style:'font-size:10px; color:var(--dim); letter-spacing:1px; margin-bottom:6px;'
+    }, ['포트폴리오']));
+    box.appendChild(el('button', {
+      style: rowStyle,
+      onClick: () => { close(); if (window.startReorder) window.startReorder(); },
+    }, ['⇅ 순서 변경']));
+    box.appendChild(el('button', {
+      style: rowStyle,
+      onClick: () => { close(); if (window.openAccountModal) window.openAccountModal(); },
+    }, ['✎ 예수금 수정']));
+
     // PIN 변경
     box.appendChild(el('div', {
-      style:'font-size:10px; color:var(--dim); letter-spacing:1px; margin-bottom:4px;'
+      style:'font-size:10px; color:var(--dim); letter-spacing:1px;' +
+            ' margin:14px 0 4px; padding-top:12px; border-top:1px solid var(--line);'
     }, ['비밀번호 변경 (6자리)']));
     const pinInput = el('input', {
       type:'password', inputmode:'numeric', maxlength:'6', autocomplete:'new-password',
@@ -6026,6 +6117,103 @@ window.deleteHolding = async function (stock) {
     overlay.appendChild(box);
     document.body.appendChild(overlay);
   });
+})();
+
+// ─────────────────────────────────────────────────────────────
+// CLAUDE CHAT PANEL — account + news context is built server-side,
+// so the client only keeps the turns (in memory, lost on reload).
+// ─────────────────────────────────────────────────────────────
+(function chatPanel() {
+  const panel = document.getElementById('chat-panel');
+  const logEl = document.getElementById('chat-log');
+  const textEl = document.getElementById('chat-text');
+  const sendBtn = document.getElementById('chat-send');
+  const messages = [];   // [{role, content}]
+  let busy = false;
+
+  const EXAMPLES = [
+    '지금 손실이 큰 종목들의 공통점이 뭐야?',
+    '오늘 뉴스 중 내 보유 종목에 영향 있는 게 있어?',
+    '포트폴리오가 어느 테마에 쏠려 있는지 알려줘',
+  ];
+
+  function renderEmpty() {
+    clear(logEl);
+    const box = el('div', { className: 'chat-empty' }, [
+      el('span', {}, ['이 계좌의 보유 종목·평가손익·예수금과 최근 뉴스 헤드라인을 ' +
+                      '함께 보고 답합니다. 대화는 저장되지 않습니다.']),
+    ]);
+    EXAMPLES.forEach(q => {
+      const b = el('span', { className: 'ex' }, [q]);
+      b.addEventListener('click', () => { textEl.value = q; send(); });
+      box.appendChild(b);
+    });
+    logEl.appendChild(box);
+  }
+
+  function push(role, content, cls) {
+    if (logEl.querySelector('.chat-empty')) clear(logEl);
+    const div = el('div', { className: 'chat-msg ' + (cls || role) }, [content]);
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+    return div;
+  }
+
+  async function send() {
+    const q = textEl.value.trim();
+    if (!q || busy) return;
+    textEl.value = '';
+    push('user', q);
+    messages.push({ role: 'user', content: q });
+
+    busy = true;
+    sendBtn.disabled = true;
+    const pending = push('bot', '분석 중… (10~40초)', 'bot think');
+    try {
+      const r = await fetch('/api/accounts/' + _ACC + '/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages }),
+      });
+      const d = await r.json();
+      if (!r.ok || !d.ok) {
+        pending.className = 'chat-msg err';
+        pending.textContent = '실패: ' + (d.detail || r.status);
+      } else {
+        pending.className = 'chat-msg bot';
+        pending.textContent = d.reply;
+        messages.push({ role: 'assistant', content: d.reply });
+      }
+    } catch (e) {
+      pending.className = 'chat-msg err';
+      pending.textContent = '네트워크 오류: ' + e.message;
+    } finally {
+      busy = false;
+      sendBtn.disabled = false;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  }
+
+  sendBtn.addEventListener('click', send);
+  textEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+
+  function toggle(open) {
+    const on = open != null ? open : !document.body.classList.contains('chat-open');
+    document.body.classList.toggle('chat-open', on);
+    if (on) {
+      if (!messages.length) renderEmpty();
+      setTimeout(() => textEl.focus(), 250);
+    }
+  }
+  document.getElementById('btn-chat').addEventListener('click', () => toggle());
+  document.getElementById('chat-close').addEventListener('click', () => toggle(false));
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.body.classList.contains('chat-open')
+        && document.activeElement !== textEl) toggle(false);
+  });
+  renderEmpty();
 })();
 </script>
 

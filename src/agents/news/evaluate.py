@@ -30,17 +30,17 @@ Pipeline:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone, timedelta
+from contextlib import nullcontext
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from ...core.paths import analysis_path
+from ...core.kst import KST as _KST
 from ...portfolio.store.db import connect
 from ..llm_backend import ClaudeCliBackend, SLOW_MODEL, _parse_json
+from ..verdict import clamp_confidence, clamp_score, label_from_score, persist
 from .catalog import Catalog, load_catalog
 from .state import load_state
-
-_KST = timezone(timedelta(hours=9))
 
 _RECENT_PRIMARY = 8   # recent developments injected for the primary theme
 _RECENT_RELATED = 3   # ... for each related/macro theme (kept brief)
@@ -50,25 +50,6 @@ _PRICED_IN = ("unpriced", "partially_priced", "mostly_priced")
 _HORIZONS = ("immediate", "near", "mid", "long")
 
 _RULES = (Path(__file__).parent / "news_rules.md").read_text(encoding="utf-8")
-
-
-def clamp_score(score: float) -> float:
-    return max(-1.0, min(1.0, float(score)))
-
-
-def label_from_score(score: float) -> str:
-    """5-level qualitative label (shared with chart / fundamental; the Judge
-    fuses all three). Thresholds < -0.5 / -0.1 / +0.1 / +0.5."""
-    s = clamp_score(score)
-    if s < -0.5:
-        return "strong_sell"
-    if s < -0.1:
-        return "sell"
-    if s <= 0.1:
-        return "neutral"
-    if s <= 0.5:
-        return "buy"
-    return "strong_buy"
 
 
 def get_symbol_themes(symbol_id: str, conn) -> list[dict]:
@@ -130,15 +111,8 @@ def assemble_inputs(symbol_id: str, *, catalog: Optional[Catalog] = None,
     macro          → brief state, always injected as the backbone (§F3).
     """
     catalog = catalog or load_catalog()
-    _own = conn is None
-    cm = connect() if _own else None
-    if _own:
-        conn = cm.__enter__()
-    try:
-        themes = get_symbol_themes(symbol_id, conn)
-    finally:
-        if _own:
-            cm.__exit__(None, None, None)
+    with (connect() if conn is None else nullcontext(conn)) as c:
+        themes = get_symbol_themes(symbol_id, c)
 
     # edge_relation map: the primary theme's themes.json related edges
     # ({related_theme_id: relation}) — used to annotate related themes (§E1).
@@ -291,11 +265,7 @@ def _judge(symbol_id: str, name: str, inputs: dict, *,
     data = _parse_json(raw)
 
     score = clamp_score(float(data.get("score", 0)))
-    conf = data.get("confidence", 0.5)
-    try:
-        conf = max(0.0, min(1.0, float(conf)))
-    except (TypeError, ValueError):
-        conf = 0.5
+    conf = clamp_confidence(data.get("confidence", 0.5))
     return {
         "status": "ok",
         "score": round(score, 4),
@@ -336,8 +306,4 @@ def evaluate_symbol(symbol_id: str, *, name: Optional[str] = None,
         "themes_used": inputs.get("themes_used", []),
         "generated_at": datetime.now(_KST).isoformat(),
     }
-    path = analysis_path("news", symbol_id, date.replace("-", ""))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(result, ensure_ascii=False, indent=1),
-                    encoding="utf-8")
-    return result
+    return persist("news", symbol_id, date, result)

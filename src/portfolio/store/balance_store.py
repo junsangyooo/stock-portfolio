@@ -16,24 +16,6 @@ def get_all(account_id: str) -> Dict[str, float]:
         return {r["currency"]: float(r["amount"]) for r in rows}
 
 
-def set_amount(account_id: str, currency: str, amount: float) -> None:
-    currency = (currency or "").upper()
-    if not currency:
-        return
-    now = int(time.time())
-    with connect() as c:
-        c.execute(
-            """
-            INSERT INTO balances (account_id, currency, amount, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(account_id, currency) DO UPDATE SET
-              amount=excluded.amount, updated_at=excluded.updated_at
-            """,
-            (account_id, currency, float(amount), now),
-        )
-        c.commit()
-
-
 def adjust(account_id: str, currency: str, delta: float) -> float:
     """Apply a signed delta to a currency balance and return the new amount.
 

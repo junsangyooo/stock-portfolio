@@ -87,12 +87,3 @@ def list_all() -> List[dict]:
         return [dict(r) for r in rows]
 
 
-def reorder(account_ids: list[str]) -> int:
-    pairs = [(i + 1, aid) for i, aid in enumerate(account_ids)]
-    if not pairs:
-        return 0
-    with connect() as c:
-        c.executemany(
-            "UPDATE accounts SET sort_order = ? WHERE account_id = ?", pairs)
-        c.commit()
-        return len(pairs)

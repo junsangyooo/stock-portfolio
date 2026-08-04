@@ -9,18 +9,21 @@ from .db import connect
 
 def upsert(account_id: str, symbol_id: str, *,
            avg_cost: Optional[float] = None, qty: Optional[float] = None,
-           note: Optional[str] = None) -> None:
+           note: Optional[str] = None, name: Optional[str] = None) -> None:
+    """`name` overrides the universe display name; omitting it keeps whatever
+    override is already stored (the edit form only sends it when changed)."""
     now = int(time.time())
     with connect() as c:
         c.execute(
             """
             INSERT INTO holdings
-              (account_id, symbol_id, avg_cost, qty, note, added_at, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+              (account_id, symbol_id, avg_cost, qty, note, name, added_at, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(account_id, symbol_id) DO UPDATE SET
-              avg_cost=excluded.avg_cost, qty=excluded.qty, note=excluded.note
+              avg_cost=excluded.avg_cost, qty=excluded.qty, note=excluded.note,
+              name=COALESCE(excluded.name, holdings.name)
             """,
-            (account_id, symbol_id, avg_cost, qty, note, now, now),
+            (account_id, symbol_id, avg_cost, qty, note, name, now, now),
         )
         c.commit()
 
@@ -38,7 +41,8 @@ def list_by_account(account_id: str) -> List[dict]:
     with connect() as c:
         rows = c.execute(
             """
-            SELECT account_id, symbol_id, avg_cost, qty, note, added_at, sort_order
+            SELECT account_id, symbol_id, avg_cost, qty, note, name,
+                   added_at, sort_order
             FROM holdings WHERE account_id = ?
             ORDER BY sort_order ASC, added_at ASC
             """,

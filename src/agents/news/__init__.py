@@ -1,6 +1,6 @@
 """Qualitative analysis (news / trend / issue) agent — Phase 2.
 
-Pipeline layers (see docs/qualitative-analysis-design.md):
+Pipeline layers:
   L1 MAPPING   symbol -> themes        (mapping.py, portfolio.db.holding_themes)
   L2 CATALOG   theme master            (themes.json + catalog.py)
   L3 COLLECT   theme-level sources      (collect.py — N1)

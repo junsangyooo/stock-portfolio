@@ -33,7 +33,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(portfolio_api.uni_search, "get", fake_get)
 
     # skip real market backfill (network)
-    monkeypatch.setattr(portfolio_api.backfill, "daily", lambda sid: 0)
+    monkeypatch.setattr(portfolio_api.gap_filler, "fill_one", lambda sid: 0)
 
     app = FastAPI()
     app.include_router(portfolio_api.router)
@@ -61,7 +61,7 @@ def test_adjust_creates_row_and_sums(tmp_path, monkeypatch):
 # ── buy deducts cash ─────────────────────────────────────────────────
 
 def test_buy_deducts_cash(client):
-    balance_store.set_amount("acc1", "KRW", 1_000_000)
+    balance_store.set_many("acc1", {"KRW": 1_000_000})
     r = client.post("/api/accounts/acc1/holdings", json={
         "symbol_id": "KR:005930",
         "avg_cost": 70000, "qty": 10,
@@ -77,7 +77,7 @@ def test_buy_deducts_cash(client):
 # ── sell credits cash ────────────────────────────────────────────────
 
 def test_sell_credits_cash(client):
-    balance_store.set_amount("acc1", "KRW", 300_000)
+    balance_store.set_many("acc1", {"KRW": 300_000})
     holding_store.upsert("acc1", "KR:005930", avg_cost=70000, qty=10)
     r = client.post("/api/accounts/acc1/holdings", json={
         "symbol_id": "KR:005930",
@@ -92,7 +92,7 @@ def test_sell_credits_cash(client):
 # ── US symbol settles in USD ─────────────────────────────────────────
 
 def test_us_trade_uses_usd(client):
-    balance_store.set_amount("acc1", "USD", 5000)
+    balance_store.set_many("acc1", {"USD": 5000})
     r = client.post("/api/accounts/acc1/holdings", json={
         "symbol_id": "US:AAPL",
         "avg_cost": 200, "qty": 5,
@@ -108,7 +108,7 @@ def test_us_trade_uses_usd(client):
 # ── no trade context → cash untouched (plain add / edit) ─────────────
 
 def test_plain_add_does_not_touch_cash(client):
-    balance_store.set_amount("acc1", "KRW", 500_000)
+    balance_store.set_many("acc1", {"KRW": 500_000})
     r = client.post("/api/accounts/acc1/holdings", json={
         "symbol_id": "KR:005930", "avg_cost": 70000, "qty": 10,
     })
@@ -118,7 +118,7 @@ def test_plain_add_does_not_touch_cash(client):
 
 
 def test_edit_mode_does_not_touch_cash(client):
-    balance_store.set_amount("acc1", "KRW", 500_000)
+    balance_store.set_many("acc1", {"KRW": 500_000})
     holding_store.upsert("acc1", "KR:005930", avg_cost=70000, qty=10)
     # direct edit overrides avg/qty, no trade_side
     r = client.post("/api/accounts/acc1/holdings", json={
@@ -131,7 +131,7 @@ def test_edit_mode_does_not_touch_cash(client):
 # ── full sellout via DELETE with sell params credits cash ────────────
 
 def test_full_sellout_delete_credits_cash(client):
-    balance_store.set_amount("acc1", "KRW", 100_000)
+    balance_store.set_many("acc1", {"KRW": 100_000})
     holding_store.upsert("acc1", "KR:005930", avg_cost=70000, qty=5)
     r = client.delete(
         "/api/accounts/acc1/holdings/KR:005930"
@@ -146,7 +146,7 @@ def test_full_sellout_delete_credits_cash(client):
 
 
 def test_delete_without_sell_params_keeps_cash(client):
-    balance_store.set_amount("acc1", "KRW", 100_000)
+    balance_store.set_many("acc1", {"KRW": 100_000})
     holding_store.upsert("acc1", "KR:005930", avg_cost=70000, qty=5)
     r = client.delete("/api/accounts/acc1/holdings/KR:005930")
     d = r.json()

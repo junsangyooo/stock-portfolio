@@ -21,14 +21,15 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
+
+from ...core.kst import KST as _KST
 
 from ..source import naver_etf_source
 from ..store import etf_store
 from ...portfolio.store.holding_store import all_symbol_ids
 from ...universe import search as uni_search
 
-_KST = timezone(timedelta(hours=9))
 
 
 def _holding_etfs() -> list[str]:

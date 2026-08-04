@@ -29,37 +29,18 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
+from datetime import datetime
 
+from ..core.kst import KST as _KST
 from ..core.paths import analysis_path, ensure_dirs
-
-_KST = timezone(timedelta(hours=9))
 
 # Single-verdict latency measured up to 390s (commit 5cf47f6 widened the API
 # timeouts to 480 for the same reason) — batch uses the same ceiling.
 _TIMEOUT_S = 480.0
 
-
-def _load_webhook_env() -> None:
-    """cron runs with a minimal env — pull DISCORD_WEBHOOK_URL from the
-    secrets file when unset (same fallback pattern as dart_source)."""
-    if os.getenv("DISCORD_WEBHOOK_URL"):
-        return
-    for env in (Path.home() / ".claude" / "secrets" / ".env",
-                Path.home() / "dotclaude" / "secrets" / ".env"):
-        if not env.exists():
-            continue
-        for line in env.read_text().splitlines():
-            m = re.match(r"\s*DISCORD_WEBHOOK_URL\s*=\s*(\S+)", line)
-            if m:
-                os.environ["DISCORD_WEBHOOK_URL"] = m.group(1).strip()
-                return
 
 
 def _held_symbols() -> list[str]:
@@ -120,7 +101,6 @@ def _notify_failures(date: str, results: list[dict], n_total: int) -> None:
     no_ctx = [r["symbol"] for r in results if r.get("holding_ctx") is False]
     if not failed and not no_ctx:
         return
-    _load_webhook_env()
     from ..core.notify import discord
     lines = [f"verdict 배치 {date} — {n_total}종목 중 실패/폴백 {len(failed)}"]
     for r in failed[:15]:
@@ -129,7 +109,7 @@ def _notify_failures(date: str, results: list[dict], n_total: int) -> None:
         lines.append(f"… 외 {len(failed) - 15}종목")
     if no_ctx:
         lines.append(f"holding_context 누락: {', '.join(no_ctx[:10])}")
-    discord.send("⚠️ **verdict-batch**\n" + "\n".join(lines), key="verdict_batch")
+    discord.send("⚠️ **verdict-batch**\n" + "\n".join(lines))
 
 
 def main() -> int:

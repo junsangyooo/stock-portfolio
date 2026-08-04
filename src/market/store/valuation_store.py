@@ -4,13 +4,14 @@ Path: data/market/valuation/{MARKET}/{code}.parquet
 Index-free wide table, one row per date:
     ts, per, pbr, psr, eps, bps, dps, div_yield, market_cap
 
-Mirrors ohlcv_store: append + dedup on ts. KR (pykrx) fills historical series
-natively; US (yfinance.info) appends a single snapshot row per fetch date.
+Mirrors ohlcv_store: append + dedup on ts. KR rows are derived from DART
+financials + closes (kr_valuation); US (yfinance.info) appends a single
+snapshot row per fetch date.
 """
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable
 
 import pandas as pd
 
@@ -75,12 +76,3 @@ def latest(symbol_id: str) -> dict:
     return {c: (None if pd.isna(row[c]) else float(row[c])) for c in COLS}
 
 
-def to_payload(df: pd.DataFrame) -> List[dict]:
-    if df.empty:
-        return []
-    out: List[dict] = []
-    for r in df.itertuples(index=False):
-        d = r._asdict()
-        out.append({k: (None if pd.isna(v) else (int(v) if k == "ts" else float(v)))
-                    for k, v in d.items()})
-    return out

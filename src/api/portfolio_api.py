@@ -6,8 +6,11 @@ by POSTing the PIN to /api/accounts/{id}/auth. The cookie lives for
 security.SESSION_TTL. Accounts with no PIN set are open (used only
 transiently before a PIN is assigned).
 
-Public routes:  GET / (list, no balances) · POST / (create) · POST /{id}/auth
-Protected:      everything else for a specific account
+Two gates stack. The server-wide /api middleware (dashboard_web.server) needs
+SOME account session for anything but the account list and POST /{id}/auth;
+`require_account` then narrows a per-account route to THAT account's session.
+So creating an account requires already holding one — the very first account
+of a fresh deployment is seeded directly in SQLite, not through the UI.
 """
 from __future__ import annotations
 
@@ -20,11 +23,12 @@ from pydantic import BaseModel
 
 from ..core import security
 from ..core.notify import discord
-from ..market.pipeline import backfill, gap_filler
+from ..market.pipeline import gap_filler
 from ..portfolio import service
 from ..portfolio.store import (
     account_store, balance_store, holding_store, snapshot_store,
 )
+from ..core.paths import split_symbol
 from ..portfolio.store.db import connect
 from ..universe import search as uni_search
 
@@ -52,9 +56,8 @@ def require_account(account_id: str, request: Request) -> str:
         return account_id  # no PIN yet → open
     token = request.cookies.get(_COOKIE_PREFIX + account_id)
     if not security.verify_session_token(account_id, token):
-        # 403, not 401: the same origin sits behind nginx HTTP Basic Auth, and
-        # a 401 makes the browser drop its cached Basic credentials -> Basic
-        # login popup on every PIN gate.
+        # 403, never 401 — the PIN gate is the app's own, and a 401 turns it
+        # into an HTTP auth challenge the browser answers with a login popup.
         raise HTTPException(403, "PIN required")
     return account_id
 
@@ -129,12 +132,6 @@ def auth_account(account_id: str, body: PinBody, response: Response) -> dict:
     return {"ok": True, "no_pin": not stored}
 
 
-@router.post("/{account_id}/logout")
-def logout_account(account_id: str, response: Response) -> dict:
-    response.delete_cookie(_COOKIE_PREFIX + account_id, path="/")
-    return {"ok": True}
-
-
 @router.get("/{account_id}")
 def get_account(account_id: str, _: str = Depends(require_account)) -> dict:
     summary = service.aggregate(account_id)
@@ -174,15 +171,6 @@ def delete_account(account_id: str, _: str = Depends(require_account)) -> dict:
     return {"ok": n > 0, "deleted": n}
 
 
-class AccountsReorder(BaseModel):
-    order: List[str]
-
-
-@router.post("/reorder")
-def reorder_accounts(body: AccountsReorder) -> dict:
-    return {"ok": True, "reordered": account_store.reorder(body.order)}
-
-
 # ── holdings ─────────────────────────────────────────────────────────
 
 class HoldingUpsert(BaseModel):
@@ -190,6 +178,7 @@ class HoldingUpsert(BaseModel):
     avg_cost: Optional[float] = None
     qty: Optional[float] = None
     note: Optional[str] = None
+    name: Optional[str] = None               # display-name override (종목명 교체)
     # Optional trade context — when present, the matching currency cash
     # balance (예수금) is adjusted automatically: buy → −(price·qty),
     # sell → +(price·qty). Omitted on plain add / direct-edit, which must
@@ -206,7 +195,7 @@ def _currency_of(symbol_id: str) -> str:
     ccy = meta.get("currency")
     if ccy:
         return str(ccy).upper()
-    region = symbol_id.split(":", 1)[0].upper()
+    region, _ = split_symbol(symbol_id)
     return "USD" if region == "US" else "KRW"
 
 
@@ -221,16 +210,16 @@ def _ensure_theme_mapping(symbol_id: str) -> None:
     try:
         from ..agents.news.catalog import load_catalog
         from ..agents.news.mapping import (
-            resolve_symbol_themes, save_holding_themes,
+            has_holding_themes, resolve_symbol_themes, save_holding_themes,
         )
         with connect() as c:
-            if c.execute("SELECT 1 FROM holding_themes WHERE symbol_id = ? LIMIT 1",
-                         (symbol_id,)).fetchone():
+            if has_holding_themes(symbol_id, c):
                 return  # already mapped — don't burn an LLM call
         rec = uni_search.get(symbol_id) or {}
         name = rec.get("name_kr") or rec.get("name_en") or symbol_id
+        market, _ = split_symbol(symbol_id)
         rows = resolve_symbol_themes(
-            name, rec.get("market") or symbol_id.split(":", 1)[0],
+            name, rec.get("market") or market,
             bool(rec.get("is_etf")), load_catalog(),
         )
         if not rows:
@@ -252,10 +241,10 @@ def add_holding(account_id: str, body: HoldingUpsert,
         raise HTTPException(400, "symbol_id must be 'MARKET:CODE'")
     if uni_search.get(body.symbol_id) is None:
         raise HTTPException(404, f"symbol not in universe: {body.symbol_id}")
-    backfill_bars = backfill.daily(body.symbol_id)
+    backfill_bars = gap_filler.fill_one(body.symbol_id)
     holding_store.upsert(
         account_id, body.symbol_id,
-        avg_cost=body.avg_cost, qty=body.qty, note=body.note,
+        avg_cost=body.avg_cost, qty=body.qty, note=body.note, name=body.name,
     )
     # Map the symbol into themes off the request path (may make an LLM call).
     background.add_task(_ensure_theme_mapping, body.symbol_id)
@@ -292,12 +281,10 @@ def remove_holding(account_id: str, symbol_id: str,
         cash_balance = balance_store.adjust(
             account_id, cash_currency, sell_price * sell_qty)
     n = holding_store.remove(account_id, symbol_id)
-    # If no account holds this symbol anymore, drop its theme mapping so themes
-    # with no remaining holder stop collecting on the next daily_job.
     if n and symbol_id not in holding_store.all_symbol_ids():
+        from ..agents.news.mapping import drop_holding_themes
         with connect() as c:
-            c.execute("DELETE FROM holding_themes WHERE symbol_id = ?", (symbol_id,))
-            c.commit()
+            drop_holding_themes(symbol_id, c)
     return {"ok": n > 0, "deleted": n,
             "cash_currency": cash_currency, "cash_balance": cash_balance}
 

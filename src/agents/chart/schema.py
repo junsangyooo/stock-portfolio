@@ -3,7 +3,7 @@
 Design decision (2026-05-24): the quantitative pipeline only EXTRACTS facts. It
 does NOT judge (no buy/sell vote, no aggregate score, no label). Judgment —
 "RSI oversold + resistance break = buy point" — is done later by the claude -p
-judgment agent reading the harness guide (docs/chart-judgment-rules.md).
+judgment agent reading the harness guide (chart_rules.md).
 
 So an indicator reports a measured `value` and an OBJECTIVE `state` (e.g.
 "oversold", "golden_cross", "above_cloud", "squeeze_on") plus `evidence`. These
@@ -19,33 +19,6 @@ Timeframe = Literal["1d", "1w", "1mo"]
 
 # State sentinel for "indicator could not be computed (insufficient data)".
 STATE_NO_DATA = "no_data"
-
-
-def clamp_score(score: float) -> float:
-    """Clamp score to [-1.0, 1.0] range."""
-    return max(-1.0, min(1.0, score))
-
-
-def label_from_score(score: float) -> str:
-    """Map qualitative score [-1.0, 1.0] to 5-level label.
-
-    - [0.6, 1.0]: Strong Buy
-    - [0.2, 0.6): Buy
-    - [-0.2, 0.2): Hold
-    - [-0.6, -0.2): Sell
-    - [-1.0, -0.6): Strong Sell
-    """
-    clamped = clamp_score(score)
-    if clamped >= 0.6:
-        return "Strong Buy"
-    elif clamped >= 0.2:
-        return "Buy"
-    elif clamped > -0.2:
-        return "Hold"
-    elif clamped > -0.6:
-        return "Sell"
-    else:
-        return "Strong Sell"
 
 
 @dataclass

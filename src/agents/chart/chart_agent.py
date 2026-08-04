@@ -5,7 +5,7 @@ monthly, look-ahead-guarded) it gathers every indicator's objective state +
 value, the volume-spike flag, and the structure detections (S/R, fib, pivots,
 trendlines, candle/chart patterns, gaps). The output JSON is the input for the
 later claude -p judgment agent, which applies the harness rules
-(docs/chart-judgment-rules.md) to decide buy/sell/risk.
+(chart_rules.md) to decide buy/sell/risk.
 
 No aggregate score, no buy/sell label, no LLM here — 100% deterministic facts.
 """
@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 from ...core import paths
+from ...market.store import ohlcv_store
 from . import engine, structure
 from .indicators import ALL_INDICATORS
 from .indicators.volume import volume_spike
@@ -49,7 +50,7 @@ def collect_facts(symbol_id: str, now: Optional[datetime] = None,
     `daily_df` injects data without disk read (tests / batch). Persists to
     data/analysis/chart/{symbol}/{yyyymmdd}.json when `persist` and data exists.
     """
-    daily = daily_df if daily_df is not None else engine.load_ohlcv(symbol_id)
+    daily = daily_df if daily_df is not None else ohlcv_store.read(symbol_id)
 
     timeframes = {}
     for tf in engine.TIMEFRAMES:
@@ -77,8 +78,3 @@ def collect_facts(symbol_id: str, now: Optional[datetime] = None,
         out["_saved"] = str(p)
 
     return out
-
-
-def to_json(result: dict) -> str:
-    """Serialise a collect_facts result to a JSON string (numpy-safe)."""
-    return json.dumps(result, ensure_ascii=False, default=_json_default)

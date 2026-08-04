@@ -25,40 +25,19 @@ Pipeline:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from ...core.paths import analysis_path
+from ...core.kst import KST as _KST
 from ..llm_backend import ClaudeCliBackend, SLOW_MODEL, _parse_json
+from ..verdict import clamp_confidence, clamp_score, label_from_score, persist
 from . import chart_agent
 
-_KST = timezone(timedelta(hours=9))
-
-# 5-level label vocabulary, identical to the fundamental / news agents.
-_LABELS = ("strong_sell", "sell", "neutral", "buy", "strong_buy")
 _AXES = ("trend", "momentum", "volatility", "volume")
 _STANCES = ("actionable_long", "watch", "actionable_short", "stay_out")
 
 _RULES = (Path(__file__).parent / "chart_rules.md").read_text(encoding="utf-8")
-
-
-def clamp_score(score: float) -> float:
-    return max(-1.0, min(1.0, float(score)))
-
-
-def label_from_score(score: float) -> str:
-    """5-level label (shared with fundamental/news). Thresholds -0.5/-0.1/+0.1/+0.5."""
-    s = clamp_score(score)
-    if s < -0.5:
-        return "strong_sell"
-    if s < -0.1:
-        return "sell"
-    if s <= 0.1:
-        return "neutral"
-    if s <= 0.5:
-        return "buy"
-    return "strong_buy"
 
 
 # ── input assembly ──────────────────────────────────────────────────────────
@@ -280,11 +259,7 @@ def _judge(symbol_id: str, name: str, facts: dict, *,
     data = _parse_json(raw)
 
     score = clamp_score(float(data.get("score", 0)))
-    conf = data.get("confidence", 0.5)
-    try:
-        conf = max(0.0, min(1.0, float(conf)))
-    except (TypeError, ValueError):
-        conf = 0.5
+    conf = clamp_confidence(data.get("confidence", 0.5))
     return {
         "status": "ok",
         "score": round(score, 4),
@@ -324,8 +299,4 @@ def evaluate_symbol(symbol_id: str, *, name: Optional[str] = None,
         "facts": facts,
         "generated_at": datetime.now(_KST).isoformat(),
     }
-    path = analysis_path("chart", symbol_id, date.replace("-", ""))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(result, ensure_ascii=False, indent=1, default=str),
-                    encoding="utf-8")
-    return result
+    return persist("chart", symbol_id, date, result)

@@ -7,7 +7,6 @@ open-weight model served by llama.cpp on this host — free, and it keeps the
 subscription budget for the layers that actually decide something.
 
 Contents:
-  - ``_Backend``           ABC for swappable backends
   - ``ClaudeCliBackend``   subprocess wrapper around `claude -p`
   - ``LocalLlamaBackend``  HTTP client for the on-host llama.cpp server
   - ``_parse_json``        lenient JSON extractor (handles fenced blocks)
@@ -29,7 +28,6 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from abc import ABC, abstractmethod
 
 
 FAST_MODEL = "claude-haiku-4-5-20251001"
@@ -62,20 +60,7 @@ def _find_claude() -> str | None:
 SLOW_MODEL = "claude-sonnet-4-6"
 
 
-class _Backend(ABC):
-    """ABC for LLM backends. Concrete backends accept a (system, user) prompt
-    pair and return raw text. JSON parsing is the caller's responsibility
-    (use ``_parse_json``)."""
-
-    name = "base"
-
-    @abstractmethod
-    def call(self, system: str, user: str, timeout_s: float = 60,
-             model: str | None = None) -> str:
-        raise NotImplementedError
-
-
-class ClaudeCliBackend(_Backend):
+class ClaudeCliBackend:
     """Subprocess wrapper around ``claude -p``.
 
     IMPORTANT — env scrubbing: ``ANTHROPIC_API_KEY`` is stripped from the
@@ -123,7 +108,7 @@ class ClaudeCliBackend(_Backend):
         return r.stdout.strip()
 
 
-class LocalLlamaBackend(_Backend):
+class LocalLlamaBackend:
     """OpenAI-compatible client for the llama.cpp server running on this host.
 
     Deliberately generous timeout: the box is a 4-core Ampere with no GPU, so
@@ -188,32 +173,22 @@ def _parse_json(text: str) -> dict:
       - preamble before the opening brace (model scratchpad)
       - trailing content after the closing brace
 
-    Raises ``ValueError`` if no balanced ``{...}`` is found.
+    Raises ``ValueError`` if no parseable object is found.
     """
     s = text.strip()
     # strip markdown fences if present
     if s.startswith("```"):
-        lines = s.split("\n")
-        lines = lines[1:]  # drop opening ```
+        lines = s.split("\n")[1:]          # drop opening ```
         if lines and lines[-1].strip().startswith("```"):
             lines = lines[:-1]
         s = "\n".join(lines).strip()
-    # find first { ... } block
-    if not s.startswith("{"):
-        i = s.find("{")
-        if i >= 0:
-            s = s[i:]
-    # walk braces to find the matching close
-    depth = 0
-    end = -1
-    for i, c in enumerate(s):
-        if c == "{":
-            depth += 1
-        elif c == "}":
-            depth -= 1
-            if depth == 0:
-                end = i
-                break
-    if end < 0:
+    start = s.find("{")
+    if start < 0:
         raise ValueError("no JSON object found in:\n" + text[:500])
-    return json.loads(s[: end + 1])
+    try:
+        # raw_decode reads exactly one value and ignores whatever follows it,
+        # so trailing prose after the object costs nothing.
+        obj, _ = json.JSONDecoder().raw_decode(s[start:])
+    except json.JSONDecodeError as e:
+        raise ValueError(f"no JSON object found ({e}) in:\n{text[:500]}")
+    return obj

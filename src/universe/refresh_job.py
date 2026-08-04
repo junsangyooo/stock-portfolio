@@ -23,7 +23,9 @@ def main() -> int:
     summary = refresh(region=args.region)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
-    if not summary.get("regions"):
+    # Non-zero when nothing was written, or when a region fell back to its
+    # previous file — cron mail / the log then shows a real failure.
+    if not summary.get("regions") or summary.get("kept_previous"):
         return 1
     return 0
 

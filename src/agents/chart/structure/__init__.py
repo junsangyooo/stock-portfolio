@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandas as pd
 
 
-def detect_structure(df: pd.DataFrame, tf: str = "1d", pivot_kind: str = "classic") -> dict:
+def detect_structure(df: pd.DataFrame, tf: str = "1d") -> dict:
     """Run all structure detectors on a single-timeframe frame -> context dict.
 
     Structure does NOT vote in the 4-category aggregate; the ChartAgent (C4)
@@ -21,7 +21,7 @@ def detect_structure(df: pd.DataFrame, tf: str = "1d", pivot_kind: str = "classi
     return {
         "support_resistance": levels.support_resistance(df),
         "fibonacci": levels.fibonacci(df),
-        "pivots": levels.pivot_points(df, kind=pivot_kind),
+        "pivots": levels.pivot_points(df, kind="classic"),
         "trendlines": trendline.fit_trendlines(df),
         "candles": patterns.detect_candles(df),
         "gap": patterns.detect_gap(df),

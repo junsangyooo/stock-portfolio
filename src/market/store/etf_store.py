@@ -37,17 +37,3 @@ def write(symbol_id: str, snapshot: dict) -> dict:
     }
     p.write_text(json.dumps(rec, ensure_ascii=False, indent=1), encoding="utf-8")
     return rec
-
-
-def is_fresh(symbol_id: str, max_age_hours: int = 36) -> bool:
-    """True if a snapshot exists and is younger than max_age (default 36h —
-    one daily cycle + slack). Used by the daily job to skip same-day refetch."""
-    rec = read(symbol_id)
-    if not rec:
-        return False
-    try:
-        ts = datetime.fromisoformat(rec["updated_at"])
-    except (ValueError, KeyError, TypeError):
-        return False
-    age = (datetime.now(timezone.utc) - ts).total_seconds() / 3600.0
-    return age < max_age_hours

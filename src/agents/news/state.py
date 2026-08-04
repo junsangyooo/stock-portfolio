@@ -14,13 +14,14 @@ See docs/qualitative-analysis-design.md §4.2.
 from __future__ import annotations
 
 import json
-from datetime import date as _date, datetime, timezone, timedelta
+from datetime import date as _date, datetime
+
+from ...core.kst import KST as _KST
 from typing import Optional
 
 from ...core.paths import analysis_news_state_path
 from ..llm_backend import SLOW_MODEL, local_or_claude, _parse_json
 
-_KST = timezone(timedelta(hours=9))
 _HORIZON_DAYS = 7
 _RECENT_CAP = 15
 # Cost control: the slow-moving fields only need a rewrite when today actually
