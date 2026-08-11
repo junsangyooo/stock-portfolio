@@ -572,6 +572,14 @@ a { color: inherit; text-decoration: none; }
 }
 .modal-close:hover { color: var(--red); border-color: var(--red); }
 
+/* Lucide inline icon — 폰트 크기·색을 그대로 상속 (sprite는 <body> 직후) */
+.lci {
+  width: 1.05em;
+  height: 1.05em;
+  vertical-align: -0.18em;
+  flex: none;
+}
+
 .modal-body {
   flex: 1;
   min-height: 0;
@@ -1586,6 +1594,26 @@ body.chat-open { padding-right: 388px; }
 </style>
 </head>
 <body>
+<!-- Lucide icons (ISC, lucide.dev) — inline sprite, currentColor 상속 -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-brain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 18V5"/><path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4"/><path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5"/><path d="M17.997 5.125a4 4 0 0 1 2.526 5.77"/><path d="M18 18a4 4 0 0 0 2-7.464"/><path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517"/><path d="M6 18a4 4 0 0 1-2-7.464"/><path d="M6.003 5.125a4 4 0 0 0-2.526 5.77"/></symbol>
+  <symbol id="i-trending-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/></symbol>
+  <symbol id="i-chart-column" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></symbol>
+  <symbol id="i-newspaper" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18h-5"/><path d="M18 14h-8"/><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2"/><rect width="8" height="4" x="10" y="6" rx="1"/></symbol>
+  <symbol id="i-refresh-cw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
+  <symbol id="i-trash-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="i-message-square" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-file-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-thumbs-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></symbol>
+  <symbol id="i-triangle-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></symbol>
+</svg>
 
 <div class="topbar-wrap">
   <div class="header">
@@ -1602,7 +1630,7 @@ body.chat-open { padding-right: 388px; }
               style="cursor:pointer; background:transparent; color:var(--dim);
                      border:1px solid var(--line-strong); padding:2px 8px;
                      font-family:inherit; font-size:11px; letter-spacing:1px;">
-        ⚙
+        <svg class="lci"><use href="#i-settings"/></svg>
       </button>
     </div>
     <button id="btn-chat" class="pill" title="포트폴리오 대화 (Claude)"
@@ -1610,7 +1638,7 @@ body.chat-open { padding-right: 388px; }
                    border:1px solid var(--purple); padding:3px 10px;
                    font-family:inherit; font-size:11px; letter-spacing:1px;
                    margin-left:auto; margin-right:12px;">
-      💬 Claude
+      <svg class="lci"><use href="#i-message-square"/></svg> Claude
     </button>
     <div class="clock" id="clock">--:--:--</div>
   </div>
@@ -1667,7 +1695,7 @@ body.chat-open { padding-right: 388px; }
   <span class="fb-sep"></span>
   <!-- 보유 vs 관심 (미보유) -->
   <span class="fb-group">
-    <button class="fb-chip" data-filter="holding" data-value="held">📊 보유</button>
+    <button class="fb-chip" data-filter="holding" data-value="held"><svg class="lci"><use href="#i-chart-column"/></svg> 보유</button>
     <button class="fb-chip" data-filter="holding" data-value="watch">★ 관심</button>
   </span>
   <div class="fb-mode-seg" id="fb-mode-seg" title="카드 표시 방식">
@@ -1691,7 +1719,7 @@ body.chat-open { padding-right: 388px; }
 <!-- CLAUDE CHAT PANEL — portfolio-wide Q&A (context assembled server-side) -->
 <div class="chat-panel" id="chat-panel">
   <div class="chat-head">
-    <span>💬 포트폴리오 대화 <span class="sub">· 계좌 + 뉴스 컨텍스트</span></span>
+    <span><svg class="lci"><use href="#i-message-square"/></svg> 포트폴리오 대화 <span class="sub">· 계좌 + 뉴스 컨텍스트</span></span>
     <button id="chat-close" aria-label="닫기">✕</button>
   </div>
   <div class="chat-log" id="chat-log"></div>
@@ -1716,7 +1744,7 @@ body.chat-open { padding-right: 388px; }
         <span class="expand-delta" id="ex-delta">—</span>
       </div>
       <button class="expand-rerun" id="expand-rerun"
-              title="차트→종합 순차 재분석 · 약 10~14분 (야간 자동 분석과 동일 경로)">🔄 다시 분석</button>
+              title="차트→종합 순차 재분석 · 약 10~14분 (야간 자동 분석과 동일 경로)"><svg class="lci"><use href="#i-refresh-cw"/></svg> 다시 분석</button>
       <button class="sc-delete-btn" id="expand-delete" title="포트폴리오에서 제거"
               style="margin-right:4px;">✕ 제거</button>
       <button class="modal-close" id="expand-close" aria-label="닫기">✕</button>
@@ -1747,10 +1775,10 @@ body.chat-open { padding-right: 388px; }
 
       <!-- MIDDLE: vertical analysis nav (between chart and panel) -->
       <div class="ex-nav" id="ex-nav">
-        <button data-tab="judge"><span class="ico">🧠</span><span class="name">종합</span></button>
-        <button data-tab="chart"><span class="ico">📈</span><span class="name">그래프</span></button>
-        <button data-tab="fin"><span class="ico">📊</span><span class="name">재무</span></button>
-        <button data-tab="news"><span class="ico">📰</span><span class="name">뉴스</span></button>
+        <button data-tab="judge"><span class="ico"><svg class="lci"><use href="#i-brain"/></svg></span><span class="name">종합</span></button>
+        <button data-tab="chart"><span class="ico"><svg class="lci"><use href="#i-trending-up"/></svg></span><span class="name">그래프</span></button>
+        <button data-tab="fin"><span class="ico"><svg class="lci"><use href="#i-chart-column"/></svg></span><span class="name">재무</span></button>
+        <button data-tab="news"><span class="ico"><svg class="lci"><use href="#i-newspaper"/></svg></span><span class="name">뉴스</span></button>
       </div>
 
       <!-- RIGHT: analysis panels (default tab = 🧠 종합, opened by openExpand) -->
@@ -1863,7 +1891,7 @@ body.chat-open { padding-right: 388px; }
       <div class="pm-mode-tabs" id="pm-mode-tabs">
         <button data-mode="buy"  class="active">＋ 매수 기록</button>
         <button data-mode="sell">− 매도 기록</button>
-        <button data-mode="edit">✎ 직접 수정</button>
+        <button data-mode="edit"><svg class="lci"><use href="#i-pencil"/></svg> 직접 수정</button>
       </div>
 
       <!-- buy/sell form -->
@@ -1927,7 +1955,7 @@ body.chat-open { padding-right: 388px; }
   <div class="modal-dialog account-dialog" role="dialog" aria-modal="true" aria-labelledby="account-title">
     <div class="modal-header">
       <div class="modal-title" id="account-title">
-        <span style="color:var(--yellow);">💰</span>
+        <span style="color:var(--yellow);"><svg class="lci"><use href="#i-wallet"/></svg></span>
         <span>예수금 수정</span>
       </div>
       <button class="modal-close" id="account-close" aria-label="닫기">✕</button>
@@ -1955,7 +1983,7 @@ body.chat-open { padding-right: 388px; }
   <div class="modal-dialog curve-dialog" role="dialog" aria-modal="true">
     <div class="modal-header">
       <div class="modal-title">
-        <span style="color:var(--cyan);">📈</span>
+        <span style="color:var(--cyan);"><svg class="lci"><use href="#i-trending-up"/></svg></span>
         <span>자산 변화 추이</span>
       </div>
       <button class="modal-close" id="curve-close" aria-label="닫기">✕</button>
@@ -2071,6 +2099,16 @@ function el(tag, props, children) {
   return e;
 }
 function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+// Lucide sprite instance — <svg class="lci"><use href="#i-name"/></svg>
+function svgIco(name) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const s = document.createElementNS(NS, 'svg');
+  s.setAttribute('class', 'lci');
+  const u = document.createElementNS(NS, 'use');
+  u.setAttribute('href', '#i-' + name);
+  s.appendChild(u);
+  return s;
+}
 
 // ─────────────────────────────────────────────────────────────
 // ANALYSIS UX HELPERS — 위계/신선도/내부어 제거 공통 사전·헬퍼.
@@ -2280,7 +2318,7 @@ function showPinGate() {
   });
   box.appendChild(el('div', {
     style: 'font-size:22px; margin-bottom:4px;'
-  }, ['🔒']));
+  }, [svgIco('lock')]));
   box.appendChild(el('div', {
     style: 'color:var(--fg); font-weight:700; letter-spacing:1px; margin-bottom:4px;'
   }, [ACCOUNT_ID + ' 계좌']));
@@ -2670,7 +2708,7 @@ function renderCard(stock) {
     className: 'sc-edit-btn',
     title: '평균단가 / 수량 직접 수정',
     'aria-label': '수정',
-  }, ['✎']);
+  }, [svgIco('pencil')]);
   editBtn.addEventListener('click', () => {
     if (window.openPositionModal) window.openPositionModal(stock, 'edit');
   });
@@ -2774,7 +2812,7 @@ function renderCard(stock) {
   const actions = el('div', { className: 'sc-actions' }, [
     el('button', { className: 'sc-action sc-action-analysis',
                    dataset: { tab: 'judge' }, title: '종합·그래프·재무·뉴스 분석' }, [
-      el('span', { className: 'ico' }, ['🧠']),
+      el('span', { className: 'ico' }, [svgIco('brain')]),
       el('span', { className: 'name' }, ['분석']),
     ]),
   ]);
@@ -2933,7 +2971,7 @@ function renderAssetsRow() {
       [el('span', {}, ['보유 종목 또는 예수금을 등록하면 자산 정보가 표시됩니다.'])]));
   }
 
-  const curveBtn = el('button', { className: 'curve-btn' }, ['📈 자산 곡선']);
+  const curveBtn = el('button', { className: 'curve-btn' }, [svgIco('trending-up'), ' 자산 곡선']);
   curveBtn.addEventListener('click', () => {
     if (window.openAssetCurve) window.openAssetCurve();
   });
@@ -3720,11 +3758,11 @@ renderAll();
   // judge verdict 없음 — 폴백도 "적은 양" 유지 (facts 신호판 전체를 쏟지 않는다)
   function renderJudgeEmpty(pane) {
     pane.appendChild(el('div', { className: 'ca-section' }, [
-      el('div', { className: 'ca-h' }, ['🧠 종합 판단']),
+      el('div', { className: 'ca-h' }, [svgIco('brain'), ' 종합 판단']),
       el('div', { className: 'ca-empty' },
         ['아직 종합 판단이 없습니다. 차트·재무·뉴스를 종합해 한 단어 판단을 만듭니다.']),
       el('button', { className: 'ex-news-run', onClick: runFullAnalysis },
-        ['🧠 전체 분석 실행 (차트→종합 · 약 10~14분)']),
+        [svgIco('brain'), ' 전체 분석 실행 (차트→종합 · 약 10~14분)']),
     ]));
     // 그동안 참고할 수 있는 것 — LLM 없이 즉시 뜨는 가벼운 신호만
     const aux = el('div', { className: 'ca-section' }, [
@@ -3742,7 +3780,7 @@ renderAll();
         const chips = ['ema_alignment', 'adx']
           .map(k => m[k] && m[k].state).filter(Boolean).map(caChip);
         if (chips.length) aux.appendChild(el('div', {}, [
-          el('span', { className: 'ca-muted' }, ['📈 차트 자동 신호 (실시간): ']),
+          el('span', { className: 'ca-muted' }, [svgIco('trending-up'), ' 차트 자동 신호 (실시간): ']),
           ...chips,
         ]));
       } catch (_) { /* 폴백 보조 정보 — 실패 무시 */ }
@@ -3753,7 +3791,7 @@ renderAll();
         if (!currentStock || currentStock.symbolId !== sym) return;
         const devs = (sg.developments || []).slice(0, 3);
         if (!devs.length) return;
-        aux.appendChild(el('div', { className: 'ca-muted' }, ['📰 최근 연결 뉴스']));
+        aux.appendChild(el('div', { className: 'ca-muted' }, [svgIco('newspaper'), ' 최근 연결 뉴스']));
         devs.forEach(d => aux.appendChild(el('div', {
           className: 'na-sig-row' + (d.url ? ' lk' : ''),
           style: d.url ? 'cursor:pointer;' : null,
@@ -3890,7 +3928,7 @@ renderAll();
       const d = (body.domain_summary || {})[key];
       if (!d) return null;
       return el('div', { className: 'jd-dom' }, [
-        el('span', {}, [ico]),
+        el('span', {}, [svgIco(ico)]),
         el('span', { style: 'color:var(--dim); font-size:10px;' }, [name]),
         el('span', { className: 'ca-chip ' + (LABEL3_CLS[d.label] || '') },
           [LABEL3_KO[d.label] || '중립']),
@@ -3899,9 +3937,9 @@ renderAll();
       ]);
     };
     const domRows = [
-      domRow('chart', '📈', '그래프'),
-      domRow('fundamental', '📊', '재무'),
-      domRow('news', '📰', '뉴스'),
+      domRow('chart', 'trending-up', '그래프'),
+      domRow('fundamental', 'chart-column', '재무'),
+      domRow('news', 'newspaper', '뉴스'),
     ].filter(Boolean);
 
     pane.appendChild(el('div', { className: 'jd-card' }, [
@@ -3924,7 +3962,7 @@ renderAll();
         ...domRows,
       ]) : null,
       (body.risks && body.risks.length)
-        ? el('div', { className: 'jd-risk' }, ['⚠ 조심할 것: ' + body.risks[0]]) : null,
+        ? el('div', { className: 'jd-risk' }, [svgIco('triangle-alert'), ' 조심할 것: ' + body.risks[0]]) : null,
     ].filter(Boolean)));
 
     // ── 자세히 보기 (기본 접힘): 반영도/시점·교차 분석·동인·추가 리스크·관찰·한계 ──
@@ -3942,15 +3980,15 @@ renderAll();
         el('ul', { className: 'na-list' }, crossItems.map(s => el('li', {}, [s]))),
       ]) : null,
       (body.drivers && body.drivers.length) ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['👍 긍정 동인']),
+        el('div', { className: 'ca-h' }, [svgIco('thumbs-up'), ' 긍정 동인']),
         cappedList(body.drivers, 3, 'na-list na-pos'),
       ]) : null,
       (body.risks && body.risks.length > 1) ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['⚠️ 추가 리스크']),
+        el('div', { className: 'ca-h' }, [svgIco('triangle-alert'), ' 추가 리스크']),
         cappedList(body.risks.slice(1), 3, 'na-list na-neg'),
       ]) : null,
       (body.watch && body.watch.length) ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['👀 관찰 포인트']),
+        el('div', { className: 'ca-h' }, [svgIco('eye'), ' 관찰 포인트']),
         cappedList(body.watch, 3, 'na-list'),
       ]) : null,
       body.disagreement_note_ko ? el('div', { className: 'ca-section' }, [
@@ -4010,9 +4048,9 @@ renderAll();
 
   function renderChartVerdictEmpty(pane) {
     pane.appendChild(el('div', { className: 'ca-section' }, [
-      el('div', { className: 'ca-h' }, ['📈 차트 심층 분석']),
+      el('div', { className: 'ca-h' }, [svgIco('trending-up'), ' 차트 심층 분석']),
       el('div', { className: 'ca-empty' },
-        ['차트 심층 판단은 매일 아침 자동 생성됩니다. 지금 만들려면 상단 「🔄 다시 분석」.']),
+        ['차트 심층 판단은 매일 아침 자동 생성됩니다. 지금 만들려면 상단 「다시 분석」.']),
     ]));
   }
 
@@ -4075,7 +4113,7 @@ renderAll();
   function renderNewsSignals(pane, sig) {
     if (!sig || !sig.mapped) {
       pane.appendChild(el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['📰 연결된 뉴스 · 이슈']),
+        el('div', { className: 'ca-h' }, [svgIco('newspaper'), ' 연결된 뉴스 · 이슈']),
         el('div', { className: 'ca-empty' }, ['이 종목에 매핑된 테마가 없습니다.']),
       ]));
       return;
@@ -4096,7 +4134,7 @@ renderAll();
       el('span', { className: 'na-sig-pt' }, [d.point || '']),
     ]);
     pane.appendChild(el('div', { className: 'ca-section' }, [
-      el('div', { className: 'ca-h' }, ['📰 연결된 뉴스 · 이슈']),
+      el('div', { className: 'ca-h' }, [svgIco('newspaper'), ' 연결된 뉴스 · 이슈']),
       chips.length ? el('div', { className: 'na-meta' }, chips) : null,
       devs.length
         ? el('div', { className: 'na-siglist' }, devs.slice(0, 3).map(row))
@@ -4109,7 +4147,7 @@ renderAll();
       '연결 뉴스 전체 (' + devs.length + '건)' + (wl.length ? ' · 전개중 이슈' : ''), [
       devs.length > 3 ? el('div', { className: 'na-siglist' }, devs.slice(3).map(row)) : null,
       wl.length ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['👀 전개중 · 예정 이슈']),
+        el('div', { className: 'ca-h' }, [svgIco('eye'), ' 전개중 · 예정 이슈']),
         el('ul', { className: 'na-list' }, wl.slice(0, 6).map(w => el('li', {}, [w]))),
       ]) : null,
     ]);
@@ -4227,7 +4265,7 @@ renderAll();
           [(v == null ? '—' : v) + (suffix || '')]),
       ]);
       pane.appendChild(el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['📑 ETF 스냅샷']),
+        el('div', { className: 'ca-h' }, [svgIco('file-text'), ' ETF 스냅샷']),
         el('div', { style: 'margin-top:6px;' }, [
           kv('현재가 (now)',      e.now,            ' KRW'),
           kv('NAV',               e.nav,            ' KRW'),
@@ -4245,7 +4283,7 @@ renderAll();
     }
     if (!facts || (facts.data_available && !facts.data_available.financials)) {
       pane.appendChild(el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['📑 재무제표']),
+        el('div', { className: 'ca-h' }, [svgIco('file-text'), ' 재무제표']),
         el('div', { className: 'ca-empty' },
           ['아직 수집된 재무 데이터가 없습니다. 재무제표·밸류에이션은 매일 새벽 수집됩니다.']),
       ]));
@@ -4272,9 +4310,9 @@ renderAll();
       ]));
       pane.appendChild(el('div', { className: 'ca-section' }, [
         el('div', { className: 'ca-h fa-h-row' }, [
-          el('span', {}, ['📑 재무제표 (분기)']),
+          el('span', {}, [svgIco('file-text'), ' 재무제표 (분기)']),
           el('button', { className: 'fa-dl', onClick: () => _downloadFinancialsCSV(facts) },
-            ['⬇ CSV']),
+            [svgIco('download'), ' CSV']),
         ]),
         el('div', { className: 'fa-tbl-wrap' }, [
           el('table', { className: 'fa-tbl' }, [
@@ -4412,7 +4450,7 @@ renderAll();
     // ── ① 결론 카드 (도메인 탭 공통 골격: 한글 라벨 + 결론 + 신뢰도 + 신선도) ──
     // score raw 숫자·stance 중복 칩은 렌더하지 않는다 (summary_ko가 이미 문장으로 말함)
     pane.appendChild(el('div', { className: 'ca-section' }, [
-      el('div', { className: 'ca-h' }, ['📈 그래프 분석']),
+      el('div', { className: 'ca-h' }, [svgIco('trending-up'), ' 그래프 분석']),
       el('div', { className: 'na-head' }, [
         el('span', { className: 'ca-chip ' + (NEWS_LABEL_CLS[lbl] || '') }, [NEWS_LABEL_KO[lbl] || lbl]),
         freshEl(date),
@@ -4424,7 +4462,7 @@ renderAll();
 
     // P0-B: levels carry provenance (anchored or llm_only = model-invented)
     const estTag = (o) => (o && o.llm_only)
-      ? el('span', { className: 'ca-tag warn', title: 'facts에 없는 추정 가격' }, ['⚠ 추정'])
+      ? el('span', { className: 'ca-tag warn', title: 'facts에 없는 추정 가격' }, [svgIco('triangle-alert'), ' 추정'])
       : null;
 
     // ── ② 행동 정보: 지금 가격 기준 — 가장 가까운 저항 1 + 지지 1 + 손절선만 ──
@@ -4442,7 +4480,7 @@ renderAll();
     const nr = _near(lv.resistances, true), ns = _near(lv.supports, false);
     if (nr || ns || lv.invalidation) {
       const sec = el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['💰 지금 가격 기준']),
+        el('div', { className: 'ca-h' }, [svgIco('wallet'), ' 지금 가격 기준']),
       ]);
       if (nr) sec.appendChild(el('div', { className: 'ca-level' }, [
         el('span', { className: 'lv-r' }, ['저항 ' + fmtNum(nr.price) + _dist(nr.price)]),
@@ -4513,20 +4551,20 @@ renderAll();
     const evAcc = accordion('근거 (강세 신호 ' + drCount + ' · 위험 신호 ' + rkCount + ')', [
       tcSec, axSec, setupSec,
       drCount ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['👍 기회 · 강세 신호']),
+        el('div', { className: 'ca-h' }, [svgIco('thumbs-up'), ' 기회 · 강세 신호']),
         cappedList(body.drivers, 3, 'na-list na-pos'),
       ]) : null,
       rkCount ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['⚠️ 위험 신호']),
+        el('div', { className: 'ca-h' }, [svgIco('triangle-alert'), ' 위험 신호']),
         cappedList(body.risks, 3, 'na-list na-neg'),
       ]) : null,
       rps.length ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['🚩 함정 패턴 경고']),
+        el('div', { className: 'ca-h' }, [svgIco('flag'), ' 함정 패턴 경고']),
         el('div', { className: 'fa-flags' }, rps.map(r =>
-          el('div', { className: 'fl' }, ['🚩', (r.plain || r.pattern)]))),
+          el('div', { className: 'fl' }, [svgIco('flag'), (r.plain || r.pattern)]))),
       ]) : null,
       (body.watch && body.watch.length) ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['👀 지켜볼 트리거']),
+        el('div', { className: 'ca-h' }, [svgIco('eye'), ' 지켜볼 트리거']),
         cappedList(body.watch, 3, 'na-list'),
       ]) : null,
     ]);
@@ -5195,10 +5233,10 @@ window.deleteHolding = async function (stock) {
       submitLabel.textContent = '− 매도 기록';
       submitBtn.className = 'primary sell';
     } else {
-      modeIco.textContent = '✎';
+      modeIco.replaceChildren(svgIco('pencil'));
       modeIco.style.color = 'var(--yellow)';
       titleText.textContent = '직접 수정';
-      submitLabel.textContent = '✎ 저장';
+      submitLabel.textContent = '저장';
       submitBtn.className = 'primary';
     }
     prevPnlRow.hidden = (mode !== 'sell');
@@ -5723,7 +5761,7 @@ window.deleteHolding = async function (stock) {
       style: 'display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;'
     }, [
       el('span', { style:'color:var(--fg); font-weight:700; letter-spacing:1px;' },
-         ['⚙ ' + ACCOUNT_ID + ' 계좌 설정']),
+         [svgIco('settings'), ' ' + ACCOUNT_ID + ' 계좌 설정']),
       el('button', {
         style:'background:transparent; color:var(--dim); border:none; font-size:16px; cursor:pointer;',
         onClick: close,
@@ -5746,7 +5784,7 @@ window.deleteHolding = async function (stock) {
     box.appendChild(el('button', {
       style: rowStyle,
       onClick: () => { close(); if (window.openAccountModal) window.openAccountModal(); },
-    }, ['✎ 예수금 수정']));
+    }, [svgIco('pencil'), ' 예수금 수정']));
 
     // PIN 변경
     box.appendChild(el('div', {
@@ -5810,7 +5848,7 @@ window.deleteHolding = async function (stock) {
           setTimeout(() => { location.href = '/'; }, 700);
         } catch (e) { setStat('네트워크 오류', 'var(--red)'); delBtn.disabled = false; }
       },
-    }, ['🗑 이 계좌 삭제']);
+    }, [svgIco('trash-2'), ' 이 계좌 삭제']);
     box.appendChild(delBtn);
 
     overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
