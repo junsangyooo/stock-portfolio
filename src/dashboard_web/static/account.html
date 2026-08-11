@@ -4815,10 +4815,20 @@ renderAll();
     if (_drag && e.touches.length === 1) _panBy(e.touches[0].clientX);
   }, { passive: true });
   canvas.addEventListener('touchend', () => { _drag = null; });
-  // wheel = pan (shift the window by a few bars per notch)
+  // wheel/trackpad = pan. 트랙패드 두손가락 가로 제스처는 deltaX가 주축이고
+  // deltaY엔 ± 잡음이 섞인다 — 절대값이 큰 축 하나만 읽어야 방향이 안 떨린다.
+  // 픽셀 delta를 바 폭으로 나눠 누적 → 드래그와 같은 1:1 감각. 가로는 드래그
+  // 방향과 일치(손가락 오른쪽 = 과거), 세로 휠은 기존 관성 유지(아래 = 과거).
+  let _wheelAcc = 0;
   canvas.addEventListener('wheel', e => {
-    e.preventDefault();
-    chartState.pan += (e.deltaY > 0 ? 3 : -3);
+    e.preventDefault();   // 페이지 스크롤·브라우저 뒤로가기 스와이프 차단
+    let d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? -e.deltaX : e.deltaY;
+    if (e.deltaMode === 1) d *= 16;   // Firefox line-mode
+    _wheelAcc += d / _slotPx();
+    const bars = Math.trunc(_wheelAcc);
+    if (!bars) return;
+    _wheelAcc -= bars;
+    chartState.pan += bars;
     drawVisibleWindow();
   }, { passive: false });
 
