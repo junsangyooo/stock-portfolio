@@ -648,6 +648,9 @@ a { color: inherit; text-decoration: none; }
 .expand-rerun:hover { background: rgba(var(--cyan-rgb), 0.10); }
 
 .expand-body {
+  /* display:grid는 이 규칙이 직접 가진다 — 과거 .modal-body의 grid를 상속하던
+     구조라, 그쪽 정리 때 3컬럼(차트|탭|패널)이 통째로 세로 스택으로 무너졌었다 */
+  display: grid;
   grid-template-columns: minmax(0, 1fr) 92px 360px;
 }
 
@@ -3739,6 +3742,11 @@ renderAll();
     const sec = await runningElapsed('judge', mkt, code);
     if (!currentStock || currentStock.symbolId !== sym) return;
     if (sec != null) return watchJudgeJob(pane, sym, mkt, code, { resumeSec: sec });
+    // 전체 분석 1단계(chart)가 도는 중일 수도 있다 — judge 잡만 보면 이 구간
+    // (첫 5~7분)에 진행 표시가 사라진다. chart 잡에 이어 붙어 judge까지 체인.
+    const csec = await runningElapsed('chart', mkt, code);
+    if (!currentStock || currentStock.symbolId !== sym) return;
+    if (csec != null) return watchFullAnalysis(pane, sym, mkt, code, csec);
     try {
       const vd = await (await fetch(API.judgeVerdict(mkt, code))).json();
       if (!currentStock || currentStock.symbolId !== sym) return;
@@ -3817,9 +3825,13 @@ renderAll();
   // 필요 없다 — judge가 live facts / theme state를 직접 읽는다 (verdict_job.py 참고).
   function runFullAnalysis() {
     if (!currentStock) return;
-    const sym = currentStock.symbolId, mkt = _amkt(), code = currentStock.code;
     setTab('judge');   // 결과가 도착할 곳에서 진행 상황을 보여준다
-    const pane = panes.judge;
+    watchFullAnalysis(panes.judge, currentStock.symbolId, _amkt(), currentStock.code, null);
+  }
+
+  // 1단계(chart) 진행 UI + 완료 시 judge 체인. resumeSec != null 이면 이미 도는
+  // chart 잡에 이어 붙는 복구 경로 (loadJudgeAnalysis가 탭 재진입 시 호출).
+  function watchFullAnalysis(pane, sym, mkt, code, resumeSec) {
     const my = ++_watchSeq.judge;
     clear(pane);
     const prog = makeJobProgress('전체 분석 1/2 · 차트');
@@ -3828,9 +3840,8 @@ renderAll();
     // detached 완료(다른 종목 보는 중) 시 pane은 건드리지 않고 배지만 갱신
     const badgeDone = (body, date) =>
       window._setJudgeBadge(sym, { action_ko: body.action_ko, date: date || body.date });
-    driveAnalysisJob({
+    const common = {
       sym,
-      runUrl: API.runChartAnalysis(mkt, code),
       statusUrl: API.analysisStatus('chart', mkt, code),
       verdictUrl: API.chartVerdict(mkt, code),
       isStale: () => _watchSeq.judge !== my,
@@ -3858,7 +3869,12 @@ renderAll();
           onBackgroundDone: badgeDone,  // loadJudgeAnalysis 복구 경로가 그린다
         });
       },
-    });
+    };
+    if (resumeSec != null) {
+      prog.update(resumeSec);
+      return pollAnalysisJob(common, resumeSec);
+    }
+    return driveAnalysisJob(Object.assign({ runUrl: API.runChartAnalysis(mkt, code) }, common));
   }
 
   // 진행 UI + 폴링 (신규 start 또는 running resume).
