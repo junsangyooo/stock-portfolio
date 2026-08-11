@@ -625,6 +625,19 @@ a { color: inherit; text-decoration: none; }
 .expand-delta { font-size: 11px; color: var(--dim); }
 .expand-delta.up { color: var(--green); }
 .expand-delta.down { color: var(--red); }
+.expand-rerun {
+  background: transparent;
+  border: 1px solid var(--cyan);
+  color: var(--cyan);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  height: 28px;
+  padding: 0 10px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+.expand-rerun:hover { background: rgba(var(--cyan-rgb), 0.10); }
 
 .expand-body {
   grid-template-columns: minmax(0, 1fr) 92px 360px;
@@ -692,12 +705,8 @@ a { color: inherit; text-decoration: none; }
 .na-list li { margin: 3px 0; }
 .na-pos li { color: var(--green); }
 .na-neg li { color: var(--red); }
-.na-ev { display: flex; flex-direction: column; gap: 6px; }
-.na-ev-row { display: grid; grid-template-columns: 58px 84px 1fr; gap: 8px; font-size: 11px; align-items: start; }
 .na-ev-tag { color: var(--dim); text-transform: uppercase; font-size: 10px; }
 .na-ev-tag.lead { color: var(--cyan); }
-.na-ev-th { color: var(--purple); }
-.na-ev-pt { color: var(--muted); line-height: 1.5; }
 .na-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .na-tag { font-size: 10px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
 .na-tag.dim { color: var(--dim); }
@@ -724,11 +733,6 @@ a { color: inherit; text-decoration: none; }
 .fa-bar > i.mid { background: var(--cyan); }
 .fa-bar > i.bad { background: var(--red); }
 .fa-axis-note { grid-column: 1 / -1; font-size: 11px; color: var(--muted); line-height: 1.5; }
-.fa-metrics { display: flex; flex-direction: column; gap: 7px; }
-.fa-metric { font-size: 11px; line-height: 1.5; }
-.fa-metric .mk { color: var(--fg); font-weight: 700; }
-.fa-metric .mv { color: var(--cyan); font-weight: 700; margin-left: 4px; }
-.fa-metric .mp { color: var(--muted); display: block; margin-top: 1px; }
 .fa-flags { border: 1px solid var(--red); border-radius: 6px; padding: 8px 10px; background: rgba(var(--red-rgb,255,76,76), 0.07); }
 .fa-flags .fl { font-size: 11px; color: var(--red); line-height: 1.6; display: flex; gap: 6px; }
 .fa-sector { font-size: 10px; color: var(--dim); }
@@ -1711,6 +1715,8 @@ body.chat-open { padding-right: 388px; }
         <span class="expand-price" id="ex-price">—</span>
         <span class="expand-delta" id="ex-delta">—</span>
       </div>
+      <button class="expand-rerun" id="expand-rerun"
+              title="차트→종합 순차 재분석 · 약 10~14분 (야간 자동 분석과 동일 경로)">🔄 다시 분석</button>
       <button class="sc-delete-btn" id="expand-delete" title="포트폴리오에서 제거"
               style="margin-right:4px;">✕ 제거</button>
       <button class="modal-close" id="expand-close" aria-label="닫기">✕</button>
@@ -2013,18 +2019,10 @@ const API = {
     '/api/analysis/chart/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/verdict',
   runChartAnalysis: (market, code) =>
     '/api/analysis/chart/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/run',
-  newsAnalysis: (market, code) =>
-    '/api/analysis/news/' + encodeURIComponent(market) + '/' + encodeURIComponent(code),
   newsSignals: (market, code) =>
     '/api/analysis/news/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/signals',
-  runNewsAnalysis: (market, code) =>
-    '/api/analysis/news/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/run',
-  fundamentalAnalysis: (market, code) =>
-    '/api/analysis/fundamental/' + encodeURIComponent(market) + '/' + encodeURIComponent(code),
   fundamentalFacts: (market, code) =>
     '/api/analysis/fundamental/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/facts',
-  runFundamentalAnalysis: (market, code) =>
-    '/api/analysis/fundamental/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/run',
   judgeVerdict: (market, code) =>
     '/api/analysis/judge/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/verdict',
   runJudgeAnalysis: (market, code) =>
@@ -3595,6 +3593,7 @@ renderAll();
   navBar.querySelectorAll('button').forEach(b => {
     b.addEventListener('click', () => setTab(b.dataset.tab));
   });
+  document.getElementById('expand-rerun').addEventListener('click', runFullAnalysis);
 
   // ── Generic async-job driver (verdict generation ~300-400s) ──────────────
   // The claude verdict far exceeds proxy timeouts (nginx 30s / Cloudflare ~100s),
@@ -3685,7 +3684,7 @@ renderAll();
   }
 
   // pane별 watcher 세대 카운터 — 새 watcher가 붙으면 이전 poller는 isStale()로 소멸
-  const _watchSeq = { judge: 0, chart: 0, news: 0, fin: 0 };
+  const _watchSeq = { judge: 0, chart: 0 };
 
   // 🧠 종합 분석 — 단일 claude -p 호출. chart × fundamental × news + cached
   //    domain verdicts → unified verdict (judge_rules.md).
@@ -3724,8 +3723,8 @@ renderAll();
       el('div', { className: 'ca-h' }, ['🧠 종합 판단']),
       el('div', { className: 'ca-empty' },
         ['아직 종합 판단이 없습니다. 차트·재무·뉴스를 종합해 한 단어 판단을 만듭니다.']),
-      el('button', { className: 'ex-news-run', onClick: runJudgeAnalysis },
-        ['🧠 종합 분석 실행 (약 5~7분 · 완료되면 여기에 표시)']),
+      el('button', { className: 'ex-news-run', onClick: runFullAnalysis },
+        ['🧠 전체 분석 실행 (차트→종합 · 약 10~14분)']),
     ]));
     // 그동안 참고할 수 있는 것 — LLM 없이 즉시 뜨는 가벼운 신호만
     const aux = el('div', { className: 'ca-section' }, [
@@ -3773,6 +3772,55 @@ renderAll();
   function runJudgeAnalysis() {
     if (!currentStock) return;
     watchJudgeJob(panes.judge, currentStock.symbolId, _amkt(), currentStock.code, {});
+  }
+
+  // ── 통합 재분석 (헤더 「🔄 다시 분석」) — 야간 배치와 동일 경로: chart → judge 순차. ──
+  // 도메인별 실행 버튼 4개를 이것 하나로 대체했다. 재무/뉴스는 별도 verdict가
+  // 필요 없다 — judge가 live facts / theme state를 직접 읽는다 (verdict_job.py 참고).
+  function runFullAnalysis() {
+    if (!currentStock) return;
+    const sym = currentStock.symbolId, mkt = _amkt(), code = currentStock.code;
+    setTab('judge');   // 결과가 도착할 곳에서 진행 상황을 보여준다
+    const pane = panes.judge;
+    const my = ++_watchSeq.judge;
+    clear(pane);
+    const prog = makeJobProgress('전체 분석 1/2 · 차트');
+    pane.appendChild(prog.root);
+    window._setJudgeBadge(sym, { running: true });
+    // detached 완료(다른 종목 보는 중) 시 pane은 건드리지 않고 배지만 갱신
+    const badgeDone = (body, date) =>
+      window._setJudgeBadge(sym, { action_ko: body.action_ko, date: date || body.date });
+    driveAnalysisJob({
+      sym,
+      runUrl: API.runChartAnalysis(mkt, code),
+      statusUrl: API.analysisStatus('chart', mkt, code),
+      verdictUrl: API.chartVerdict(mkt, code),
+      isStale: () => _watchSeq.judge !== my,
+      onProgress: prog.update,
+      onError: (m) => {
+        clear(pane);
+        loadJudgeBadges();   // 실행 전 배지 상태로 복원
+        pane.appendChild(el('div', { className: 'ca-empty' }, ['차트 분석 실패: ' + m]));
+        pane.appendChild(el('button', { className: 'ex-news-run', onClick: runFullAnalysis }, ['다시 시도']));
+      },
+      onDone: () => {
+        _chartLoadedSym = null;   // 그래프 탭 재진입 시 새 verdict 로드
+        watchJudgeJob(pane, sym, mkt, code, {});
+      },
+      // 차트 단계가 detached로 끝남 → judge를 detached로 이어 실행 (완성된 판단을 버리지 않는다)
+      onBackgroundDone: () => {
+        _chartLoadedSym = null;
+        driveAnalysisJob({
+          sym,
+          runUrl: API.runJudgeAnalysis(mkt, code),
+          statusUrl: API.analysisStatus('judge', mkt, code),
+          verdictUrl: API.judgeVerdict(mkt, code),
+          onError: () => loadJudgeBadges(),
+          onDone: badgeDone,            // 사용자가 이 종목으로 돌아와 있어도 pane은
+          onBackgroundDone: badgeDone,  // loadJudgeAnalysis 복구 경로가 그린다
+        });
+      },
+    });
   }
 
   // 진행 UI + 폴링 (신규 start 또는 running resume).
@@ -3868,10 +3916,6 @@ renderAll();
           (body.confidence != null)
             ? el('span', { className: 'fa-conf' }, ['신뢰도 ',
                 el('span', { className: 'dots' }, [_confDots(body.confidence)])]) : null,
-          el('button', {
-            className: 'ex-news-run', style: 'margin-top:2px; padding:4px 10px; font-size:10px;',
-            onClick: runJudgeAnalysis,
-          }, ['🔄 다시 분석 (약 5~7분)']),
         ].filter(Boolean)),
       ]),
       body.summary_ko ? el('div', { className: 'jd-summary' }, [body.summary_ko]) : null,
@@ -3967,15 +4011,9 @@ renderAll();
   function renderChartVerdictEmpty(pane) {
     pane.appendChild(el('div', { className: 'ca-section' }, [
       el('div', { className: 'ca-h' }, ['📈 차트 심층 분석']),
-      el('div', { className: 'ca-empty' }, ['AI가 차트 룰북으로 심층 판단을 만듭니다.']),
-      el('button', { className: 'ex-news-run', onClick: runChartAnalysis },
-        ['📈 차트 심층 분석 실행 (약 5~7분)']),
+      el('div', { className: 'ca-empty' },
+        ['차트 심층 판단은 매일 아침 자동 생성됩니다. 지금 만들려면 상단 「🔄 다시 분석」.']),
     ]));
-  }
-
-  function runChartAnalysis() {
-    if (!currentStock) return;
-    watchChartJob(panes.chart, currentStock.symbolId, _amkt(), currentStock.code, {});
   }
 
   function watchChartJob(pane, sym, mkt, code, opts) {
@@ -3992,7 +4030,7 @@ renderAll();
       onError: (m) => {
         clear(pane);
         pane.appendChild(el('div', { className: 'ca-empty' }, ['분석 실패: ' + m]));
-        pane.appendChild(el('button', { className: 'ex-news-run', onClick: runChartAnalysis }, ['다시 시도']));
+        pane.appendChild(el('button', { className: 'ex-news-run', onClick: runFullAnalysis }, ['다시 시도']));
       },
       onDone: async (body, date) => {
         clear(pane);
@@ -4011,11 +4049,9 @@ renderAll();
     return driveAnalysisJob(Object.assign({ runUrl: API.runChartAnalysis(mkt, code) }, common));
   }
 
-  // 📰 뉴스(정성) 분석 — claude -p 심층 판단(verdict, 캐시) + 연결 뉴스(라이브).
-  // 골격: 결론 카드 + 행동 정보 1블록 + 연결 뉴스 3행 미리보기 + 접힌 상세.
+  // 📰 뉴스 탭 — 연결 뉴스·이슈 (LLM 없이 테마 state에서, 라이브). 뉴스 verdict는
+  // 별도로 만들지 않는다 — judge가 theme state를 직접 읽는다 (통합 「다시 분석」 참고).
   let _newsLoadedSym = null;
-  let _newsSignals = null;      // cache of the cheap signals feed
-  let _newsSignalsSym = null;   // which symbol the cache belongs to
   async function loadNewsAnalysis() {
     if (!currentStock) return;
     const pane = panes.news;
@@ -4023,88 +4059,16 @@ renderAll();
     const sym = currentStock.symbolId, mkt = _amkt(), code = currentStock.code;
     clear(pane);
     pane.appendChild(el('div', { className: 'ca-empty' }, ['연결된 뉴스 불러오는 중…']));
-    // 탭 재진입 복구: 실행 중이면 진행 표시 + 폴링 재개 (중복 실행 방지)
-    const sec = await runningElapsed('news', mkt, code);
-    if (!currentStock || currentStock.symbolId !== sym) return;
-    if (sec != null) return watchNewsJob(pane, sym, mkt, code, { resumeSec: sec });
     try {
-      const [sigRes, vdRes] = await Promise.all([
-        fetch(API.newsSignals(mkt, code)),
-        fetch(API.newsAnalysis(mkt, code)),
-      ]);
-      const sig = await sigRes.json();
-      const vd = await vdRes.json();
+      const sig = await (await fetch(API.newsSignals(mkt, code))).json();
       if (!currentStock || currentStock.symbolId !== sym) return;
       _newsLoadedSym = sym;
-      _newsSignals = sig;
-      _newsSignalsSym = sym;
-      const verdict = (vd.exists && vd.result && vd.result.body) ? vd.result.body : null;
-      const date = (vd.exists && vd.result) ? vd.result.date : null;
-      renderNewsPane(pane, verdict, date, sig);
+      clear(pane);
+      renderNewsSignals(pane, sig);   // 연결 뉴스 3행 미리보기 + 전체 아코디언
     } catch (e) {
       clear(pane);
       pane.appendChild(el('div', { className: 'ca-empty' }, ['로드 실패: ' + e]));
     }
-  }
-
-  // verdict(있으면)/실행버튼 + 연결 뉴스 미리보기를 한 번에 그린다.
-  function renderNewsPane(pane, verdict, date, sig) {
-    clear(pane);
-    if (verdict) {
-      renderNewsAnalysis(pane, verdict, date);
-    } else {
-      renderNewsVerdictEmpty(pane);
-    }
-    renderNewsSignals(pane, sig);   // 연결 뉴스 3행 미리보기 + 전체 아코디언
-  }
-
-  function renderNewsVerdictEmpty(pane) {
-    pane.appendChild(el('div', { className: 'ca-section' }, [
-      el('div', { className: 'ca-h' }, ['📰 뉴스 분석 (AI 판단)']),
-      el('div', { className: 'ca-empty' }, ['연결된 뉴스·이슈를 AI가 종합 판단합니다.']),
-      el('button', { className: 'ex-news-run', onClick: runNewsAnalysis },
-        ['📰 뉴스 분석 실행 (약 5~7분)']),
-    ]));
-  }
-
-  function runNewsAnalysis() {
-    if (!currentStock) return;
-    watchNewsJob(panes.news, currentStock.symbolId, _amkt(), currentStock.code, {});
-  }
-
-  function watchNewsJob(pane, sym, mkt, code, opts) {
-    const my = ++_watchSeq.news;
-    clear(pane);
-    const prog = makeJobProgress('뉴스 분석');
-    pane.appendChild(prog.root);
-    const common = {
-      sym,
-      statusUrl: API.analysisStatus('news', mkt, code),
-      verdictUrl: API.newsAnalysis(mkt, code),
-      isStale: () => _watchSeq.news !== my,
-      onProgress: prog.update,
-      onError: (m) => {
-        clear(pane);
-        pane.appendChild(el('div', { className: 'ca-empty' }, ['분석 실패: ' + m]));
-        pane.appendChild(el('button', { className: 'ex-news-run', onClick: runNewsAnalysis }, ['다시 시도']));
-        if (_newsSignalsSym === sym) renderNewsSignals(pane, _newsSignals);
-      },
-      onDone: async (body, date) => {
-        if (_newsSignalsSym !== sym) {   // resume 경로에선 signals 캐시가 없을 수 있음
-          try {
-            _newsSignals = await (await fetch(API.newsSignals(mkt, code))).json();
-            _newsSignalsSym = sym;
-          } catch (_) { _newsSignals = null; _newsSignalsSym = null; }
-        }
-        _newsLoadedSym = sym;
-        renderNewsPane(pane, body, date, _newsSignalsSym === sym ? _newsSignals : null);
-      },
-    };
-    if (opts && opts.resumeSec != null) {
-      prog.update(opts.resumeSec);
-      return pollAnalysisJob(common, opts.resumeSec);
-    }
-    return driveAnalysisJob(Object.assign({ runUrl: API.runNewsAnalysis(mkt, code) }, common));
   }
 
   // 연결 뉴스/이슈 (LLM 없이 테마 state에서) — 기본 3행 미리보기, 나머지 접힘.
@@ -4165,82 +4129,10 @@ renderAll();
     immediate: '즉시', near: '수일~수주', mid: '수개월', long: '장기',
   };
   const LEAD_LAG_KO = { leading: '선행', coincident: '동행', lagging: '후행' };
-  function renderNewsAnalysis(pane, body, date) {
-    const lbl = body.label || 'neutral';
-    const pending = body.status === 'insufficient_data';
 
-    // ── ① 결론 카드 — score 숫자·rationale 중복 문단은 렌더하지 않는다 ──
-    pane.appendChild(el('div', { className: 'ca-section' }, [
-      el('div', { className: 'ca-h' }, ['📰 뉴스 분석']),
-      el('div', { className: 'na-head' }, [
-        el('span', { className: 'ca-chip ' + (NEWS_LABEL_CLS[lbl] || '') },
-          [pending ? '판단 대기' : (NEWS_LABEL_KO[lbl] || lbl)]),
-        freshEl(date),
-      ].filter(Boolean)),
-      (body.summary_ko || body.rationale)
-        ? el('div', { className: 'fa-summary' }, [body.summary_ko || body.rationale]) : null,
-      (!pending && body.confidence != null)
-        ? el('div', { className: 'fa-conf' }, [
-            '신뢰도 ', el('span', { className: 'dots' }, [_confDots(body.confidence)]),
-          ]) : null,
-    ].filter(Boolean)));
-
-    // ── ② 행동 정보: 반영도/시점 한글 칩 + 동인 2 + 리스크 2 ──
-    const metaChips = [];
-    if (!pending && body.priced_in && PRICED_IN_KO[body.priced_in])
-      metaChips.push(el('span', { className: 'na-tag' }, ['반영도: ' + PRICED_IN_KO[body.priced_in]]));
-    if (!pending && body.time_horizon && HORIZON_KO[body.time_horizon])
-      metaChips.push(el('span', { className: 'na-tag' }, ['시점: ' + HORIZON_KO[body.time_horizon]]));
-    if (metaChips.length) pane.appendChild(el('div', { className: 'na-meta' }, metaChips));
-    if (body.drivers && body.drivers.length) {
-      pane.appendChild(el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['👍 기회 · 긍정 동인']),
-        cappedList(body.drivers, 2, 'na-list na-pos'),
-      ]));
-    }
-    if (body.risks && body.risks.length) {
-      pane.appendChild(el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['⚠️ 위험 요인']),
-        cappedList(body.risks, 2, 'na-list na-neg'),
-      ]));
-    }
-
-    // ── ③ 접힌 상세: 이벤트 태그 · 2차 파급 · 모니터 · 근거 ──
-    const detail = accordion('판단 근거 전체', [
-      (body.event_tags || []).length ? el('div', { className: 'na-meta' },
-        (body.event_tags || []).slice(0, 4).map(t =>
-          el('span', { className: 'na-tag dim' }, [t]))) : null,
-      (body.second_order && body.second_order.length) ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['🔗 2차 파급 (그 다음 영향)']),
-        el('ul', { className: 'na-list' }, body.second_order.map(d => el('li', {}, [d]))),
-      ]) : null,
-      (body.watch && body.watch.length) ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['👀 모니터 (아직 안 터진 재료)']),
-        el('ul', { className: 'na-list' }, body.watch.map(d => el('li', {}, [d]))),
-      ]) : null,
-      (body.evidence && body.evidence.length) ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['근거']),
-        el('div', { className: 'na-ev' }, body.evidence.map(e =>
-          el('div', { className: 'na-ev-row' }, [
-            el('span', { className: 'na-ev-tag ' + (e.lead_lag === 'leading' ? 'lead' : '') },
-              [LEAD_LAG_KO[e.lead_lag] || e.lead_lag || '—']),
-            el('span', { className: 'na-ev-th' }, [e.theme || '']),
-            el('span', { className: 'na-ev-pt' }, [e.point || '']),
-          ]))),
-      ]) : null,
-    ]);
-    if (detail) pane.appendChild(detail);
-    pane.appendChild(el('button', { className: 'ex-news-run', onClick: runNewsAnalysis },
-      ['🔄 다시 분석 (약 5~7분)']));
-  }
-
-  // 📊 재무(정량) 분석 — GET cached result; if none, show run button (POST = agent).
-  // Collection runs in the 06:00 batch; the button only runs the fundamental agent.
-  // verdict(있으면)/실행버튼 + 재무제표·지표·추세(항상, LLM 없이)를 한 번에. 그래프 탭이
-  // facts를, 뉴스 탭이 signals를 기본 표시하는 것과 동일 패턴.
+  // 📊 재무 탭 — 재무제표·지표·추세 (LLM 없이, 수집은 06:00 배치). 재무 verdict는
+  // 별도로 만들지 않는다 — judge가 live facts를 직접 읽는다 (통합 「다시 분석」 참고).
   let _finLoadedSym = null;
-  let _finFacts = null;        // cache of the cheap facts feed
-  let _finFactsSym = null;     // which symbol the cache belongs to
   async function loadFundamentalAnalysis() {
     if (!currentStock) return;
     const pane = panes.fin;
@@ -4248,107 +4140,18 @@ renderAll();
     const sym = currentStock.symbolId, mkt = _amkt(), code = currentStock.code;
     clear(pane);
     pane.appendChild(el('div', { className: 'ca-empty' }, ['재무 데이터 불러오는 중…']));
-    // 탭 재진입 복구: 실행 중이면 진행 표시 + 폴링 재개 (중복 실행 방지)
-    const sec = await runningElapsed('fundamental', mkt, code);
-    if (!currentStock || currentStock.symbolId !== sym) return;
-    if (sec != null) return watchFinJob(pane, sym, mkt, code, { resumeSec: sec });
     try {
-      const [factsRes, vdRes] = await Promise.all([
-        fetch(API.fundamentalFacts(mkt, code)),
-        fetch(API.fundamentalAnalysis(mkt, code)),
-      ]);
-      const facts = await factsRes.json();
-      const vd = await vdRes.json();
+      const facts = await (await fetch(API.fundamentalFacts(mkt, code))).json();
       if (!currentStock || currentStock.symbolId !== sym) return;
       _finLoadedSym = sym;
-      _finFacts = facts;
-      _finFactsSym = sym;
-      const verdict = (vd.exists && vd.result && vd.result.body) ? vd.result.body : null;
-      const date = (vd.exists && vd.result) ? vd.result.date : null;
-      renderFundamentalPane(pane, verdict, date, facts);
+      clear(pane);
+      renderFundamentalFacts(pane, facts);
     } catch (e) {
       clear(pane);
       pane.appendChild(el('div', { className: 'ca-empty' }, ['로드 실패: ' + e]));
     }
   }
 
-  // AI 해석(있으면)/실행버튼 + 재무제표·지표 원본(접힘)을 한 번에 그린다.
-  function renderFundamentalPane(pane, verdict, date, facts) {
-    clear(pane);
-    if (verdict) {
-      renderFundamentalAnalysis(pane, verdict, date);
-    } else {
-      renderFundamentalVerdictEmpty(pane);
-    }
-    appendFundamentalFactsSection(pane, facts);
-  }
-
-  // 원본 데이터는 기본 접힘. ETF 스냅샷·데이터 없음 안내는 짧아서 그대로 노출.
-  function appendFundamentalFactsSection(pane, facts) {
-    if (!facts || facts.is_etf ||
-        (facts.data_available && !facts.data_available.financials)) {
-      renderFundamentalFacts(pane, facts);
-      return;
-    }
-    const wrap = el('div', { style: 'display:flex; flex-direction:column; gap:14px;' }, []);
-    renderFundamentalFacts(wrap, facts);
-    const acc = accordion('재무제표 · 지표 원본 (자동 수집)', [wrap]);
-    if (acc) pane.appendChild(acc);
-  }
-
-  function renderFundamentalVerdictEmpty(pane) {
-    pane.appendChild(el('div', { className: 'ca-section' }, [
-      el('div', { className: 'ca-h' }, ['📊 재무 분석 (AI 해석)']),
-      el('div', { className: 'ca-empty' }, ['수집된 재무제표를 AI가 비전문가 언어로 풀이합니다.']),
-      el('button', { className: 'ex-news-run', onClick: runFundamentalAnalysis },
-        ['📊 재무 분석 실행 (약 5~7분)']),
-    ]));
-  }
-
-  function runFundamentalAnalysis() {
-    if (!currentStock) return;
-    watchFinJob(panes.fin, currentStock.symbolId, _amkt(), currentStock.code, {});
-  }
-
-  function watchFinJob(pane, sym, mkt, code, opts) {
-    const my = ++_watchSeq.fin;
-    clear(pane);
-    const prog = makeJobProgress('재무 분석');
-    pane.appendChild(prog.root);
-    const common = {
-      sym,
-      statusUrl: API.analysisStatus('fundamental', mkt, code),
-      verdictUrl: API.fundamentalAnalysis(mkt, code),
-      isStale: () => _watchSeq.fin !== my,
-      onProgress: prog.update,
-      onError: (m) => {
-        clear(pane);
-        pane.appendChild(el('div', { className: 'ca-empty' }, ['분석 실패: ' + m]));
-        pane.appendChild(el('button', { className: 'ex-news-run', onClick: runFundamentalAnalysis }, ['다시 시도']));
-        if (_finFactsSym === sym) appendFundamentalFactsSection(pane, _finFacts);
-      },
-      onDone: async (body, date) => {
-        if (_finFactsSym !== sym) {   // resume 경로에선 facts 캐시가 없을 수 있음
-          try {
-            _finFacts = await (await fetch(API.fundamentalFacts(mkt, code))).json();
-            _finFactsSym = sym;
-          } catch (_) { _finFacts = null; _finFactsSym = null; }
-        }
-        _finLoadedSym = sym;
-        renderFundamentalPane(pane, body, date, _finFactsSym === sym ? _finFacts : null);
-      },
-    };
-    if (opts && opts.resumeSec != null) {
-      prog.update(opts.resumeSec);
-      return pollAnalysisJob(common, opts.resumeSec);
-    }
-    return driveAnalysisJob(Object.assign({ runUrl: API.runFundamentalAnalysis(mkt, code) }, common));
-  }
-
-  const FIN_AXIS_KO = {
-    value: '밸류', profitability: '수익성', growth: '성장성',
-    stability: '안정성', shareholder_return: '주주환원',
-  };
   function _finNum(v, dp) {
     return (v == null || Number.isNaN(v)) ? '—' : Number(v).toFixed(dp);
   }
@@ -4357,106 +4160,6 @@ renderAll();
     return '●'.repeat(n) + '○'.repeat(4 - n);
   }
   function _axisCls(v) { return v >= 66 ? 'good' : (v >= 34 ? 'mid' : 'bad'); }
-
-  function renderFundamentalAnalysis(pane, body, date) {
-    const lbl = body.label || 'pending';
-    const pending = body.status === 'placeholder' || body.status === 'insufficient_data'
-      || lbl === 'pending';
-
-    // ── ① 결론 카드 — score raw 숫자는 렌더하지 않는다 ──
-    pane.appendChild(el('div', { className: 'ca-section' }, [
-      el('div', { className: 'ca-h' }, ['📊 재무 분석']),
-      el('div', { className: 'na-head' }, [
-        el('span', { className: 'ca-chip ' + (NEWS_LABEL_CLS[lbl] || '') },
-          [pending ? '판단 대기' : (NEWS_LABEL_KO[lbl] || lbl)]),
-        freshEl(date),
-      ].filter(Boolean)),
-      (body.summary_ko || body.rationale)
-        ? el('div', { className: 'fa-summary' }, [body.summary_ko || body.rationale]) : null,
-      (!pending && body.confidence != null)
-        ? el('div', { className: 'fa-conf' }, [
-            '신뢰도 ', el('span', { className: 'dots' }, [_confDots(body.confidence)]),
-          ]) : null,
-    ].filter(Boolean)));
-
-    // ── ② 행동 정보: 5축 막대(장문 노트는 hover) + 핵심 지표 풀이 상위 3 ──
-    const ax = body.axes || {};
-    const notes = body.axis_notes || {};
-    if (Object.values(ax).some(v => v != null)) {
-      pane.appendChild(el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['5축 한눈 (높을수록 좋음)']),
-        el('div', { className: 'fa-axes' }, Object.keys(FIN_AXIS_KO).map(k => {
-          const v = ax[k];
-          return el('div', { className: 'fa-axis', title: notes[k] || null }, [
-            el('span', { className: 'fa-axis-name' }, [FIN_AXIS_KO[k]]),
-            el('div', { className: 'fa-bar' }, [
-              el('i', { className: (v != null ? _axisCls(v) : ''),
-                        style: 'width:' + (v != null ? v : 0) + '%' }, []),
-            ]),
-          ]);
-        })),
-        el('div', { className: 'ca-desc' }, ['막대에 마우스를 올리면 축별 설명이 보입니다. 전체 설명은 아래 "판단 근거 전체".']),
-      ]));
-    }
-    const inp = body.inputs || {};
-    const expl = body.metric_explanations || [];
-    const metricRow = (m) => el('div', { className: 'fa-metric' }, [
-      el('span', { className: 'mk' }, [m.label || m.key || '']),
-      (m.value != null) ? el('span', { className: 'mv' }, [String(m.value)]) : null,
-      m.plain ? el('span', { className: 'mp' }, [m.plain]) : null,
-    ].filter(Boolean));
-    if (expl.length) {
-      pane.appendChild(el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['핵심 지표 (쉬운 풀이)'
-          + (inp.latest_period ? ' (' + inp.latest_period + ')' : '')]),
-        el('div', { className: 'fa-metrics' }, expl.slice(0, 3).map(metricRow)),
-      ]));
-    }
-
-    // ── 긍정 동인 / 위험 / 레드플래그 (3개 캡 + 더 보기) ──
-    if (body.drivers && body.drivers.length) {
-      pane.appendChild(el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['👍 긍정 동인']),
-        cappedList(body.drivers, 3, 'na-list na-pos'),
-      ]));
-    }
-    if (body.risks && body.risks.length) {
-      pane.appendChild(el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['⚠️ 위험 신호']),
-        cappedList(body.risks, 3, 'na-list na-neg'),
-      ]));
-    }
-    if (body.red_flags && body.red_flags.length) {
-      pane.appendChild(el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['🚩 레드플래그']),
-        el('div', { className: 'fa-flags' }, body.red_flags.map(x =>
-          el('div', { className: 'fl' }, ['🚩', x]))),
-      ]));
-    }
-
-    // ── ③ 접힌 상세: 나머지 지표 풀이 + 5축 설명 전체 + 적용 업종 ──
-    const detail = accordion('판단 근거 전체', [
-      expl.length > 3 ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['핵심 지표 (나머지)']),
-        el('div', { className: 'fa-metrics' }, expl.slice(3).map(metricRow)),
-      ]) : null,
-      Object.keys(FIN_AXIS_KO).some(k => notes[k]) ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['5축 상세 설명']),
-        el('div', { className: 'fa-metrics' },
-          Object.keys(FIN_AXIS_KO).filter(k => notes[k]).map(k =>
-            el('div', { className: 'fa-metric' }, [
-              el('span', { className: 'mk' }, [FIN_AXIS_KO[k]]),
-              el('span', { className: 'mp' }, [notes[k]]),
-            ]))),
-      ]) : null,
-      body.sector_assumed ? el('div', { className: 'fa-sector' },
-        ['적용 업종: ' + body.sector_assumed]) : null,
-    ]);
-    if (detail) pane.appendChild(detail);
-
-    pane.appendChild(el('button', { className: 'ex-news-run', onClick: runFundamentalAnalysis },
-      ['🔄 다시 분석 (약 5~7분)']));
-  }
 
   // ── 재무제표 · 지표 · 추세 (LLM 없이 — 탭 열면 항상 표시) ──
   // 큰 금액 포맷: KR=조/억(원), US=B/M(달러). 표시는 사람이 읽기 쉽게, CSV는 원본 숫자.
@@ -4860,9 +4563,6 @@ renderAll();
         : t).join(' → ')]));
     const lvAcc = accordion('전체 가격대 (지지·저항·진입·목표)', lvKids);
     if (lvAcc) pane.appendChild(lvAcc);
-
-    pane.appendChild(el('button', { className: 'ex-news-run', onClick: runChartAnalysis },
-      ['🔄 다시 분석 (약 5~7분)']));
 
     // P0-A: draw the verdict-curated S/R levels onto the chart (유지 — 잘 만든 기능).
     // Same closure → just set state + redraw.
