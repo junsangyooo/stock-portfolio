@@ -5614,6 +5614,13 @@ window.deleteHolding = async function (stock) {
   let modal = null;
   function buildModal() {
     if (modal) return modal;
+    // 랜딩 「＋ 계좌 추가」(?new=1)로 온 경우: 배경은 이 페이지(첫 계좌)의 PIN
+    // 게이트다. 모달을 닫으면 그 게이트에 남겨두지 말고 홈으로 되돌린다.
+    const fromLanding = new URLSearchParams(location.search).get('new') === '1';
+    const closeModal = () => {
+      if (fromLanding) { location.href = '/'; return; }
+      overlay.remove(); modal = null;
+    };
     const overlay = el('div', {
       id: 'new-account-modal',
       // z-index > PIN 게이트(10001) — landing의 「＋ 계좌 추가」가 ?new=1로 진입하면
@@ -5633,7 +5640,7 @@ window.deleteHolding = async function (stock) {
          ['＋ 계좌 추가']),
       el('button', {
         style:'background:transparent; color:var(--dim); border:none; font-size:16px; cursor:pointer;',
-        onClick: () => { overlay.remove(); modal = null; },
+        onClick: closeModal,
       }, ['✕']),
     ]));
 
@@ -5701,7 +5708,7 @@ window.deleteHolding = async function (stock) {
     });
     const btnCancel = el('button', {
       style:'padding:6px 14px; background:transparent; color:var(--dim); border:1px solid var(--line); cursor:pointer; font-family:inherit;',
-      onClick: () => { overlay.remove(); modal = null; },
+      onClick: closeModal,
     }, ['취소']);
     const btnSave = el('button', {
       style:'padding:6px 14px; background:var(--cyan); color:var(--bg); border:none; cursor:pointer; font-weight:700; font-family:inherit;',
