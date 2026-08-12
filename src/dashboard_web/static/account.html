@@ -2026,7 +2026,7 @@ const API = {
   createAccount:  () => '/api/accounts',
   addHolding:     () => '/api/accounts/' + _ACC + '/holdings',
   removeHolding:  (sid) => '/api/accounts/' + _ACC + '/holdings/' + encodeURIComponent(sid),
-  refreshHoldings:() => '/api/accounts/' + _ACC + '/refresh',
+  marketRefresh:  () => '/api/market/refresh',
   reorderHoldings:() => '/api/accounts/' + _ACC + '/holdings/reorder',
   balances:       () => '/api/accounts/' + _ACC + '/balances',
   snapshots: (ccy, days) =>
@@ -3133,9 +3133,9 @@ document.getElementById('btn-add').addEventListener('click', () => {
 });
 
 document.getElementById('btn-refresh').addEventListener('click', async () => {
-  document.getElementById('footer-ts').textContent = 'gap-fill 진행중…';
+  document.getElementById('footer-ts').textContent = '전 계좌 종목 갱신 중…';
   try {
-    await fetch(API.refreshHoldings(), { method: 'POST' });
+    await fetch(API.marketRefresh(), { method: 'POST' });
   } catch (_) {}
   await renderAll();
 });

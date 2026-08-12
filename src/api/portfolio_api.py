@@ -300,13 +300,6 @@ def reorder_holdings(account_id: str, body: HoldingsReorder,
             "reordered": holding_store.reorder(account_id, body.order)}
 
 
-@router.post("/{account_id}/refresh")
-def refresh_account(account_id: str,
-                    _: str = Depends(require_account)) -> dict:
-    sids = [h["symbol_id"] for h in holding_store.list_by_account(account_id)]
-    return {"ok": True, "filled": gap_filler.fill_many(sids)}
-
-
 # ── balances ─────────────────────────────────────────────────────────
 
 class BalancesBody(BaseModel):

@@ -19,6 +19,25 @@ _INTRADAY = {"1m": ("5d", "1m"), "5m": ("60d", "5m"),
              "60m": ("60d", "60m")}
 
 
+@router.post("/refresh")
+def refresh_all() -> dict:
+    """Gap-fill OHLCV + warm quotes for every symbol held in ANY account.
+
+    Market data is per-symbol and account-agnostic (§1 단일 진실), so the
+    refresh button updates the whole book, not just the visible account.
+    No require_account: nothing account-specific is returned.
+    """
+    from ..portfolio.store.db import connect
+    with connect() as conn:
+        sids = [r[0] for r in conn.execute(
+            "SELECT DISTINCT symbol_id FROM holdings ORDER BY symbol_id")]
+    filled = gap_filler.fill_many(sids)
+    fresh = sum(1 for sid in sids
+                if not _quote_payload(sid, max_age_s=10).get("stale"))
+    return {"ok": True, "symbols": len(sids),
+            "filled": filled, "quotes_fresh": fresh}
+
+
 @router.get("/ohlcv/{market}/{code}")
 def get_ohlcv(market: str, code: str, period: str = "day", n: int = 240,
               refresh: bool = False) -> dict:
