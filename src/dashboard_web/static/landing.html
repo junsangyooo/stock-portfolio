@@ -156,6 +156,41 @@ a { color:inherit; text-decoration:none; }
 .news-meta .src-ico { width:14px; height:14px; border-radius:3px; flex:none; }
 .news-meta .when { flex:none; }
 
+/* 오늘의 요약 — per-theme digest overviews, collapsible (state in localStorage) */
+.today-sum {
+  margin-bottom:12px; border:1px solid var(--line);
+  border-radius:var(--radius-sm); background:var(--elevated);
+}
+.today-sum-head {
+  display:flex; align-items:center; gap:8px; padding:8px 10px;
+  cursor:pointer; user-select:none;
+  font-size:10px; letter-spacing:2px; color:var(--cyan);
+  text-transform:uppercase;
+}
+.today-sum-head:hover { color:var(--fg); }
+.today-sum-head .caret { font-size:8px; transition:transform 0.12s; }
+.today-sum-head .n { margin-left:auto; color:var(--dim); letter-spacing:1px; }
+.today-sum.collapsed .caret { transform:rotate(-90deg); }
+.today-sum.collapsed .today-sum-body { display:none; }
+.today-sum-body {
+  padding:0 10px 10px; display:flex; flex-direction:column; gap:9px;
+}
+.sum-theme { display:flex; gap:8px; align-items:flex-start; }
+.sum-theme .lbl {
+  flex:none; width:76px; margin-top:1px;
+  font-size:9px; padding:2px 4px; text-align:center;
+  border:1px solid; border-radius:2px; letter-spacing:0.5px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.sum-theme ul { margin:0; padding:0; list-style:none; min-width:0; }
+.sum-theme li {
+  position:relative; padding-left:11px;
+  font-size:11px; color:var(--fg); line-height:1.55;
+}
+.sum-theme li::before {
+  content:'·'; position:absolute; left:2px; color:var(--dim);
+}
+
 /* 오늘의 핵심 — digest-starred articles pinned above the grid */
 .top-news { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
 .top-news-title {
@@ -254,6 +289,7 @@ a { color:inherit; text-decoration:none; }
       <span>뉴스</span>
       <span class="tag" id="news-count">— 건</span>
     </div>
+    <div class="today-sum" id="today-sum" style="display:none;"></div>
     <div class="top-news" id="top-news" style="display:none;"></div>
     <div class="news-grid" id="news-grid"></div>
   </div>
@@ -363,7 +399,7 @@ document.getElementById('btn-new-account').addEventListener('click', async () =>
 // qualitative feed (news + social) — from /api/analysis/news/feed
 // Populated by the 06:00 daily_job collect step. Chips = our themes.
 // ─────────────────────────────────────────────────────────
-const FEED = { news: [], social: [], themes: [] };
+const FEED = { news: [], social: [], summary: [], themes: [] };
 const activeCats = new Set();   // theme_id set
 const THEME_ICO = {
   battery:'battery-charging', ai_sw:'bot', bio:'dna', semiconductor:'cpu',
@@ -424,16 +460,55 @@ function renderCatBar() {
       onClick: () => {
         if (activeCats.has(th.id)) activeCats.delete(th.id);
         else activeCats.add(th.id);
-        renderCatBar(); renderNews(); renderSocial();
+        renderCatBar(); renderSummary(); renderNews(); renderSocial();
       },
     }, [(THEME_ICO[th.id] || '') + ' ' + th.name_kr]));
   }
   if (activeCats.size > 0) {
     bar.appendChild(el('button', {
       className: 'chip reset',
-      onClick: () => { activeCats.clear(); renderCatBar(); renderNews(); renderSocial(); },
+      onClick: () => { activeCats.clear(); renderCatBar(); renderSummary(); renderNews(); renderSocial(); },
     }, ['전체 해제']));
   }
+}
+
+function renderSummary() {
+  // per-theme bullets written by the nightly digest LLM call (no extra cost);
+  // follows the category chips so filtering the feed filters the summary too
+  const box = document.getElementById('today-sum');
+  clear(box);
+  const rows = (FEED.summary || []).filter(
+    s => activeCats.size === 0 || activeCats.has(s.theme));
+  if (rows.length === 0) { box.style.display = 'none'; return; }
+  box.style.display = '';
+  const collapsed = localStorage.getItem('sumCollapsed') === '1';
+  box.className = 'today-sum' + (collapsed ? ' collapsed' : '');
+  const lines = rows.reduce((a, s) => a + (s.bullets || []).length, 0);
+  // digests may lag a day (dawn batch); show the date so it never reads as today
+  const date = rows.map(s => s.date || '').sort().pop() || '';
+  box.appendChild(el('div', {
+    className: 'today-sum-head',
+    onClick: () => {
+      const now = !box.classList.contains('collapsed');
+      box.classList.toggle('collapsed', now);
+      localStorage.setItem('sumCollapsed', now ? '1' : '0');
+    },
+  }, [
+    el('span', { className:'caret' }, ['▼']),
+    el('span', {}, ['오늘의 요약']),
+    el('span', { className:'n' },
+      [date.slice(5) + ' · ' + rows.length + '개 분야 · ' + lines + '줄']),
+  ]));
+  const body = el('div', { className:'today-sum-body' }, []);
+  for (const s of rows) {
+    const c = themeColor(s.theme);
+    body.appendChild(el('div', { className:'sum-theme' }, [
+      el('span', { className:'lbl', style:`color:${c}; border-color:${c};` },
+        [s.theme_kr || s.theme]),
+      el('ul', {}, (s.bullets || []).map(b => el('li', {}, [b]))),
+    ]));
+  }
+  box.appendChild(body);
 }
 
 function renderTopNews(items) {
@@ -563,11 +638,12 @@ async function loadFeed() {
     const d = await r.json();
     FEED.news = d.news || [];
     FEED.social = d.social || [];
+    FEED.summary = d.summary || [];
     FEED.themes = d.themes || [];
   } catch (e) {
-    FEED.news = []; FEED.social = []; FEED.themes = [];
+    FEED.news = []; FEED.social = []; FEED.summary = []; FEED.themes = [];
   }
-  renderCatBar(); renderNews(); renderSocial();
+  renderCatBar(); renderSummary(); renderNews(); renderSocial();
 }
 loadFeed();
 </script>

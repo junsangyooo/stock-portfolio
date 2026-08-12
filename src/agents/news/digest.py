@@ -23,25 +23,35 @@ _MODEL = FAST_MODEL
 # The LLM keeps only 5~8 items regardless, so feeding all raw signals (a busy
 # theme can hit ~100/day) just burns tokens. Pre-rank rule-based and cap.
 _MAX_DIGEST_ITEMS = 40
-_LEAD_LAG_RANK = {"leading": 3, "backbone": 2, "coincident": 2, "lagging": 1}
+# Per-lane quota inside that cap. A flat lead_lag ranking (leading first) let
+# arXiv fill every slot on a busy day — the 08-12 semiconductor digest came out
+# as 5 papers + 1 Reddit post with no market news in it at all. Quotas give each
+# lane a floor; unused quota is refilled by recency below.
+_LANE_QUOTA = {"lagging": 20, "backbone": 8, "coincident": 6, "leading": 6}
 
 
 def _rank_and_cap(items: list[dict], cap: int = _MAX_DIGEST_ITEMS) -> list[dict]:
-    """Keep the top `cap` raw items by (lead_lag priority, recency).
+    """Keep up to `cap` raw items, giving each lead_lag lane its own quota.
 
-    Deterministic pre-filter before the LLM call. Leading/research signals win
-    over lagging news; ties broken by fetched_at. Returns items unchanged when
-    already under the cap.
+    Deterministic pre-filter before the LLM call: newest first within a lane,
+    then any leftover slots refilled by recency across lanes. Returns items
+    unchanged when already under the cap.
     """
     if len(items) <= cap:
         return items
-    ranked = sorted(
-        items,
-        key=lambda r: (_LEAD_LAG_RANK.get(r.get("lead_lag"), 1),
-                       r.get("fetched_at") or ""),
-        reverse=True,
-    )
-    return ranked[:cap]
+    by_lane: dict[str, list[dict]] = {}
+    for r in items:
+        by_lane.setdefault(r.get("lead_lag") or "lagging", []).append(r)
+    for lane in by_lane.values():
+        lane.sort(key=lambda r: r.get("fetched_at") or "", reverse=True)
+    kept = [r for name, lane in by_lane.items()
+            for r in lane[:_LANE_QUOTA.get(name, 2)]]
+    if len(kept) < cap:
+        seen = {id(r) for r in kept}
+        rest = sorted((r for r in items if id(r) not in seen),
+                      key=lambda r: r.get("fetched_at") or "", reverse=True)
+        kept.extend(rest[:cap - len(kept)])
+    return kept[:cap]
 
 
 def _safe_int(v, default: int = 3) -> int:
@@ -95,10 +105,14 @@ def _build_prompt(theme_name: str, items: list[dict]) -> str:
     listing = "\n".join(lines)
     return (
         f"테마: {theme_name}\n원시 시그널 {len(items)}건:\n\n{listing}\n\n"
-        "작업: 근접 중복을 병합하고, 투자 판단에 중요한 5~8건만 선별하라.\n"
+        "작업 1: 근접 중복을 병합하고, 투자 판단에 중요한 5~8건만 선별하라.\n"
         "각 선별 항목에 한국어 한 문장 요약·중요도(1~5)·신규성(true/false)을 붙여라.\n"
+        "작업 2: 선별 결과를 바탕으로 '오늘 이 테마에 무슨 일이 있었나'를 "
+        "불렛으로 정리하라(overview). 각 불렛은 한국어 1~2문장. 개수 제한은 없되 "
+        "중요한 것만 — 사소하면 빼라. 기사 제목 나열이 아니라 흐름·의미를 써라.\n"
         "출력(JSON):\n"
-        '{"selected": [{"idx": 0, "summary": "한문장", "importance": 4, "novelty": true}], '
+        '{"overview": ["불렛 한두 문장", "..."], '
+        '"selected": [{"idx": 0, "summary": "한문장", "importance": 4, "novelty": true}], '
         '"dropped_dup": 3}\n'
         "- idx는 위 번호. 중요도 높은 순. 최대 8건."
     )
@@ -109,7 +123,7 @@ def make_daily_digest(theme_id: str, theme_name: str, raw_items: list[dict],
     """Build a daily digest dict from that day's raw items. Empty-safe."""
     if not raw_items:
         return {"theme": theme_id, "date": date, "n_raw": 0,
-                "items": [], "dropped_dup": 0}
+                "overview": [], "items": [], "dropped_dup": 0}
     work = _rank_and_cap(raw_items)  # idx below is relative to `work`
     prompt = _build_prompt(theme_name, work)
     if backend is not None:                       # tests inject their own
@@ -134,8 +148,15 @@ def make_daily_digest(theme_id: str, theme_name: str, raw_items: list[dict],
             "importance": _safe_int(sel.get("importance"), 3),
             "novelty": bool(sel.get("novelty", False)),
         })
+    # Parsed independently of `selected`: a malformed overview must not cost us
+    # the item list (and vice versa). Cap 8 is a runaway guard, not a curation
+    # rule — the digest itself never exceeds 8 items.
+    ov = data.get("overview") or []
+    overview = [str(b).strip()[:300] for b in ov if str(b).strip()][:8] \
+        if isinstance(ov, list) else []
     return {"theme": theme_id, "date": date, "n_raw": len(raw_items),
-            "items": items, "dropped_dup": int(data.get("dropped_dup", 0)),
+            "overview": overview, "items": items,
+            "dropped_dup": int(data.get("dropped_dup", 0)),
             "served_by": served_by}
 
 

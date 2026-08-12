@@ -58,12 +58,18 @@ def _favicon(u: str) -> Optional[str]:
     return f"https://www.google.com/s2/favicons?domain={host}&sz=64" if host else None
 
 
-def _importance_by_url(themes, now_kst: datetime) -> dict[str, int]:
+def _read_digests(themes, now_kst: datetime) -> tuple[dict[str, int], list[dict]]:
     """Per theme, the newest available daily digest (today, else yesterday —
-    before the dawn batch today's file doesn't exist yet)."""
+    before the dawn batch today's file doesn't exist yet).
+
+    Returns (importance by url, per-theme overview bullets). Both come off the
+    same file read: the overview is written by the digest LLM call itself, so
+    the '오늘의 요약' section costs no extra inference.
+    """
     dates = [now_kst.strftime("%Y-%m-%d"),
              (now_kst - timedelta(days=1)).strftime("%Y-%m-%d")]
-    out: dict[str, int] = {}
+    importance: dict[str, int] = {}
+    summary: list[dict] = []
     for t in themes:
         for d in dates:
             p = paths.analysis_news_daily_path(t.theme_id, d)
@@ -76,9 +82,14 @@ def _importance_by_url(themes, now_kst: datetime) -> dict[str, int]:
             for di in dig.get("items", []):
                 u = (di.get("url") or "").strip()
                 if u:
-                    out[u] = max(out.get(u, 0), int(di.get("importance") or 0))
+                    importance[u] = max(importance.get(u, 0),
+                                        int(di.get("importance") or 0))
+            bullets = dig.get("overview") or []
+            if bullets:
+                summary.append({"theme": t.theme_id, "theme_kr": t.name_kr,
+                                "date": dig.get("date") or d, "bullets": bullets})
             break  # newest digest per theme only
-    return out
+    return importance, summary
 
 
 def build(limit: int = 60) -> dict:
@@ -88,7 +99,7 @@ def build(limit: int = 60) -> dict:
     cat = load_catalog()
     themes = live_themes(cat)
     name_kr = {t.theme_id: t.name_kr for t in cat.themes.values()}
-    importance = _importance_by_url(themes, now_kst)
+    importance, summary = _read_digests(themes, now_kst)
 
     news_by_key: dict[str, dict] = {}
     social_by_key: dict[str, dict] = {}
@@ -147,6 +158,7 @@ def build(limit: int = 60) -> dict:
     return {
         "news": sorted(news_by_key.values(), key=_sort_key, reverse=True)[:limit],
         "social": sorted(social_by_key.values(), key=_sort_key, reverse=True)[:limit],
+        "summary": summary,
         "themes": [{"id": t.theme_id, "name_kr": t.name_kr} for t in themes],
         "yyyymm": yyyymm,
     }
