@@ -2404,7 +2404,10 @@ function showPinGate() {
 
   overlay.appendChild(box);
   document.body.appendChild(overlay);
-  setTimeout(() => input.focus(), 50);
+  // 계좌 추가 모달(?new=1)이 게이트 위에 떠 있으면 포커스를 훔치지 않는다
+  setTimeout(() => {
+    if (!document.getElementById('new-account-modal')) input.focus();
+  }, 50);
 }
 
 async function fetchOhlcv(symbolId, period, n = 240) {
@@ -5613,8 +5616,10 @@ window.deleteHolding = async function (stock) {
     if (modal) return modal;
     const overlay = el('div', {
       id: 'new-account-modal',
+      // z-index > PIN 게이트(10001) — landing의 「＋ 계좌 추가」가 ?new=1로 진입하면
+      // 기존 계좌 세션 없이도(게이트 위에서) 새 계좌를 만들 수 있어야 한다
       style: 'position:fixed; inset:0; background:rgba(var(--fg-rgb), 0.35); ' +
-             'display:flex; align-items:center; justify-content:center; z-index:9999;'
+             'display:flex; align-items:center; justify-content:center; z-index:10002;'
     });
     const box = el('div', {
       style: 'background:var(--panel); border:1px solid var(--cyan); ' +

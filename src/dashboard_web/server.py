@@ -50,6 +50,7 @@ except Exception as exc:  # pragma: no cover
 # the entry points that have to work before you own a cookie.
 _OPEN_API = {
     ("GET", "/api/accounts"),                 # account list — names only
+    ("POST", "/api/accounts"),                # account creation — own PIN set in-form
     ("GET", "/api/analysis/news/feed"),       # landing page news, no PII
 }
 

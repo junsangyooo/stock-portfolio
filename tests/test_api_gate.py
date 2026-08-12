@@ -22,7 +22,6 @@ class TestApiGate(unittest.TestCase):
             ("GET", "/api/market/quotes?symbols=KR:005930"),
             ("GET", "/api/analysis/summary"),
             ("POST", "/api/analysis/chart/KR/005930/run"),
-            ("POST", "/api/accounts"),
             ("POST", "/api/accounts/junisa/chat"),
             ("GET", "/api/universe/search?q=samsung"),
         ]:
@@ -30,11 +29,14 @@ class TestApiGate(unittest.TestCase):
             self.assertEqual(r.status_code, 403, f"{method} {path} not gated")
 
     def test_open_entry_points(self):
-        # needed before you own a cookie: account list, landing news, PIN post
+        # needed before you own a cookie: account list, landing news, PIN post,
+        # and account creation (the new account's own PIN is set in the form)
         for path in ("/api/accounts", "/api/analysis/news/feed"):
             self.assertNotEqual(self.c.get(path).status_code, 403, path)
         r = self.c.post("/api/accounts/nope/auth", json={"pin": "000000"})
         self.assertEqual(r.status_code, 404)   # reached the route, not gated
+        r = self.c.post("/api/accounts", json={})
+        self.assertEqual(r.status_code, 422)   # reached validation, not gated
 
     def test_cookie_opens_shared_data(self):
         name, value = self.cookie
