@@ -30,7 +30,7 @@ REMOTE_HEAD=$(ssh "$HOST" 'git -C ~/portfolio-dashboard rev-parse HEAD')
 echo "[deploy] HEAD verified: ${REMOTE_HEAD:0:7}"
 
 # nginx config drift check (warn only — never auto-apply)
-ssh "$HOST" 'sudo -n diff -q ~/portfolio-dashboard/deploy/nginx-quant-lab.conf /etc/nginx/sites-available/quant-lab >/dev/null 2>&1' \
+ssh "$HOST" 'sudo -n diff -q ~/portfolio-dashboard/deploy/nginx-portfolio.conf /etc/nginx/sites-available/portfolio >/dev/null 2>&1' \
   || echo "[deploy] WARN: nginx config drift (deployed != git) — review manually"
 
 if [ -n "$SERVICE" ]; then

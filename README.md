@@ -12,10 +12,9 @@
 
 ## 라이브 배포
 
-- **Dashboard**: https://quant-lab.ai-sandbox.io (Cloudflare → nginx → `127.0.0.1:8888`)
+- **Dashboard**: https://portfolio.jsyoo.dev (Cloudflare → nginx → `127.0.0.1:8888`)
 - **인증**: 계좌 6자리 PIN + HMAC 세션 쿠키(30일). `/api/*`는 앱 미들웨어가 쿠키로 차단
 - **서버**: Oracle Cloud (Ampere A1, Ubuntu 22.04 aarch64, 춘천 region), systemd `dashboard.service`
-- 도메인 이름이 `quant-lab`로 남은 것은 의도적 (Cloudflare DNS·SSL·htpasswd 변경 회피)
 
 ## 4-영역 분리
 
