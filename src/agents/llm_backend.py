@@ -81,14 +81,18 @@ class ClaudeCliBackend:
             raise RuntimeError("`claude` CLI not found (PATH or nvm/usr/local)")
 
     def call(self, system: str, user: str, timeout_s: float = 60,
-             model: str | None = None) -> str:
+             model: str | None = None,
+             extra_args: list[str] | None = None) -> str:
+        # extra_args: appended CLI flags, e.g. --allowedTools for the chat
+        # agent's read-only lookup tool. Default None = plain text call.
         prompt = system + "\n\n---\n\n" + user
         m = model or self.model
         env = os.environ.copy()
         env.pop("ANTHROPIC_API_KEY", None)  # force subscription billing
         try:
             r = subprocess.run(
-                [self.bin, "-p", "--output-format", "text", "--model", m],
+                [self.bin, "-p", "--output-format", "text", "--model", m]
+                + (extra_args or []),
                 input=prompt, capture_output=True, text=True,
                 timeout=timeout_s, env=env,
             )

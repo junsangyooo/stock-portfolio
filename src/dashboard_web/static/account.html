@@ -5910,14 +5910,16 @@ window.deleteHolding = async function (stock) {
   const EXAMPLES = [
     '지금 손실이 큰 종목들의 공통점이 뭐야?',
     '오늘 뉴스 중 내 보유 종목에 영향 있는 게 있어?',
-    '포트폴리오가 어느 테마에 쏠려 있는지 알려줘',
+    '삼성전자 재무 상태 조회해서 요약해줘',
   ];
 
   function renderEmpty() {
     clear(logEl);
     const box = el('div', { className: 'chat-empty' }, [
       el('span', {}, ['이 계좌의 보유 종목·평가손익·예수금과 최근 뉴스 헤드라인을 ' +
-                      '함께 보고 답합니다. 대화는 저장되지 않습니다.']),
+                      '함께 보고 답합니다. 미보유 종목도 검색·시세·재무·판단을 직접 ' +
+                      '조회해서 답할 수 있습니다 (조회가 필요한 질문은 1~2분). ' +
+                      '대화는 저장되지 않습니다.']),
     ]);
     EXAMPLES.forEach(q => {
       const b = el('span', { className: 'ex' }, [q]);
@@ -5944,7 +5946,7 @@ window.deleteHolding = async function (stock) {
 
     busy = true;
     sendBtn.disabled = true;
-    const pending = push('bot', '분석 중… (10~40초)', 'bot think');
+    const pending = push('bot', '분석 중… (데이터 조회가 필요하면 1~2분)', 'bot think');
     try {
       const r = await fetch('/api/accounts/' + _ACC + '/chat', {
         method: 'POST',

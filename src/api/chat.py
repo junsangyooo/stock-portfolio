@@ -2,7 +2,10 @@
 
 The browser ships only the conversation; the account snapshot (holdings,
 cash, judge verdicts) and the latest news headlines are assembled here on
-every request. Nothing is persisted — a page reload starts a new chat.
+every request. Beyond the snapshot, the model may run the read-only lookup
+CLI (src/agents/chat_tools.py) via --allowedTools to search symbols and
+fetch quotes/facts/verdicts on demand. Nothing is persisted — a page reload
+starts a new chat.
 
 Billing: ClaudeCliBackend (subscription), never the paid API. See ops notes §7.
 """
@@ -26,12 +29,31 @@ TIMEOUT_S = 240
 SYSTEM = """당신은 개인 투자자의 포트폴리오 대시보드에 내장된 분석 어시스턴트입니다.
 아래 [계좌 현황]과 [뉴스 헤드라인]은 방금 조회한 실제 데이터입니다.
 
+추가 조회 도구 (읽기 전용):
+스냅샷에 없는 데이터가 필요하면 Bash로 아래 명령을 실행해 JSON으로 조회할 수 있다.
+반드시 이 명령만 사용한다 (다른 명령·파일 접근 금지):
+  .venv/bin/python -m src.agents.chat_tools search <검색어>        # 종목 검색 (이름/코드)
+  .venv/bin/python -m src.agents.chat_tools quote KR:005930        # 현재가
+  .venv/bin/python -m src.agents.chat_tools chart US:AAPL          # 차트 지표 요약
+  .venv/bin/python -m src.agents.chat_tools fundamental KR:005930  # 재무·밸류에이션
+  .venv/bin/python -m src.agents.chat_tools verdict KR:005930      # 최신 AI 종합 판단
+  .venv/bin/python -m src.agents.chat_tools news KR:005930         # 연결 뉴스·이슈
+symbol_id 규약: 한국 = KR:6자리코드, 미국 = US:티커. 모르면 먼저 search로 찾는다.
+도구는 질문에 필요한 최소한만 호출한다 (호출당 수 초 소요).
+
 규칙:
 - 한국어로, 군더더기 없이 답한다. 인사말·과잉 사과 금지.
-- 주어진 데이터에 없는 수치는 지어내지 않는다. 모르면 모른다고 말한다.
-- 숫자를 인용할 때는 위 데이터의 값을 그대로 쓴다.
+- 주어진 데이터·도구 조회 결과에 없는 수치는 지어내지 않는다. 조회로도 없으면 없다고 말한다.
+- 숫자를 인용할 때는 데이터의 값을 그대로 쓴다.
 - 매수/매도 단정 대신 근거와 리스크를 함께 제시한다.
 - 답변은 기본 5줄 이내. 표·목록을 요청받으면 그때 길게 쓴다."""
+
+# claude -p 도구 허용: 위 조회 CLI 한 가지만. 그 외 Bash·파일·네트워크는
+# 헤드리스 모드에서 자동 거부된다. max-turns로 nginx 250s 안에 수렴 보장.
+TOOL_ARGS = [
+    "--allowedTools", "Bash(.venv/bin/python -m src.agents.chat_tools:*)",
+    "--max-turns", "8",
+]
 
 
 class ChatIn(BaseModel):
@@ -123,7 +145,7 @@ def chat(account_id: str, body: ChatIn,
 
     try:
         reply = ClaudeCliBackend(model=SLOW_MODEL).call(
-            SYSTEM, user, timeout_s=TIMEOUT_S)
+            SYSTEM, user, timeout_s=TIMEOUT_S, extra_args=TOOL_ARGS)
     except Exception as e:  # noqa: BLE001 — surface CLI faults to the UI
         return {"ok": False, "detail": str(e)[:300]}
     return {"ok": True, "reply": reply}
