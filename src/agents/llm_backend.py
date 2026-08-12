@@ -23,6 +23,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -59,6 +60,10 @@ def _find_claude() -> str | None:
     return None
 SLOW_MODEL = "claude-sonnet-4-6"
 
+# Credential-shaped env vars never passed to claude / its tool children.
+_SENSITIVE_ENV = re.compile(
+    r"(_KEY|_TOKEN|_SECRET|_PW|_PASSWORD|_WEBHOOK_URL)$|^(KIS_|KRX_)")
+
 
 class ClaudeCliBackend:
     """Subprocess wrapper around ``claude -p``.
@@ -89,6 +94,11 @@ class ClaudeCliBackend:
         m = model or self.model
         env = os.environ.copy()
         env.pop("ANTHROPIC_API_KEY", None)  # force subscription billing
+        # Defense-in-depth: tool-enabled calls (chat --allowedTools) spawn a
+        # Bash child that inherits this env, so strip anything credential-
+        # shaped. Text-only agent calls never need these either.
+        for k in [k for k in env if _SENSITIVE_ENV.search(k)]:
+            env.pop(k, None)
         try:
             r = subprocess.run(
                 [self.bin, "-p", "--output-format", "text", "--model", m]
