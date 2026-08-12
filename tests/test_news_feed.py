@@ -66,7 +66,15 @@ def test_feed_merges_cross_theme_and_joins_importance(tmp_path, monkeypatch):
     dig.write_text(json.dumps(
         {"items": [{"url": "https://ex.com/1", "importance": 5}]}))
 
+    # yesterday's semiconductor digest carries the overview bullets
+    ydig = tmp_path / "ana" / "semiconductor" / \
+        f"{(now - timedelta(days=1)).strftime('%Y-%m-%d')}.json"
+    ydig.parent.mkdir(parents=True, exist_ok=True)
+    ydig.write_text(json.dumps({"date": "old", "overview": ["어제 요약"],
+                                "items": []}, ensure_ascii=False))
+
     out = news_feed(limit=50)
+    assert [s["bullets"] for s in out["summary"]] == [["어제 요약"]]
     hits = [n for n in out["news"] if n["url"] == "https://ex.com/1"]
     assert len(hits) == 1, "cross-theme duplicate must merge into one card"
     n = hits[0]

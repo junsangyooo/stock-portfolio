@@ -65,12 +65,17 @@ def _read_digests(themes, now_kst: datetime) -> tuple[dict[str, int], list[dict]
     Returns (importance by url, per-theme overview bullets). Both come off the
     same file read: the overview is written by the digest LLM call itself, so
     the '오늘의 요약' section costs no extra inference.
+
+    A theme with nothing collected still gets a digest file, just an empty one.
+    That must not hide yesterday's summary, so the overview keeps looking back
+    while importance stops at the newest file it finds.
     """
     dates = [now_kst.strftime("%Y-%m-%d"),
              (now_kst - timedelta(days=1)).strftime("%Y-%m-%d")]
     importance: dict[str, int] = {}
     summary: list[dict] = []
     for t in themes:
+        newest = True
         for d in dates:
             p = paths.analysis_news_daily_path(t.theme_id, d)
             if not p.exists():
@@ -79,16 +84,18 @@ def _read_digests(themes, now_kst: datetime) -> tuple[dict[str, int], list[dict]
                 dig = json.loads(p.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):
                 break
-            for di in dig.get("items", []):
-                u = (di.get("url") or "").strip()
-                if u:
-                    importance[u] = max(importance.get(u, 0),
-                                        int(di.get("importance") or 0))
+            if newest:
+                for di in dig.get("items", []):
+                    u = (di.get("url") or "").strip()
+                    if u:
+                        importance[u] = max(importance.get(u, 0),
+                                            int(di.get("importance") or 0))
+                newest = False
             bullets = dig.get("overview") or []
             if bullets:
                 summary.append({"theme": t.theme_id, "theme_kr": t.name_kr,
                                 "date": dig.get("date") or d, "bullets": bullets})
-            break  # newest digest per theme only
+                break
     return importance, summary
 
 
