@@ -64,4 +64,18 @@ def load() -> tuple[str, pd.DataFrame]:
             log.info("screener cached %s (%d tickers)", ymd, len(df))
             return ymd, df
     raise RuntimeError("KRX screener: no fundamental data in the last 8 days "
-                       "(pykrx outage? see data/logs)")
+                       "(KRX_ID/KRX_PW not set, or pykrx outage? see data/logs)")
+
+
+if __name__ == "__main__":
+    # Daily cron entry: warm the cache OUTSIDE the chat subprocess — the chat
+    # child has KRX_* scrubbed from its env (llm_backend), so screening from
+    # chat only ever reads the parquet this writes.
+    import sys
+    logging.basicConfig(level=logging.INFO)
+    try:
+        ymd, df = load()
+        print(f"screener ok {ymd}: {len(df)} tickers")
+    except Exception as e:  # noqa: BLE001 — cron convention: non-zero + message
+        print(f"screener FAILED: {e}", file=sys.stderr)
+        sys.exit(1)
