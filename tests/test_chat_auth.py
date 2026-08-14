@@ -57,8 +57,9 @@ def test_own_session_reaches_the_handler(client, monkeypatch):
         def __init__(self, *a, **kw):
             pass
 
-        def call(self, system, user, timeout_s=60, model=None):
+        def call(self, system, user, timeout_s=60, model=None, extra_args=None):
             seen["user"] = user
+            seen["extra_args"] = extra_args
             return "네, 괜찮습니다."
 
     monkeypatch.setattr(chat, "ClaudeCliBackend", _Stub)
@@ -67,6 +68,10 @@ def test_own_session_reaches_the_handler(client, monkeypatch):
     assert r.status_code == 200
     assert r.json() == {"ok": True, "reply": "네, 괜찮습니다."}
     assert "[계좌] alice" in seen["user"]
+    # the handler swallows every exception into {"ok": False}, so a signature
+    # drift here reads as a plain assertion failure with no hint of the cause —
+    # pin the value, not just the keyword
+    assert seen["extra_args"] == chat.TOOL_ARGS
 
 
 def test_empty_conversation_short_circuits(client, monkeypatch):
