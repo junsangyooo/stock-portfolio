@@ -1584,8 +1584,11 @@ body.chat-open { padding-right: 388px; }
   border-collapse: collapse; margin: 8px 0; font-size: 11px;
 }
 .chat-msg .md-tbl th, .chat-msg .md-tbl td {
-  border: 1px solid var(--line); padding: 3px 7px;
-  text-align: left; white-space: nowrap;   /* cut the pre-wrap inheritance */
+  border: 1px solid var(--line); padding: 3px 7px; text-align: left;
+  /* cut the pre-wrap/break-word inheritance, but still wrap on word
+     boundaries — nowrap made a 4-column table 969px wide inside a 353px
+     panel. Amounts like ₩1,186,200 are one word, so they stay intact. */
+  white-space: normal; word-break: normal;
 }
 .chat-msg .md-tbl th { color: var(--dim); font-weight: 700; }
 .chat-empty { color: var(--dim); font-size: 11px; line-height: 1.8; }
