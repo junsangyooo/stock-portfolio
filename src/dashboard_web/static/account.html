@@ -1569,6 +1569,25 @@ body.chat-open { padding-right: 388px; }
 }
 .chat-msg.err { border-color: var(--red); color: var(--red); }
 .chat-msg.think { color: var(--dim); }
+/* markdown subset rendered by renderReply() — keep in sync with chat.py SYSTEM */
+.chat-msg strong { font-weight: 700; color: var(--cyan); }
+.chat-msg code {
+  font-family: inherit; font-size: 11px;
+  background: rgba(var(--cyan-rgb), 0.10);
+  border-radius: 3px; padding: 0 4px;
+}
+.chat-msg .md-hr {
+  border: none; border-top: 1px solid var(--line); margin: 10px 0;
+}
+.chat-msg .md-tbl {
+  display: block; overflow-x: auto; max-width: 100%;
+  border-collapse: collapse; margin: 8px 0; font-size: 11px;
+}
+.chat-msg .md-tbl th, .chat-msg .md-tbl td {
+  border: 1px solid var(--line); padding: 3px 7px;
+  text-align: left; white-space: nowrap;   /* cut the pre-wrap inheritance */
+}
+.chat-msg .md-tbl th { color: var(--dim); font-weight: 700; }
 .chat-empty { color: var(--dim); font-size: 11px; line-height: 1.8; }
 .chat-empty .ex {
   display: block; margin-top: 6px; cursor: pointer;
@@ -5937,6 +5956,73 @@ window.deleteHolding = async function (stock) {
     return div;
   }
 
+  // ── markdown subset ─────────────────────────────────────
+  // A reply is UNTRUSTED input: news headlines reach the model's context, so a
+  // crafted headline could make it emit markup. Everything below goes through
+  // textContent / createTextNode — never innerHTML.
+  // The supported subset is pinned to the SYSTEM prompt in src/api/chat.py;
+  // change one and change the other, or unsupported syntax shows up raw again.
+  const MD_INLINE = /\*\*([^*]+)\*\*|`([^`]+)`/g;
+  const isRow = s => /^\s*\|.*\|\s*$/.test(s || '');
+  const isSep = s => /^\s*\|[\s:|-]+\|\s*$/.test(s || '');
+  const cellsOf = s => s.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+
+  function mdInline(text, parent) {
+    MD_INLINE.lastIndex = 0;
+    let last = 0, m;
+    while ((m = MD_INLINE.exec(text))) {
+      if (m.index > last) {
+        parent.appendChild(document.createTextNode(text.slice(last, m.index)));
+      }
+      const bold = m[1] != null;
+      parent.appendChild(el(bold ? 'strong' : 'code', {}, [bold ? m[1] : m[2]]));
+      last = MD_INLINE.lastIndex;
+    }
+    if (last < text.length) {
+      parent.appendChild(document.createTextNode(text.slice(last)));
+    }
+    return parent;
+  }
+
+  function mdTable(lines, i, box) {
+    // caller already checked lines[i] is a header row followed by a separator
+    const head = cellsOf(lines[i]);
+    const rows = [];
+    let j = i + 2;
+    while (j < lines.length && isRow(lines[j])) rows.push(cellsOf(lines[j++]));
+    box.appendChild(el('table', { className: 'md-tbl' }, [
+      el('thead', {}, [el('tr', {}, head.map(h => mdInline(h, el('th'))))]),
+      el('tbody', {}, rows.map(r => el('tr', {}, r.map(c => mdInline(c, el('td')))))),
+    ]));
+    return j;
+  }
+
+  function renderReply(src, box) {
+    clear(box);
+    const lines = String(src == null ? '' : src).split('\n');
+    let buf = [];
+    function flush() {
+      // trim the blank lines around a block so pre-wrap doesn't stack its own
+      // newline on top of the table/hr margins
+      const text = buf.join('\n').replace(/^\n+|\n+$/g, '');
+      buf = [];
+      if (text) box.appendChild(mdInline(text, el('span', { className: 'md-p' })));
+    }
+    for (let i = 0; i < lines.length; i++) {
+      if (isRow(lines[i]) && isSep(lines[i + 1])) {
+        flush();
+        i = mdTable(lines, i, box) - 1;
+      } else if (/^\s*(-{3,}|\*{3,})\s*$/.test(lines[i])) {
+        flush();
+        box.appendChild(el('hr', { className: 'md-hr' }));
+      } else {
+        buf.push(lines[i]);
+      }
+    }
+    flush();
+    return box;
+  }
+
   async function send() {
     const q = textEl.value.trim();
     if (!q || busy) return;
@@ -5959,7 +6045,7 @@ window.deleteHolding = async function (stock) {
         pending.textContent = '실패: ' + (d.detail || r.status);
       } else {
         pending.className = 'chat-msg bot';
-        pending.textContent = d.reply;
+        renderReply(d.reply, pending);
         messages.push({ role: 'assistant', content: d.reply });
       }
     } catch (e) {
