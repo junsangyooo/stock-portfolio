@@ -1591,6 +1591,7 @@ body.chat-open { padding-right: 388px; }
   white-space: normal; word-break: normal;
 }
 .chat-msg .md-tbl th { color: var(--dim); font-weight: 700; }
+.chat-msg .md-tbl td.num { white-space: nowrap; text-align: right; }
 .chat-empty { color: var(--dim); font-size: 11px; line-height: 1.8; }
 .chat-empty .ex {
   display: block; margin-top: 6px; cursor: pointer;
@@ -5987,6 +5988,15 @@ window.deleteHolding = async function (stock) {
     return parent;
   }
 
+  // amount/ratio cells: wrapping them splits the sign off its number
+  // (-₩1,186,200 breaks after the hyphen), so those stay on one line
+  const NUMERIC = /^[-+−]?[₩$]?[\d,.\s%]+$/;
+  function mdCell(text) {
+    const td = mdInline(text, el('td'));
+    if (NUMERIC.test(text.replace(/[*`]/g, '').trim())) td.className = 'num';
+    return td;
+  }
+
   function mdTable(lines, i, box) {
     // caller already checked lines[i] is a header row followed by a separator
     const head = cellsOf(lines[i]);
@@ -5995,7 +6005,7 @@ window.deleteHolding = async function (stock) {
     while (j < lines.length && isRow(lines[j])) rows.push(cellsOf(lines[j++]));
     box.appendChild(el('table', { className: 'md-tbl' }, [
       el('thead', {}, [el('tr', {}, head.map(h => mdInline(h, el('th'))))]),
-      el('tbody', {}, rows.map(r => el('tr', {}, r.map(c => mdInline(c, el('td')))))),
+      el('tbody', {}, rows.map(r => el('tr', {}, r.map(mdCell)))),
     ]));
     return j;
   }
