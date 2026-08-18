@@ -1,30 +1,48 @@
-"""/api/accounts/{id}/chat — portfolio Q&A backed by the Claude CLI.
+"""/api/accounts/{id}/chat* — portfolio Q&A backed by the Claude CLI.
 
-The browser ships only the conversation; the account snapshot (holdings,
-cash, judge verdicts) and the latest news headlines are assembled here on
-every request. Beyond the snapshot, the model may run the read-only lookup
-CLI (src/agents/chat_tools.py) via --allowedTools to search symbols and
-fetch quotes/facts/verdicts on demand. Nothing is persisted — a page reload
-starts a new chat.
+Threads: a chat is a row in ``chat_sessions`` whose ``session_id`` is also the
+Claude CLI session id. The first turn runs ``--session-id <uuid>``, every later
+turn ``--resume <uuid>``, so the model keeps its own transcript — tool lookups
+and their raw results included — and never re-fetches what it already pulled.
+Our own copy of the messages exists only to repaint the browser.
+
+Async: the request never waits for the model. POST /chat spawns a thread and
+returns a job id; the browser polls GET /chat/status. This is the same shape as
+analysis_jobs.py, and for the same reason — Cloudflare gives up on an origin
+response at ~100s, so no synchronous route can ever hold a claude -p run. The
+old ``--max-turns 8`` existed purely to squeeze the agent loop under that
+ceiling; with the wait gone, the loop is uncapped and heavy questions (screen →
+per-candidate fundamentals) can take as long as they need.
 
 Billing: ClaudeCliBackend (subscription), never the paid API. See ops notes §7.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+import glob
+import os
+import threading
+import time
+import uuid
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..agents.llm_backend import SLOW_MODEL, ClaudeCliBackend
 from ..portfolio import service
+from ..portfolio.store import chat_store
 from . import analysis
 from .portfolio_api import require_account
 
 router = APIRouter(prefix="/api/accounts", tags=["chat"])
 
-MAX_TURNS = 10        # keep the tail of the conversation, drop older turns
 MAX_CHARS = 4000      # per message, guard against a giant paste
 NEWS_N = 20
-TIMEOUT_S = 240
+# Hang guard only — nothing blocks on this now, so it is sized for the worst
+# honest run (a screen plus a dozen per-symbol lookups), not for an HTTP wait.
+TIMEOUT_S = 1800
+_STALE_S = TIMEOUT_S + 120   # a job still 'running' past this is dead
+_JOB_TTL_S = 3600            # finished jobs are pruned after an hour
 
 SYSTEM = """당신은 개인 투자자의 포트폴리오 대시보드에 내장된 분석 어시스턴트입니다.
 아래 [계좌 현황]과 [뉴스 헤드라인]은 방금 조회한 실제 데이터입니다.
@@ -45,7 +63,8 @@ SYSTEM = """당신은 개인 투자자의 포트폴리오 대시보드에 내장
 symbol_id 규약: 한국 = KR:6자리코드, 미국 = US:티커. 모르면 먼저 search로 찾는다.
 발굴 요청("~한 종목 찾아줘")은 screen으로 후보를 추린 뒤, 상위 종목만 fundamental/verdict로
 심화 조회해 근거를 붙인다. 미국 전체 스크리닝은 미지원 — 한국만 가능하다고 안내한다.
-도구는 질문에 필요한 최소한만 호출한다 (호출당 수 초 소요).
+질문에 필요한 만큼 조회한다. 호출당 수 초 걸리지만 시간 제한은 없으니, 근거가 모자란 채로
+답하기보다 필요한 조회를 다 하고 답한다. 이미 이 대화에서 조회한 값은 다시 조회하지 않는다.
 
 규칙:
 - 한국어로, 군더더기 없이 답한다. 인사말·과잉 사과 금지.
@@ -57,16 +76,50 @@ symbol_id 규약: 한국 = KR:6자리코드, 미국 = US:티커. 모르면 먼�
   헤딩(#)·링크([]())·인용(>)은 쓰지 않는다 — 화면이 그대로 기호로 보인다."""
 
 # claude -p 도구 허용: 위 조회 CLI 한 가지만. 그 외 Bash·파일·네트워크는
-# 헤드리스 모드에서 자동 거부된다. max-turns로 nginx 250s 안에 수렴 보장.
+# 헤드리스 모드에서 자동 거부된다. 턴 수 제한 없음 (모듈 docstring 참고).
 TOOL_ARGS = [
     "--allowedTools", "Bash(.venv/bin/python -m src.agents.chat_tools:*)",
-    "--max-turns", "8",
 ]
 
 
-class ChatIn(BaseModel):
-    messages: list[dict]   # [{"role": "user"|"assistant", "content": str}]
+# ── job registry ──────────────────────────────────────────────────────
+# job_id -> {state, account_id, session_id, reply, detail, started_at, _t}
+# Single uvicorn worker (server.py), so an in-memory dict is shared across
+# requests. Jobs are transient: the answer is persisted to chat_sessions the
+# moment it lands, so losing the registry on restart costs nothing but the
+# poll in flight.
+_jobs: dict = {}
+_lock = threading.Lock()
 
+
+def _prune_locked() -> None:
+    now = time.time()
+    for k in [k for k, j in _jobs.items()
+              if j["state"] != "running" and now - j["_t"] > _JOB_TTL_S]:
+        _jobs.pop(k, None)
+
+
+def _running_for(session_id: str) -> str | None:
+    now = time.time()
+    for jid, j in _jobs.items():
+        if (j["session_id"] == session_id and j["state"] == "running"
+                and now - j["_t"] <= _STALE_S):
+            return jid
+    return None
+
+
+def _cli_session_exists(session_id: str) -> bool:
+    """Whether the CLI already has a transcript for this id.
+
+    Ground truth for --session-id vs --resume: our message log can disagree
+    (a first turn that died after the CLI wrote its file would otherwise be
+    retried with --session-id and rejected as already taken).
+    """
+    return bool(glob.glob(os.path.expanduser(
+        f"~/.claude/projects/*/{session_id}.jsonl")))
+
+
+# ── prompt assembly ───────────────────────────────────────────────────
 
 def _fmt(n, ccy: str) -> str:
     if n is None:
@@ -131,29 +184,133 @@ def _news_context() -> str:
     return "\n".join(lines)
 
 
+def _build(account_id: str, message: str, seeded: bool) -> tuple[str, str]:
+    """(system, user) for this turn.
+
+    Once the session holds a real exchange it also holds the rules and the
+    history, so a later turn sends neither. It still sends a fresh account
+    snapshot, because prices and verdicts move between turns and the stale
+    copy in the session would otherwise be the model's only reference.
+    """
+    q = str(message)[:MAX_CHARS]
+    if seeded:
+        return "", "\n\n".join((_account_context(account_id),
+                                "[사용자 질문]\n" + q))
+    return SYSTEM, "\n\n".join(x for x in (
+        _account_context(account_id), _news_context(),
+        "[사용자 질문]\n" + q) if x)
+
+
+# ── threads (CRUD) ────────────────────────────────────────────────────
+
+class ThreadCreate(BaseModel):
+    title: str | None = None
+
+
+@router.get("/{account_id}/chats")
+def list_chats(account_id: str, _: str = Depends(require_account)) -> dict:
+    return {"ok": True, "chats": chat_store.list_for(account_id)}
+
+
+@router.post("/{account_id}/chats")
+def create_chat(account_id: str, body: ThreadCreate | None = None,
+                _: str = Depends(require_account)) -> dict:
+    sid = chat_store.create(account_id, (body.title if body else None) or "새 대화")
+    return {"ok": True, "session_id": sid}
+
+
+@router.get("/{account_id}/chats/{session_id}")
+def get_chat(account_id: str, session_id: str,
+             _: str = Depends(require_account)) -> dict:
+    t = chat_store.get(account_id, session_id)
+    if not t:
+        raise HTTPException(404, "chat not found")
+    return {"ok": True, "chat": t, "running": bool(_running_for(session_id))}
+
+
+@router.delete("/{account_id}/chats/{session_id}")
+def delete_chat(account_id: str, session_id: str,
+                _: str = Depends(require_account)) -> dict:
+    if not chat_store.delete(account_id, session_id):
+        raise HTTPException(404, "chat not found")
+    with _lock:
+        for jid in [j for j, v in _jobs.items() if v["session_id"] == session_id]:
+            _jobs.pop(jid, None)
+    return {"ok": True}
+
+
+# ── ask (async job) ───────────────────────────────────────────────────
+
+class ChatIn(BaseModel):
+    session_id: str
+    message: str
+
+
 @router.post("/{account_id}/chat")
 def chat(account_id: str, body: ChatIn,
          _: str = Depends(require_account)) -> dict:
     # require_account, not just the server-wide /api gate: the reply embeds
     # this account's holdings, PnL and cash, so any account's session must not
     # be able to read another's.
-    turns = [m for m in body.messages
-             if m.get("role") in ("user", "assistant") and m.get("content")][-MAX_TURNS:]
-    if not turns:
-        return {"ok": False, "detail": "empty conversation"}
+    thread = chat_store.get(account_id, body.session_id)
+    if not thread:
+        raise HTTPException(404, "chat not found")
+    msg = (body.message or "").strip()
+    if not msg:
+        return {"ok": False, "detail": "empty message"}
 
-    convo = "\n\n".join(
-        ("사용자: " if m["role"] == "user" else "어시스턴트: ")
-        + str(m["content"])[:MAX_CHARS]
-        for m in turns
-    )
-    user = "\n\n".join(x for x in (
-        _account_context(account_id), _news_context(),
-        "[대화]\n" + convo, "위 대화의 마지막 사용자 질문에 답하세요.") if x)
+    with _lock:
+        _prune_locked()
+        if _running_for(body.session_id):
+            return {"ok": False, "detail": "이 대화에 이미 실행 중인 요청이 있습니다"}
+        job_id = str(uuid.uuid4())
+        _jobs[job_id] = {
+            "state": "running", "account_id": account_id,
+            "session_id": body.session_id, "reply": None, "detail": None,
+            "started_at": datetime.utcnow().isoformat() + "Z", "_t": time.time(),
+        }
 
-    try:
-        reply = ClaudeCliBackend(model=SLOW_MODEL).call(
-            SYSTEM, user, timeout_s=TIMEOUT_S, extra_args=TOOL_ARGS)
-    except Exception as e:  # noqa: BLE001 — surface CLI faults to the UI
-        return {"ok": False, "detail": str(e)[:300]}
-    return {"ok": True, "reply": reply}
+    # Two separate questions. Which flag: does the CLI already know this id?
+    # Whether to re-send the rules: has an answer actually landed? A first turn
+    # that died may have left a session behind without the rules in it, and
+    # resuming that one silently strips the model's tools and format.
+    session_args = (["--resume", body.session_id]
+                    if _cli_session_exists(body.session_id)
+                    else ["--session-id", body.session_id])
+    seeded = any(m.get("role") == "assistant" for m in thread["messages"])
+    chat_store.append(account_id, body.session_id, "user", msg[:MAX_CHARS])
+
+    def _run() -> None:
+        try:
+            system, user = _build(account_id, msg, seeded)
+            reply = ClaudeCliBackend(model=SLOW_MODEL).call(
+                system, user, timeout_s=TIMEOUT_S,
+                extra_args=TOOL_ARGS + session_args)
+            chat_store.append(account_id, body.session_id, "assistant", reply)
+            with _lock:
+                if job_id in _jobs:
+                    _jobs[job_id].update(state="done", reply=reply, _t=time.time())
+        except Exception as e:  # noqa: BLE001 — surface to the poller, never crash
+            with _lock:
+                if job_id in _jobs:
+                    _jobs[job_id].update(state="error", detail=str(e)[:300],
+                                         _t=time.time())
+
+    threading.Thread(target=_run, daemon=True, name=f"chat:{job_id}").start()
+    return {"ok": True, "job_id": job_id}
+
+
+@router.get("/{account_id}/chat/status")
+def chat_status(account_id: str, job_id: str,
+                _: str = Depends(require_account)) -> dict:
+    with _lock:
+        j = _jobs.get(job_id)
+        if not j or j["account_id"] != account_id:
+            # Unknown to this account: either never existed, pruned after the
+            # answer was persisted, or another account's. The client falls back
+            # to reloading the thread, where a finished answer is waiting.
+            return {"ok": True, "state": "unknown"}
+        if j["state"] == "running" and time.time() - j["_t"] > _STALE_S:
+            return {"ok": True, "state": "error", "detail": "job timed out"}
+        return {"ok": True, "state": j["state"], "reply": j.get("reply"),
+                "detail": j.get("detail"), "started_at": j.get("started_at")}

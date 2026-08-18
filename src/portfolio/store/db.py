@@ -6,6 +6,7 @@ Relational data ONLY:
   - balances                (account_id, currency) cash
   - snapshots               (date, account_id, currency) daily history
   - holding_themes          (symbol_id, theme_id) qualitative theme mapping (L1)
+  - chat_sessions           (session_id) per-account chat threads + transcript
 
 Symbol master lives in data/universe/*.json (not in SQLite — too volatile,
 loaded into memory by src/universe).
@@ -77,6 +78,16 @@ CREATE TABLE IF NOT EXISTS holding_themes (
   PRIMARY KEY (symbol_id, theme_id)
 );
 CREATE INDEX IF NOT EXISTS idx_holding_themes_theme ON holding_themes(theme_id);
+
+CREATE TABLE IF NOT EXISTS chat_sessions (
+  session_id  TEXT PRIMARY KEY,           -- uuid4, doubles as the claude CLI --session-id
+  account_id  TEXT NOT NULL REFERENCES accounts(account_id) ON DELETE CASCADE,
+  title       TEXT NOT NULL,              -- first user question, trimmed
+  messages    TEXT NOT NULL DEFAULT '[]', -- JSON [{role, content}] for replaying the thread
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_acc ON chat_sessions(account_id, updated_at DESC);
 """
 
 

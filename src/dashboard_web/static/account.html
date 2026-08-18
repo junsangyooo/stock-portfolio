@@ -1547,6 +1547,23 @@ body.chat-open { padding-right: 388px; }
   background: transparent; border: none; color: var(--dim);
   font-size: 15px; cursor: pointer; font-family: inherit;
 }
+.chat-threads {
+  display: flex; gap: 6px; align-items: center;
+  padding: 6px 10px; border-bottom: 1px solid var(--line);
+}
+.chat-threads select {
+  flex: 1; min-width: 0; height: 24px;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 4px;
+  font: inherit; font-size: 10px; padding: 0 4px;
+}
+.chat-threads button {
+  height: 24px; padding: 0 7px; white-space: nowrap;
+  background: none; color: var(--dim);
+  border: 1px solid var(--line); border-radius: 4px;
+  font: inherit; font-size: 10px; cursor: pointer;
+}
+.chat-threads button:hover { border-color: var(--cyan); color: var(--cyan); }
 .chat-log {
   flex: 1; overflow-y: auto;
   padding: 12px; display: flex; flex-direction: column; gap: 10px;
@@ -1747,6 +1764,11 @@ body.chat-open { padding-right: 388px; }
   <div class="chat-head">
     <span><svg class="lci"><use href="#i-message-square"/></svg> 포트폴리오 대화 <span class="sub">· 계좌 + 뉴스 컨텍스트</span></span>
     <button id="chat-close" aria-label="닫기">✕</button>
+  </div>
+  <div class="chat-threads">
+    <select id="chat-pick" title="이전 대화"></select>
+    <button id="chat-new" title="새 대화 (독립 컨텍스트)">+ 새 대화</button>
+    <button id="chat-del" title="이 대화 삭제">🗑</button>
   </div>
   <div class="chat-log" id="chat-log"></div>
   <div class="chat-input">
@@ -5927,8 +5949,16 @@ window.deleteHolding = async function (stock) {
   const logEl = document.getElementById('chat-log');
   const textEl = document.getElementById('chat-text');
   const sendBtn = document.getElementById('chat-send');
-  const messages = [];   // [{role, content}]
+  const pickEl = document.getElementById('chat-pick');
+  const newBtn = document.getElementById('chat-new');
+  const delBtn = document.getElementById('chat-del');
+  // Threads live on the server (chat_sessions). sid is also the claude CLI
+  // session id, so picking an old thread restores the model's memory of it —
+  // including the lookups it already ran — not just the bubbles on screen.
+  const SID_KEY = 'pd_chat_sid_' + _ACC;
+  let sid = null;
   let busy = false;
+  let loaded = false;
 
   const EXAMPLES = [
     '지금 손실이 큰 종목들의 공통점이 뭐야?',
@@ -5941,8 +5971,8 @@ window.deleteHolding = async function (stock) {
     const box = el('div', { className: 'chat-empty' }, [
       el('span', {}, ['이 계좌의 보유 종목·평가손익·예수금과 최근 뉴스 헤드라인을 ' +
                       '함께 보고 답합니다. 미보유 종목도 검색·시세·재무·판단을 직접 ' +
-                      '조회해서 답할 수 있습니다 (조회가 필요한 질문은 1~2분). ' +
-                      '대화는 저장되지 않습니다.']),
+                      '조회해서 답할 수 있습니다. 조회가 많은 질문은 수 분 걸리며, ' +
+                      '대화는 계좌별로 저장돼 나중에 이어갈 수 있습니다.']),
     ]);
     EXAMPLES.forEach(q => {
       const b = el('span', { className: 'ex' }, [q]);
@@ -6036,35 +6066,142 @@ window.deleteHolding = async function (stock) {
     return box;
   }
 
+  // ── threads ─────────────────────────────────────────────
+  const JSON_POST = { method: 'POST', headers: { 'Content-Type': 'application/json' } };
+
+  async function api(path, opts) {
+    const r = await fetch('/api/accounts/' + _ACC + path, opts);
+    let d = null;
+    try { d = await r.json(); } catch (e) { /* non-JSON error page */ }
+    if (!r.ok) throw new Error((d && d.detail) || r.status);
+    return d;
+  }
+
+  function fillPicker(chats) {
+    clear(pickEl);
+    chats.forEach(c => {
+      const o = el('option', {}, [c.title + ' (' + c.n + ')']);
+      o.value = c.session_id;
+      pickEl.appendChild(o);
+    });
+    if (!chats.length) {
+      const o = el('option', {}, ['새 대화']);
+      o.value = '';
+      pickEl.appendChild(o);
+    }
+    pickEl.value = sid || '';
+  }
+
+  function paint(msgs) {
+    clear(logEl);
+    if (!msgs.length) { renderEmpty(); return; }
+    msgs.forEach(m => {
+      if (m.role === 'user') push('user', m.content);
+      else renderReply(m.content, push('bot', ''));
+    });
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  async function openThread(id) {
+    sid = id || null;
+    localStorage.setItem(SID_KEY, sid || '');
+    if (!sid) { clear(logEl); renderEmpty(); return; }
+    try {
+      paint(((await api('/chats/' + sid)).chat || {}).messages || []);
+    } catch (e) {           // deleted elsewhere / stale id in localStorage
+      sid = null;
+      clear(logEl);
+      renderEmpty();
+    }
+  }
+
+  async function refresh(pick) {
+    let chats = [];
+    try { chats = (await api('/chats')).chats || []; } catch (e) { /* offline */ }
+    const has = id => chats.some(c => c.session_id === id);
+    let target = pick !== undefined ? pick : (has(sid) ? sid : null);
+    if (!target) {
+      const want = localStorage.getItem(SID_KEY);
+      target = has(want) ? want : (chats[0] ? chats[0].session_id : null);
+    }
+    sid = target;
+    fillPicker(chats);
+    await openThread(target);
+  }
+
+  async function refreshTitles() {   // picker only — never repaints the log
+    try { fillPicker((await api('/chats')).chats || []); } catch (e) { /* offline */ }
+  }
+
+  async function ensureThread() {
+    if (!sid) {
+      sid = (await api('/chats', Object.assign({ body: '{}' }, JSON_POST))).session_id;
+      localStorage.setItem(SID_KEY, sid);
+    }
+    return sid;
+  }
+
+  async function newThread() {
+    await refresh((await api('/chats', Object.assign({ body: '{}' }, JSON_POST))).session_id);
+    textEl.focus();
+  }
+
+  async function delThread() {
+    if (!sid) return;
+    if (!confirm('이 대화를 삭제합니다. 서버의 대화 기록과 모델 세션도 함께 지워집니다.')) return;
+    try { await api('/chats/' + sid, { method: 'DELETE' }); } catch (e) { /* already gone */ }
+    sid = null;
+    await refresh(null);
+  }
+
+  // ── ask ─────────────────────────────────────────────────
+  // The answer is a background job on the server: POST hands back a job id and
+  // we poll. Nothing waits on an open request, so a question that needs twenty
+  // lookups is fine — Cloudflare's ~100s origin ceiling never enters the loop.
+  const POLL_MS = 3000;
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
   async function send() {
     const q = textEl.value.trim();
     if (!q || busy) return;
     textEl.value = '';
     push('user', q);
-    messages.push({ role: 'user', content: q });
 
     busy = true;
     sendBtn.disabled = true;
-    const pending = push('bot', '분석 중… (데이터 조회가 필요하면 1~2분)', 'bot think');
+    const t0 = Date.now();
+    const pending = push('bot', '분석 중…', 'bot think');
+    const tick = setInterval(() => {
+      pending.textContent = '분석 중… ' + Math.round((Date.now() - t0) / 1000) + '초';
+    }, 1000);
     try {
-      const r = await fetch('/api/accounts/' + _ACC + '/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages }),
-      });
-      const d = await r.json();
-      if (!r.ok || !d.ok) {
-        pending.className = 'chat-msg err';
-        pending.textContent = '실패: ' + (d.detail || r.status);
-      } else {
-        pending.className = 'chat-msg bot';
-        renderReply(d.reply, pending);
-        messages.push({ role: 'assistant', content: d.reply });
+      await ensureThread();
+      const job = await api('/chat', Object.assign(
+        { body: JSON.stringify({ session_id: sid, message: q }) }, JSON_POST));
+      if (!job.ok) throw new Error(job.detail || '요청이 거부되었습니다');
+
+      let reply = null;
+      for (;;) {
+        await sleep(POLL_MS);
+        const st = await api('/chat/status?job_id=' + encodeURIComponent(job.job_id));
+        if (st.state === 'done') { reply = st.reply; break; }
+        if (st.state === 'error') throw new Error(st.detail || '실행 실패');
+        if (st.state === 'unknown') {
+          // registry pruned or the server restarted — the answer, if any, was
+          // already persisted to the thread
+          const last = (((await api('/chats/' + sid)).chat || {}).messages || []).slice(-1)[0];
+          if (last && last.role === 'assistant') { reply = last.content; break; }
+          throw new Error('작업 상태를 잃었습니다');
+        }
       }
+      pending.className = 'chat-msg bot';
+      renderReply(reply, pending);
+      refreshTitles();
     } catch (e) {
       pending.className = 'chat-msg err';
-      pending.textContent = '네트워크 오류: ' + e.message;
+      pending.textContent = '실패: ' + e.message;
     } finally {
+      clearInterval(tick);
       busy = false;
       sendBtn.disabled = false;
       logEl.scrollTop = logEl.scrollHeight;
@@ -6080,10 +6217,17 @@ window.deleteHolding = async function (stock) {
     const on = open != null ? open : !document.body.classList.contains('chat-open');
     document.body.classList.toggle('chat-open', on);
     if (on) {
-      if (!messages.length) renderEmpty();
+      if (!loaded) { loaded = true; refresh(); }
       setTimeout(() => textEl.focus(), 250);
     }
   }
+  pickEl.addEventListener('change', () => {
+    if (busy) { pickEl.value = sid || ''; return; }   // don't strand a running job
+    openThread(pickEl.value || null);
+  });
+  newBtn.addEventListener('click', () => { if (!busy) newThread(); });
+  delBtn.addEventListener('click', () => { if (!busy) delThread(); });
+
   document.getElementById('btn-chat').addEventListener('click', () => toggle());
   document.getElementById('chat-close').addEventListener('click', () => toggle(false));
   document.addEventListener('keydown', e => {
