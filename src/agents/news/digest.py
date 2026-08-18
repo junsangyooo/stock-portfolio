@@ -132,6 +132,7 @@ def make_daily_digest(theme_id: str, theme_name: str, raw_items: list[dict],
     else:
         raw, served_by = local_or_claude(_SYSTEM, prompt, claude_model=_MODEL,
                                          stage=f"digest:{theme_id}",
+                                         validate=_parse_json,
                                          claude_timeout_s=timeout_s)
     data = _parse_json(raw)
     items = []

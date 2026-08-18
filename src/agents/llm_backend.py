@@ -165,9 +165,19 @@ class LocalLlamaBackend:
         except TimeoutError:
             raise RuntimeError(f"local llama timeout ({timeout_s}s)")
         try:
-            return data["choices"][0]["message"]["content"].strip()
+            content = data["choices"][0]["message"]["content"].strip()
         except (KeyError, IndexError, AttributeError):
             raise RuntimeError(f"local llama bad response: {str(data)[:200]}")
+        # U+FFFD means the model emitted a byte sequence that is not valid
+        # UTF-8 — a quantised 4B writing Korean does this occasionally. It is
+        # never legitimate here (no collected signal or digest on disk has ever
+        # contained one), and it corrupts silently: `"nov<FFFD>lty": true` still
+        # parses as JSON, it just drops the field. Treat it as a failed
+        # generation so the caller retries instead of storing bad data.
+        if "\ufffd" in content:
+            raise RuntimeError(
+                "local llama produced invalid UTF-8 (U+FFFD) — corrupt generation")
+        return content
 
 
 _log = logging.getLogger("llm")
@@ -190,7 +200,7 @@ def _get_log() -> logging.Logger:
 
 
 def local_or_claude(system: str, user: str, *, claude_model: str,
-                    stage: str = "?",
+                    stage: str = "?", validate=None,
                     timeout_s: float = LOCAL_TIMEOUT_S,
                     claude_timeout_s: float = 300) -> tuple[str, str]:
     """Run on the local model, fall back to Claude on any failure.
@@ -207,10 +217,18 @@ def local_or_claude(system: str, user: str, *, claude_model: str,
     temperature 0.2, not a dead server. A timeout is NOT retried; it means the
     slot is wedged, and a second 30-minute wait would push the news batch into
     the 21:10 fundamental job.
+
+    ``validate`` (e.g. ``_parse_json``) runs on the local answer and must raise
+    to reject it. Without it, unusable local output escapes this function and
+    blows up in the caller — where there is no retry and no Claude to fall back
+    to, so the theme is simply lost for the day.
     """
     for attempt in (1, 2):
         try:
-            return LocalLlamaBackend().call(system, user, timeout_s=timeout_s), "local_llama"
+            out = LocalLlamaBackend().call(system, user, timeout_s=timeout_s)
+            if validate is not None:
+                validate(out)
+            return out, "local_llama"
         except Exception as e:  # noqa: BLE001 — any local fault must not lose the run
             # "timed out" too: a socket timeout surfacing through URLError
             # keeps that wording, and retrying it costs another full timeout.

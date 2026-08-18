@@ -52,6 +52,16 @@ class TestLocalLlamaBackend(unittest.TestCase):
         self.assertIn("expected format", msg)
         self.assertNotIn("unreachable", msg)
 
+    def test_replacement_char_is_rejected(self):
+        # A quantised 4B writing Korean occasionally emits an invalid UTF-8
+        # sequence. `"nov\ufffdlty": true` still parses as JSON, so nothing
+        # downstream notices — the field just silently goes missing.
+        payload = {"choices": [{"message": {"content": '{"nov\ufffdlty": true}'}}]}
+        with patch.object(LB.urllib.request, "urlopen", return_value=_Resp(payload)):
+            with self.assertRaises(RuntimeError) as cm:
+                LB.LocalLlamaBackend().call("s", "u")
+        self.assertIn("U+FFFD", str(cm.exception))
+
     def test_malformed_response_raises(self):
         with patch.object(LB.urllib.request, "urlopen", return_value=_Resp({"x": 1})):
             with self.assertRaises(RuntimeError):
@@ -107,6 +117,26 @@ class TestFallback(unittest.TestCase):
         self.assertIn("state:battery", blob)
         self.assertIn("boom", blob)
         self.assertIn("claude_cli", blob)
+
+    def test_unparseable_local_output_retries_then_falls_back(self):
+        # Validation lives inside the fallback, not in the caller: a caller-side
+        # parse failure has no retry and no Claude behind it, so the theme is
+        # lost for the day.
+        with patch.object(LB.LocalLlamaBackend, "call", return_value="not json") as m, \
+             patch.object(LB.ClaudeCliBackend, "__init__", return_value=None), \
+             patch.object(LB.ClaudeCliBackend, "call", return_value='{"ok": 1}'):
+            out, who = LB.local_or_claude("s", "u", claude_model="m",
+                                          validate=LB._parse_json)
+        self.assertEqual((out, who), ('{"ok": 1}', "claude_cli"))
+        self.assertEqual(m.call_count, 2)
+
+    def test_valid_local_output_passes_validation(self):
+        with patch.object(LB.LocalLlamaBackend, "call", return_value='  {"ok": 1}  '), \
+             patch.object(LB.ClaudeCliBackend, "__init__", return_value=None), \
+             patch.object(LB.ClaudeCliBackend, "call", return_value="UNUSED"):
+            self.assertEqual(
+                LB.local_or_claude("s", "u", claude_model="m", validate=LB._parse_json),
+                ('  {"ok": 1}  ', "local_llama"))
 
     def test_claude_failure_propagates(self):
         # both down -> the caller must see it, not a silent empty digest

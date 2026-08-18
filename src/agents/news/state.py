@@ -165,6 +165,7 @@ def update_state(theme_id: str, theme_name: str, digest: dict,
         else:
             raw, _ = local_or_claude(_SYSTEM, prompt, claude_model=SLOW_MODEL,
                                      stage=f"state:{theme_id}",
+                                     validate=_parse_json,
                                      claude_timeout_s=timeout_s)
         data = _parse_json(raw)
         new["horizon_summary"] = data.get("horizon_summary", prev.get("horizon_summary", ""))
