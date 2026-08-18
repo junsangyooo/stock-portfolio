@@ -138,3 +138,25 @@ def test_missing_plan_is_404(client):
                         cookies=_cookie()).status_code == 404
     assert client.delete("/api/accounts/alice/plans/999",
                          cookies=_cookie()).status_code == 404
+
+
+def test_chat_plan_block_example_is_accepted_by_the_api(client):
+    """The chat prompt hands the model a literal example block.
+
+    The model never writes — it emits that block and the browser posts it back
+    through this route. If either side drifts the hand-off breaks silently, so
+    the example itself is the contract and has to round-trip.
+    """
+    import json
+    import re
+
+    from src.api import chat
+
+    m = re.search(r"```plan\n(.*?)```", chat.SYSTEM, re.S)
+    assert m, "the plan block contract vanished from the chat system prompt"
+    plans = json.loads(m.group(1))
+    assert plans, "the example must show at least one plan"
+    for p in plans:
+        r = client.post("/api/accounts/alice/plans", json=p, cookies=_cookie())
+        assert r.status_code == 200, r.text
+        assert r.json()["plan"]["side"] == p["side"]

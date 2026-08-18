@@ -1701,6 +1701,40 @@ body.chat-open { padding-right: 388px; }
   background: rgba(var(--cyan-rgb), 0.10);
   border-radius: 3px; padding: 0 4px;
 }
+/* Plan hand-off card — replaces the model's ```plan block in the transcript */
+.chat-plan {
+  margin: 8px 0 2px;
+  border: 1px solid var(--yellow);
+  background: rgba(var(--yellow-rgb), 0.07);
+  padding: 8px 10px;
+}
+.chat-plan .cp-name { color: var(--fg); font-weight: 700; margin-bottom: 4px; }
+.chat-plan .cp-line {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 11px; color: var(--fg);
+}
+.chat-plan .cp-side {
+  font-size: 9px; font-weight: 700; letter-spacing: 1px;
+  border: 1px solid; padding: 1px 5px;
+}
+.chat-plan .cp-side.buy  { color: var(--green); border-color: var(--green); }
+.chat-plan .cp-side.sell { color: var(--red);   border-color: var(--red); }
+.chat-plan .cp-amt { color: var(--cyan); }
+.chat-plan .cp-note {
+  color: var(--dim); font-size: 10px; margin-top: 4px;
+  white-space: pre-wrap; word-break: break-word;
+}
+.chat-plan-save {
+  margin-top: 8px; width: 100%;
+  background: transparent; border: 1px solid var(--yellow); color: var(--yellow);
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700;
+  letter-spacing: 1px; padding: 5px 10px; cursor: pointer;
+}
+.chat-plan-save:hover:not(:disabled) { background: rgba(var(--yellow-rgb), 0.15); }
+.chat-plan-save:disabled { cursor: default; }
+.chat-plan-save.done { color: var(--green); border-color: var(--green); }
+.chat-plan-save.err  { color: var(--red);   border-color: var(--red); }
+
 .chat-msg .md-hr {
   border: none; border-top: 1px solid var(--line); margin: 10px 0;
 }
@@ -6476,9 +6510,75 @@ window.deleteHolding = async function (stock) {
     return j;
   }
 
+  // ── plan hand-off ───────────────────────────────────────
+  // The model never writes. It emits a ```plan block; we strip it, show a card,
+  // and the save goes out from the browser through the same authenticated
+  // route as a hand-typed plan — so it can only ever land in the account whose
+  // page this is.
+  const PLAN_FENCE = /```plan\s*\n([\s\S]*?)```/g;
+
+  function extractPlans(src) {
+    const out = [];
+    const text = src.replace(PLAN_FENCE, (_, body) => {
+      let arr;
+      try { arr = JSON.parse(body); } catch (e) { return ''; }
+      if (!Array.isArray(arr)) arr = [arr];
+      arr.forEach(p => {
+        if (!p || typeof p !== 'object') return;
+        const price = Number(p.price), qty = Number(p.qty);
+        if (typeof p.symbol_id !== 'string' || p.symbol_id.indexOf(':') < 0) return;
+        if (p.side !== 'buy' && p.side !== 'sell') return;
+        if (!isFinite(price) || price <= 0 || !isFinite(qty) || qty <= 0) return;
+        out.push({
+          symbol_id: p.symbol_id,
+          name: String(p.name || p.symbol_id),
+          side: p.side, price: price, qty: qty,
+          note: typeof p.note === 'string' ? p.note : '',
+        });
+      });
+      return '';
+    });
+    return { text: text, plans: out };
+  }
+
+  function planCard(plan) {
+    const ccy = plan.symbol_id.startsWith('US:') ? 'USD' : 'KRW';
+    const btn = el('button', { className: 'chat-plan-save' }, ['노트에 담기']);
+    const card = el('div', { className: 'chat-plan' }, [
+      el('div', { className: 'cp-name' }, [plan.name]),
+      el('div', { className: 'cp-line' }, [
+        el('span', { className: 'cp-side ' + plan.side },
+           [plan.side === 'buy' ? '매수' : '매도']),
+        el('span', {}, [fmtPrice(plan.price, ccy) + ' × ' + fmtQty(plan.qty) + '주']),
+        el('span', { className: 'cp-amt' },
+           ['예상 ' + fmtPrice(plan.price * plan.qty, ccy)]),
+      ]),
+      plan.note ? el('div', { className: 'cp-note' }, [plan.note]) : null,
+      btn,
+    ].filter(Boolean));
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      btn.textContent = '담는 중…';
+      try {
+        const r = await fetch(API.plans(), Object.assign(
+          { body: JSON.stringify(plan) }, JSON_POST));
+        const d = await r.json().catch(() => null);
+        if (!r.ok) throw new Error((d && d.detail) || r.status);
+        btn.textContent = '✓ 노트에 담김';
+        btn.classList.add('done');
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = '실패 — 다시 시도';
+        btn.classList.add('err');
+      }
+    });
+    return card;
+  }
+
   function renderReply(src, box) {
     clear(box);
-    const lines = String(src == null ? '' : src).split('\n');
+    const parsed = extractPlans(String(src == null ? '' : src));
+    const lines = parsed.text.split('\n');
     let buf = [];
     function flush() {
       // trim the blank lines around a block so pre-wrap doesn't stack its own
@@ -6499,6 +6599,7 @@ window.deleteHolding = async function (stock) {
       }
     }
     flush();
+    parsed.plans.forEach(p => box.appendChild(planCard(p)));
     return box;
   }
 
