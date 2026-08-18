@@ -73,9 +73,12 @@ symbol_id 규약: 한국 = KR:6자리코드, 미국 = US:티커. 모르면 먼�
 - 매수/매도 단정 대신 근거와 리스크를 함께 제시한다.
 - 답변은 기본 5줄 이내. 표·목록을 요청받으면 그때 길게 쓴다.
 - 서식은 **굵게**, `코드`, 불렛(- ), 구분선(---), 표(| 구분) 다섯 가지만 쓴다.
-  헤딩(#)·링크([]())·인용(>)은 쓰지 않는다 — 화면이 그대로 기호로 보인다.
+  헤딩(#)·링크([]())·인용(>)은 쓰지 않는다 — 화면이 그대로 기호로 보인다."""
 
-계획 노트 담기:
+# Sent again on every later turn: SYSTEM only goes out on a thread's first
+# turn, so a conversation opened before this existed would never learn the
+# format and the hand-off would silently do nothing in it.
+PLAN_CONTRACT = """계획 노트 담기:
 사용자가 매매 계획을 계획 노트에 넣어달라고 **명시적으로 요청했을 때만**, 답변 맨 끝에
 아래 블록을 정확히 이 형식으로 덧붙인다. 화면이 이 블록을 지우고 그 자리에
 「노트에 담기」 버튼이 달린 카드로 바꿔 보여준다. 저장은 사용자가 그 버튼을 눌러야 일어난다.
@@ -86,6 +89,9 @@ symbol_id 규약: 한국 = KR:6자리코드, 미국 = US:티커. 모르면 먼�
 - side는 "buy" 또는 "sell". price·qty는 숫자만 — 콤마·통화기호·단위를 넣지 않는다.
 - note는 선택. symbol_id를 모르면 먼저 search로 확인한다. 추측해서 쓰지 않는다.
 - 요청받지 않았으면 이 블록을 내보내지 않는다. 계획을 제안만 하는 답변에는 붙이지 않는다."""
+
+SYSTEM = SYSTEM + "\n\n" + PLAN_CONTRACT
+
 
 # claude -p 도구 허용: 위 조회 CLI 한 가지만. 그 외 Bash·파일·네트워크는
 # 헤드리스 모드에서 자동 거부된다. 턴 수 제한 없음 (모듈 docstring 참고).
@@ -206,7 +212,7 @@ def _build(account_id: str, message: str, seeded: bool) -> tuple[str, str]:
     """
     q = str(message)[:MAX_CHARS]
     if seeded:
-        return "", "\n\n".join((_account_context(account_id),
+        return "", "\n\n".join((_account_context(account_id), PLAN_CONTRACT,
                                 "[사용자 질문]\n" + q))
     return SYSTEM, "\n\n".join(x for x in (
         _account_context(account_id), _news_context(),

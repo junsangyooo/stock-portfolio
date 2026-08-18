@@ -160,3 +160,20 @@ def test_chat_plan_block_example_is_accepted_by_the_api(client):
         r = client.post("/api/accounts/alice/plans", json=p, cookies=_cookie())
         assert r.status_code == 200, r.text
         assert r.json()["plan"]["side"] == p["side"]
+
+
+def test_plan_contract_reaches_an_ongoing_thread(client):
+    """SYSTEM is only sent on a thread's first turn.
+
+    Everything after that leans on the copy the CLI session already holds, so
+    a conversation opened before the hand-off existed would never learn the
+    format and "노트에 넣어줘" would quietly do nothing in it.
+    """
+    from src.api import chat
+
+    sys_first, _ = chat._build("alice", "안녕", seeded=False)
+    sys_later, user_later = chat._build("alice", "노트에 넣어줘", seeded=True)
+
+    assert "```plan" in sys_first
+    assert sys_later == "", "a resumed session must not be re-seeded"
+    assert "```plan" in user_later
