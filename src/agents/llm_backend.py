@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import glob
 import json
+import logging
 import os
 import re
 import shutil
@@ -152,6 +153,13 @@ class LocalLlamaBackend:
         try:
             with urllib.request.urlopen(req, timeout=timeout_s) as r:
                 data = json.load(r)
+        except urllib.error.HTTPError as e:
+            # HTTPError subclasses URLError — split it out, or a generation-side
+            # 500 ("output does not match the expected format") gets logged as
+            # "unreachable" and sends the next debugger after the network.
+            raise RuntimeError(
+                f"local llama HTTP {e.code} from {self.url}: "
+                f"{e.read(300).decode('utf-8', 'replace')}")
         except urllib.error.URLError as e:
             raise RuntimeError(f"local llama unreachable at {self.url}: {e}")
         except TimeoutError:
@@ -162,21 +170,62 @@ class LocalLlamaBackend:
             raise RuntimeError(f"local llama bad response: {str(data)[:200]}")
 
 
+_log = logging.getLogger("llm")
+
+
+def _get_log() -> logging.Logger:
+    """stderr logger with timestamps — cron redirects it into the job log.
+
+    A bare ``print`` left fallbacks undatable: the news log is a timestamp-free
+    append, so a past fallback could only be dated by its position relative to
+    the next JSON summary block.
+    """
+    if not _log.handlers:
+        h = logging.StreamHandler(sys.stderr)
+        h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s llm %(message)s"))
+        _log.addHandler(h)
+        _log.setLevel(logging.INFO)
+        _log.propagate = False
+    return _log
+
+
 def local_or_claude(system: str, user: str, *, claude_model: str,
+                    stage: str = "?",
                     timeout_s: float = LOCAL_TIMEOUT_S,
                     claude_timeout_s: float = 300) -> tuple[str, str]:
     """Run on the local model, fall back to Claude on any failure.
 
     Returns ``(raw_text, backend_name)`` so callers can log which one served.
     Used by the mechanical news stages; judgment stages call Claude directly.
+
+    ``stage`` labels the caller (e.g. ``"digest:battery"``) — it is the only
+    record of WHICH theme fell back for the state stage, which drops the
+    returned backend name.
+
+    The local call gets one retry first: the only fallback observed so far was
+    a llama.cpp 500 on a generation its chat parser rejected — a dice roll at
+    temperature 0.2, not a dead server. A timeout is NOT retried; it means the
+    slot is wedged, and a second 30-minute wait would push the news batch into
+    the 21:10 fundamental job.
     """
-    try:
-        return LocalLlamaBackend().call(system, user, timeout_s=timeout_s), "local_llama"
-    except Exception as e:  # noqa: BLE001 — any local fault must not lose the run
-        print(f"[llm] local backend failed ({str(e)[:150]}), falling back to Claude",
-              file=sys.stderr)
-    return (ClaudeCliBackend(model=claude_model).call(
-        system, user, timeout_s=claude_timeout_s, model=claude_model), "claude_cli")
+    for attempt in (1, 2):
+        try:
+            return LocalLlamaBackend().call(system, user, timeout_s=timeout_s), "local_llama"
+        except Exception as e:  # noqa: BLE001 — any local fault must not lose the run
+            # "timed out" too: a socket timeout surfacing through URLError
+            # keeps that wording, and retrying it costs another full timeout.
+            msg = str(e).lower()
+            timed_out = isinstance(e, TimeoutError) or "timeout" in msg or "timed out" in msg
+            retrying = attempt == 1 and not timed_out
+            _get_log().warning(
+                f"[{stage}] local backend failed (attempt {attempt}: {str(e)[:200]}) "
+                f"— {'retrying locally' if retrying else f'falling back to Claude ({claude_model})'}")
+            if not retrying:
+                break
+    out = ClaudeCliBackend(model=claude_model).call(
+        system, user, timeout_s=claude_timeout_s, model=claude_model)
+    _get_log().warning(f"[{stage}] served by claude_cli ({claude_model})")
+    return out, "claude_cli"
 
 
 def _parse_json(text: str) -> dict:
