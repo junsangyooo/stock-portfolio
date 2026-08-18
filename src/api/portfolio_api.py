@@ -26,7 +26,7 @@ from ..core.notify import discord
 from ..market.pipeline import gap_filler
 from ..portfolio import service
 from ..portfolio.store import (
-    account_store, balance_store, holding_store, snapshot_store,
+    account_store, balance_store, holding_store, plan_store, snapshot_store,
 )
 from ..core.paths import split_symbol
 from ..portfolio.store.db import connect
@@ -328,3 +328,75 @@ def get_snapshots(account_id: str, currency: str = "KRW", days: int = 90,
                   _: str = Depends(require_account)) -> dict:
     return {"account_id": account_id, "currency": currency, "days": days,
             "snapshots": snapshot_store.read(account_id, currency, days)}
+
+
+# ── plans (매매 계획 노트) ────────────────────────────────────────────
+# Intent only. Nothing here writes to holdings — an executed plan is recorded
+# through the normal buy/sell path and the note is deleted.
+
+class PlanBody(BaseModel):
+    symbol_id: str
+    name: Optional[str] = None
+    side: str
+    price: float
+    qty: float
+    note: Optional[str] = None
+
+
+class PlanPatch(BaseModel):
+    symbol_id: Optional[str] = None
+    name: Optional[str] = None
+    side: Optional[str] = None
+    price: Optional[float] = None
+    qty: Optional[float] = None
+    note: Optional[str] = None
+
+
+def _clean_plan(side: Optional[str], price: Optional[float],
+                qty: Optional[float]) -> None:
+    if side is not None and side not in plan_store.SIDES:
+        raise HTTPException(400, "side must be 'buy' or 'sell'")
+    if price is not None and price <= 0:
+        raise HTTPException(400, "price must be > 0")
+    if qty is not None and qty <= 0:
+        raise HTTPException(400, "qty must be > 0")
+
+
+@router.get("/{account_id}/plans")
+def list_plans(account_id: str, _: str = Depends(require_account)) -> dict:
+    return {"account_id": account_id, "plans": plan_store.list_all(account_id)}
+
+
+@router.post("/{account_id}/plans")
+def create_plan(account_id: str, body: PlanBody,
+                _: str = Depends(require_account)) -> dict:
+    _clean_plan(body.side, body.price, body.qty)
+    symbol_id = (body.symbol_id or "").strip()
+    if not symbol_id:
+        raise HTTPException(400, "symbol_id is required")
+    name = (body.name or "").strip()
+    if not name:
+        rec = uni_search.get(symbol_id) or {}
+        name = rec.get("name_kr") or rec.get("name_en") or symbol_id
+    plan = plan_store.create(account_id, symbol_id=symbol_id, name=name,
+                             side=body.side, price=body.price, qty=body.qty,
+                             note=(body.note or "").strip())
+    return {"ok": True, "plan": plan}
+
+
+@router.patch("/{account_id}/plans/{plan_id}")
+def update_plan(account_id: str, plan_id: int, body: PlanPatch,
+                _: str = Depends(require_account)) -> dict:
+    _clean_plan(body.side, body.price, body.qty)
+    plan = plan_store.update(account_id, plan_id, **body.model_dump())
+    if plan is None:
+        raise HTTPException(404, "plan not found")
+    return {"ok": True, "plan": plan}
+
+
+@router.delete("/{account_id}/plans/{plan_id}")
+def delete_plan(account_id: str, plan_id: int,
+                _: str = Depends(require_account)) -> dict:
+    if not plan_store.delete(account_id, plan_id):
+        raise HTTPException(404, "plan not found")
+    return {"ok": True, "deleted": plan_id}

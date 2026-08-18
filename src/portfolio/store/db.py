@@ -7,6 +7,7 @@ Relational data ONLY:
   - snapshots               (date, account_id, currency) daily history
   - holding_themes          (symbol_id, theme_id) qualitative theme mapping (L1)
   - chat_sessions           (session_id) per-account chat threads + transcript
+  - plans                   (plan_id) per-account 매매 계획 노트
 
 Symbol master lives in data/universe/*.json (not in SQLite — too volatile,
 loaded into memory by src/universe).
@@ -88,6 +89,22 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
   updated_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_acc ON chat_sessions(account_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS plans (
+  plan_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id  TEXT NOT NULL REFERENCES accounts(account_id) ON DELETE CASCADE,
+  symbol_id   TEXT NOT NULL,            -- 'KR:012450' — a plan may name a symbol
+                                        -- the account does not hold yet
+  name        TEXT NOT NULL,            -- name at write time; the note stays
+                                        -- readable even if universe drops it
+  side        TEXT NOT NULL,            -- 'buy' | 'sell'
+  price       REAL NOT NULL,
+  qty         REAL NOT NULL,
+  note        TEXT,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_plans_account ON plans(account_id, created_at DESC);
 """
 
 

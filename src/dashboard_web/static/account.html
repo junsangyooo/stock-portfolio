@@ -396,6 +396,109 @@ a { color: inherit; text-decoration: none; }
 }
 .assets-row .curve-btn:hover { color: var(--cyan); border-color: var(--cyan); }
 
+/* ─────────────────────────────────────────────────────────────
+   PLAN NOTE — account-scoped 매매 계획, not tied to any stock card
+   ───────────────────────────────────────────────────────────── */
+.plan-dialog { max-width: 860px; }
+.plan-body { padding: 16px 20px 20px; }
+.plan-form {
+  display: grid;
+  grid-template-columns: 1fr auto 120px 100px;
+  gap: 8px 10px;
+  align-items: end;
+}
+.plan-search { position: relative; grid-column: 1; }
+.plan-search input {
+  width: 100%; padding: 7px 10px;
+  background: var(--bg); border: 1px solid var(--line); color: var(--fg);
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+}
+.plan-search input:focus { border-color: var(--cyan); outline: none; }
+.plan-picked {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border: 1px solid var(--cyan);
+  background: rgba(var(--cyan-rgb), 0.06); font-size: 12px;
+}
+.plan-picked[hidden] { display: none; }
+.plan-picked .nm { color: var(--fg); font-weight: 700; }
+.plan-picked .meta-tag { color: var(--dim); font-size: 10px; letter-spacing: 1px; }
+.plan-picked button {
+  margin-left: auto; background: transparent; border: none;
+  color: var(--dim); cursor: pointer; font-family: inherit;
+}
+.plan-picked button:hover { color: var(--red); }
+.plan-side-seg { display: flex; }
+.plan-side-seg button {
+  padding: 7px 12px; background: transparent; border: 1px solid var(--line);
+  color: var(--dim); cursor: pointer;
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  letter-spacing: 1px; font-weight: 700;
+}
+.plan-side-seg button + button { border-left: none; }
+.plan-side-seg button[data-side="buy"].active {
+  color: var(--green); border-color: var(--green);
+  background: rgba(var(--green-rgb), 0.10);
+}
+.plan-side-seg button[data-side="sell"].active {
+  color: var(--red); border-color: var(--red);
+  background: rgba(var(--red-rgb), 0.10);
+}
+.plan-field { display: flex; flex-direction: column; gap: 3px; }
+.plan-field span { color: var(--dim); font-size: 9px; letter-spacing: 1px; }
+.plan-field input {
+  padding: 7px 10px; background: var(--bg); border: 1px solid var(--line);
+  color: var(--fg); font-family: 'JetBrains Mono', monospace; font-size: 12px;
+}
+.plan-field input:focus { border-color: var(--cyan); outline: none; }
+.plan-field.wide { grid-column: 1 / 4; }
+.plan-form-actions {
+  grid-column: 4; display: flex; flex-direction: column; gap: 6px;
+}
+.plan-amount {
+  grid-column: 1 / 5; color: var(--dim); font-size: 11px;
+  letter-spacing: 1px; padding-top: 2px;
+}
+.plan-amount b { color: var(--cyan); font-weight: 700; }
+.plan-list { margin-top: 16px; border-top: 1px solid var(--line); }
+.plan-row {
+  display: grid;
+  grid-template-columns: 1fr 64px 120px 70px 120px auto;
+  gap: 10px; align-items: center;
+  padding: 9px 2px; border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.plan-row .p-name { color: var(--fg); font-weight: 700; }
+.plan-row .p-code { color: var(--dim); font-size: 9px; letter-spacing: 1px; }
+.plan-row .p-side {
+  font-size: 10px; font-weight: 700; letter-spacing: 1px; text-align: center;
+  border: 1px solid; padding: 2px 0;
+}
+.plan-row .p-side.buy  { color: var(--green); border-color: var(--green); }
+.plan-row .p-side.sell { color: var(--red);   border-color: var(--red); }
+.plan-row .p-num { text-align: right; color: var(--fg); }
+.plan-row .p-amt { text-align: right; color: var(--cyan); }
+.plan-row .p-note {
+  grid-column: 1 / 6; color: var(--dim); font-size: 11px;
+  padding-top: 2px; white-space: pre-wrap; word-break: break-word;
+}
+.plan-row .p-acts { display: flex; gap: 6px; justify-content: flex-end; }
+.plan-row .p-acts button {
+  background: transparent; border: 1px solid var(--line); color: var(--dim);
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  padding: 3px 8px; cursor: pointer; letter-spacing: 1px;
+}
+.plan-row .p-acts button.edit:hover { color: var(--yellow); border-color: var(--yellow); }
+.plan-row .p-acts button.del:hover  { color: var(--red);    border-color: var(--red); }
+.plan-empty { padding: 24px 10px; text-align: center; color: var(--dim); font-size: 11px; }
+@media (max-width: 720px) {
+  .plan-form { grid-template-columns: 1fr 1fr; }
+  .plan-field.wide, .plan-amount, .plan-form-actions { grid-column: 1 / 3; }
+  .plan-form-actions { flex-direction: row; }
+  .plan-row { grid-template-columns: 1fr 56px 1fr; }
+  .plan-row .p-amt { display: none; }
+  .plan-row .p-note { grid-column: 1 / 4; }
+}
+
 .curve-dialog {
   max-width: 900px;
   height: auto;
@@ -2030,6 +2133,56 @@ body.chat-open { padding-right: 388px; }
 </div>
 
 <!-- ─────────────────────────────────────────────────────────────
+     PLAN NOTE MODAL — 매매 계획 노트 (계좌 단위, 종목 카드와 무관)
+     ───────────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="plan-modal" hidden>
+  <div class="modal-dialog plan-dialog" role="dialog" aria-modal="true" aria-labelledby="plan-title">
+    <div class="modal-header">
+      <div class="modal-title" id="plan-title">
+        <span style="color:var(--yellow);"><svg class="lci"><use href="#i-file-text"/></svg></span>
+        <span>매매 계획 노트</span>
+      </div>
+      <button class="modal-close" id="plan-close" aria-label="닫기">✕</button>
+    </div>
+
+    <div class="plan-body">
+      <div class="plan-form">
+        <div class="plan-search">
+          <input id="plan-search-input" type="text" placeholder="종목명 / 코드 검색…" autocomplete="off">
+          <div class="search-dropdown" id="plan-search-results" hidden></div>
+          <div class="plan-picked" id="plan-picked" hidden>
+            <span class="nm" id="plan-picked-name"></span>
+            <span class="meta-tag" id="plan-picked-code"></span>
+            <button type="button" id="plan-picked-clear" aria-label="선택 해제">✕</button>
+          </div>
+        </div>
+        <div class="plan-side-seg" id="plan-side">
+          <button type="button" data-side="buy" class="active">＋ 매수</button>
+          <button type="button" data-side="sell">− 매도</button>
+        </div>
+        <label class="plan-field"><span>목표가</span>
+          <input id="plan-price" type="number" step="any" min="0" placeholder="0"></label>
+        <label class="plan-field"><span>수량</span>
+          <input id="plan-qty" type="number" step="any" min="0" placeholder="0"></label>
+        <label class="plan-field wide"><span>메모 (선택)</span>
+          <input id="plan-note" type="text" placeholder="근거 · 조건 · 분할 계획 등"></label>
+        <div class="plan-form-actions">
+          <button class="primary" id="plan-submit">＋ 계획 추가</button>
+          <button id="plan-cancel-edit" hidden>수정 취소</button>
+        </div>
+        <div class="plan-amount" id="plan-amount">예상금액 —</div>
+      </div>
+      <div class="add-status" id="plan-status"></div>
+
+      <div class="plan-list" id="plan-list"></div>
+      <div class="plan-empty" id="plan-empty" hidden>
+        아직 계획이 없습니다. 위에서 종목을 고르고 목표가·수량을 적어 추가하세요.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────────────────
      ASSET CURVE MODAL (F)
      ───────────────────────────────────────────────────────────── -->
 <div class="modal-overlay" id="curve-modal" hidden>
@@ -2083,6 +2236,8 @@ const API = {
     '/api/accounts/' + _ACC + '/snapshots?currency=' +
     encodeURIComponent(ccy || 'KRW') + '&days=' + (days || 90),
   search: (q) => '/api/universe/search?q=' + encodeURIComponent(q) + '&limit=15',
+  plans:          () => '/api/accounts/' + _ACC + '/plans',
+  plan:           (id) => '/api/accounts/' + _ACC + '/plans/' + encodeURIComponent(id),
   quotes: (ids) => '/api/market/quotes?symbols=' + encodeURIComponent(ids),
   ohlcv:  (sid, period, n) => {
     const ix = sid.indexOf(':');
@@ -3033,6 +3188,12 @@ function renderAssetsRow() {
   });
   row.appendChild(curveBtn);
 
+  const planBtn = el('button', { className: 'curve-btn' }, [svgIco('file-text'), ' 계획 노트']);
+  planBtn.addEventListener('click', () => {
+    if (window.openPlanNote) window.openPlanNote();
+  });
+  row.appendChild(planBtn);
+
   // 예수금 수정은 헤더 ⚙ 설정 모달로 이동 (툴바 밀도 축소)
 }
 
@@ -3447,6 +3608,276 @@ renderAll();
 
   segs.forEach(b => b.addEventListener('click', () => applyMode(b.dataset.mode)));
   window._applyCardMode();
+})();
+
+// ─────────────────────────────────────────────────────────────
+// PLAN NOTE MODAL — 매매 계획 노트
+//
+// Account-scoped and deliberately independent of the stock cards: a plan is
+// usually about something you do NOT hold yet, so it cannot hang off a card.
+// Intent only — nothing here writes to holdings. Once a plan is executed the
+// user records the trade the normal way and deletes the note.
+// ─────────────────────────────────────────────────────────────
+(function planNote() {
+  const modal = document.getElementById('plan-modal');
+  const closeBtn = document.getElementById('plan-close');
+  const searchEl = document.getElementById('plan-search-input');
+  const resultsEl = document.getElementById('plan-search-results');
+  const pickedEl = document.getElementById('plan-picked');
+  const pickedName = document.getElementById('plan-picked-name');
+  const pickedCode = document.getElementById('plan-picked-code');
+  const pickedClear = document.getElementById('plan-picked-clear');
+  const sideSeg = document.getElementById('plan-side');
+  const priceEl = document.getElementById('plan-price');
+  const qtyEl = document.getElementById('plan-qty');
+  const noteEl = document.getElementById('plan-note');
+  const amountEl = document.getElementById('plan-amount');
+  const submitBtn = document.getElementById('plan-submit');
+  const cancelEditBtn = document.getElementById('plan-cancel-edit');
+  const statusEl = document.getElementById('plan-status');
+  const listEl = document.getElementById('plan-list');
+  const emptyEl = document.getElementById('plan-empty');
+
+  let picked = null;      // {symbol_id, market, code, name, currency}
+  let editingId = null;   // null = create, otherwise PATCH that plan
+  let plans = [];
+  let searchTimer = null;
+
+  function setStatus(msg, kind) {
+    statusEl.textContent = msg || '';
+    statusEl.className = 'add-status' + (kind ? ' ' + kind : '');
+  }
+
+  const ccyOf = sid => (sid || '').startsWith('US:') ? 'USD' : 'KRW';
+
+  function currentSide() {
+    const on = sideSeg.querySelector('button.active');
+    return on ? on.dataset.side : 'buy';
+  }
+
+  function setSide(side) {
+    sideSeg.querySelectorAll('button').forEach(b =>
+      b.classList.toggle('active', b.dataset.side === side));
+    submitBtn.textContent = editingId
+      ? '저장'
+      : (side === 'buy' ? '＋ 매수 계획 추가' : '− 매도 계획 추가');
+  }
+
+  function updateAmount() {
+    const p = parseFloat(priceEl.value), q = parseFloat(qtyEl.value);
+    if (!isFinite(p) || !isFinite(q) || p <= 0 || q <= 0) {
+      amountEl.textContent = '예상금액 —';
+      return;
+    }
+    clear(amountEl);
+    amountEl.appendChild(document.createTextNode('예상금액 '));
+    amountEl.appendChild(el('b', {}, [
+      fmtPrice(p * q, picked ? ccyOf(picked.symbol_id) : 'KRW')]));
+  }
+
+  function setPicked(rec) {
+    picked = rec;
+    if (!rec) {
+      pickedEl.hidden = true;
+      searchEl.hidden = false;
+      searchEl.value = '';
+      return;
+    }
+    pickedName.textContent = rec.name;
+    pickedCode.textContent = rec.market + ' · ' + rec.code;
+    pickedEl.hidden = false;
+    searchEl.hidden = true;
+    resultsEl.hidden = true;
+    updateAmount();
+  }
+
+  async function runSearch(q) {
+    q = (q || '').trim();
+    if (!q) { resultsEl.hidden = true; return; }
+    resultsEl.hidden = false;
+    clear(resultsEl);
+    resultsEl.appendChild(el('div', { className: 'search-empty' }, ['검색중…']));
+    try {
+      const d = await (await fetch(API.search(q))).json();
+      clear(resultsEl);
+      const results = d.results || [];
+      if (!results.length) {
+        resultsEl.appendChild(el('div', { className: 'search-empty' },
+          ['결과 없음 — 한국은 6자리 코드, 미국은 영문 티커로']));
+        return;
+      }
+      results.forEach(r => {
+        const label = r.name_kr || r.name_en || r.code;
+        const item = el('div', { className: 'search-item' }, [
+          el('span', { className: 'nm' }, [label]),
+          el('span', { className: 'meta-tag' }, [r.market + ' · ' + r.code]),
+          el('span', { className: 'add-hint' }, ['선택']),
+        ]);
+        item.addEventListener('click', () => {
+          setPicked({ symbol_id: r.symbol_id, market: r.market,
+                      code: r.code, name: label });
+          priceEl.focus();
+        });
+        resultsEl.appendChild(item);
+      });
+    } catch (e) {
+      clear(resultsEl);
+      resultsEl.appendChild(el('div', { className: 'search-empty' }, ['검색 오류']));
+    }
+  }
+
+  function resetForm() {
+    editingId = null;
+    setPicked(null);
+    priceEl.value = '';
+    qtyEl.value = '';
+    noteEl.value = '';
+    cancelEditBtn.hidden = true;
+    setSide('buy');
+    updateAmount();
+    setStatus('');
+  }
+
+  function startEdit(plan) {
+    editingId = plan.plan_id;
+    const ix = plan.symbol_id.indexOf(':');
+    setPicked({
+      symbol_id: plan.symbol_id,
+      market: plan.symbol_id.slice(0, ix),
+      code: plan.symbol_id.slice(ix + 1),
+      name: plan.name,
+    });
+    priceEl.value = plan.price;
+    qtyEl.value = plan.qty;
+    noteEl.value = plan.note || '';
+    cancelEditBtn.hidden = false;
+    setSide(plan.side);
+    updateAmount();
+    setStatus('수정 중 — 저장하면 기존 계획이 갱신됩니다.');
+    priceEl.focus();
+  }
+
+  function render() {
+    clear(listEl);
+    emptyEl.hidden = plans.length > 0;
+    plans.forEach(plan => {
+      const ccy = ccyOf(plan.symbol_id);
+      const ix = plan.symbol_id.indexOf(':');
+      const row = el('div', { className: 'plan-row' }, [
+        el('div', {}, [
+          el('div', { className: 'p-name' }, [plan.name]),
+          el('div', { className: 'p-code' }, [
+            plan.symbol_id.slice(0, ix) + ' · ' + plan.symbol_id.slice(ix + 1)]),
+        ]),
+        el('div', { className: 'p-side ' + plan.side },
+           [plan.side === 'buy' ? '매수' : '매도']),
+        el('div', { className: 'p-num' }, [fmtPrice(plan.price, ccy)]),
+        el('div', { className: 'p-num' }, [fmtQty(plan.qty) + '주']),
+        el('div', { className: 'p-amt' }, [fmtPrice(plan.price * plan.qty, ccy)]),
+        el('div', { className: 'p-acts' }, []),
+      ]);
+      const acts = row.querySelector('.p-acts');
+      const editBtn = el('button', { className: 'edit' }, ['수정']);
+      editBtn.addEventListener('click', () => startEdit(plan));
+      const delBtn = el('button', { className: 'del' }, ['삭제']);
+      delBtn.addEventListener('click', () => remove(plan));
+      acts.appendChild(editBtn);
+      acts.appendChild(delBtn);
+      if (plan.note) row.appendChild(el('div', { className: 'p-note' }, [plan.note]));
+      listEl.appendChild(row);
+    });
+  }
+
+  async function load() {
+    try {
+      const d = await (await fetch(API.plans())).json();
+      plans = d.plans || [];
+      render();
+    } catch (e) {
+      setStatus('계획을 불러오지 못했습니다.', 'err');
+    }
+  }
+
+  async function submit() {
+    if (!picked) { setStatus('먼저 종목을 선택하세요.', 'err'); searchEl.focus(); return; }
+    const price = parseFloat(priceEl.value), qty = parseFloat(qtyEl.value);
+    if (!isFinite(price) || price <= 0) { setStatus('목표가를 입력하세요.', 'err'); priceEl.focus(); return; }
+    if (!isFinite(qty) || qty <= 0) { setStatus('수량을 입력하세요.', 'err'); qtyEl.focus(); return; }
+
+    const body = JSON.stringify({
+      symbol_id: picked.symbol_id, name: picked.name, side: currentSide(),
+      price: price, qty: qty, note: noteEl.value.trim(),
+    });
+    submitBtn.disabled = true;
+    try {
+      const url = editingId ? API.plan(editingId) : API.plans();
+      const r = await fetch(url, {
+        method: editingId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: body,
+      });
+      const d = await r.json().catch(() => null);
+      if (!r.ok) throw new Error((d && d.detail) || r.status);
+      resetForm();
+      await load();
+      setStatus('저장했습니다.', 'ok');
+    } catch (e) {
+      setStatus('저장 실패: ' + e.message, 'err');
+    } finally {
+      submitBtn.disabled = false;
+    }
+  }
+
+  async function remove(plan) {
+    if (!confirm(plan.name + ' 계획을 삭제합니다.')) return;
+    try {
+      const r = await fetch(API.plan(plan.plan_id), { method: 'DELETE' });
+      if (!r.ok) throw new Error(r.status);
+      if (editingId === plan.plan_id) resetForm();
+      await load();
+    } catch (e) {
+      setStatus('삭제 실패: ' + e.message, 'err');
+    }
+  }
+
+  sideSeg.querySelectorAll('button').forEach(b =>
+    b.addEventListener('click', () => setSide(b.dataset.side)));
+  pickedClear.addEventListener('click', () => { setPicked(null); searchEl.focus(); });
+  priceEl.addEventListener('input', updateAmount);
+  qtyEl.addEventListener('input', updateAmount);
+  submitBtn.addEventListener('click', submit);
+  cancelEditBtn.addEventListener('click', resetForm);
+  searchEl.addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    const v = e.target.value;
+    searchTimer = setTimeout(() => runSearch(v), 250);
+  });
+  searchEl.addEventListener('keydown', e => {
+    // Same IME rule as the chat box: Enter mid-composition must not act on a
+    // half-formed syllable.
+    if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+    e.preventDefault();
+    runSearch(searchEl.value);
+  });
+  [priceEl, qtyEl, noteEl].forEach(inp => inp.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+    e.preventDefault();
+    submit();
+  }));
+
+  function close() { modal.hidden = true; document.removeEventListener('keydown', onEsc); }
+  function onEsc(e) { if (e.key === 'Escape') close(); }
+  closeBtn.addEventListener('click', close);
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+
+  window.openPlanNote = function () {
+    resetForm();
+    plans = [];
+    render();
+    modal.hidden = false;
+    document.addEventListener('keydown', onEsc);
+    load();
+    setTimeout(() => searchEl.focus(), 30);
+  };
 })();
 
 // ─────────────────────────────────────────────────────────────
