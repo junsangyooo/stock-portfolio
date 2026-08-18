@@ -16,6 +16,10 @@ def resample(df: pd.DataFrame, period: str) -> pd.DataFrame:
         "open": "first", "high": "max", "low": "min",
         "close": "last", "volume": "sum",
     }).dropna(subset=["open"])
-    agg["ts"] = (agg.index.astype("int64") // 10**9).astype(int)
+    # Never divide raw astype("int64") output: to_datetime(unit="s") keeps
+    # second resolution on pandas 3.x but was promoted to nanoseconds on
+    # 2.x, so a fixed //10**9 silently maps every bar to 1970 on one of
+    # them. .timestamp() is unit-agnostic and these frames are tiny.
+    agg["ts"] = agg.index.map(lambda t: int(t.timestamp()))
     agg = agg.reset_index(drop=True)
     return agg[["ts", "open", "high", "low", "close", "volume"]]
