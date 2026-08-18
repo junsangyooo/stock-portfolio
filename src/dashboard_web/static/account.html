@@ -1390,8 +1390,10 @@ a { color: inherit; text-decoration: none; }
   font-size: 9px;
   letter-spacing: 1.5px;
   font-weight: 700;
-  margin-left: 6px;
-  vertical-align: middle;
+  margin-top: 2px;
+  align-self: flex-start;   /* .sc-name-block is a column flex — without this
+                               the badge stretches to the full card width */
+  white-space: nowrap;
 }
 
 /* ── Level 0 judge 배지: 종목당 판단 1개 (action_ko 5단어 + 신선도) ── */
@@ -1407,6 +1409,9 @@ a { color: inherit; text-decoration: none; }
 .sc-judge-badge.act-exit  { color: var(--red);    border-color: var(--red); }
 .sc-judge-badge.stale { opacity: 0.45; }   /* 30일+ → 흐리게 = "믿지 말라" 신호 */
 .sc-judge-badge.running { color: var(--cyan); border-color: var(--cyan); opacity: 0.8; }
+/* The `display` above outranks the UA sheet's [hidden]{display:none}, so the
+   placeholder badge rendered as an empty 1px box until a verdict loaded. */
+.sc-judge-badge[hidden] { display: none; }
 
 .sc-body {
   display: grid;
@@ -6210,7 +6215,15 @@ window.deleteHolding = async function (stock) {
 
   sendBtn.addEventListener('click', send);
   textEl.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    // A Korean IME still holds the last syllable when Enter arrives, and it
+    // commits AFTER this handler runs — so clearing the box here let the
+    // committed syllable land back in the empty textarea ("…정해봐봐" sent,
+    // "봐" left behind). Let the commit happen, then send on the next tick.
+    // keyCode 229 is the fallback for engines that do not set isComposing.
+    if (e.isComposing || e.keyCode === 229) { setTimeout(send, 0); return; }
+    e.preventDefault();
+    send();
   });
 
   function toggle(open) {
