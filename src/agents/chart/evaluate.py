@@ -238,7 +238,7 @@ def _coerce_risk_patterns(raw) -> list:
 
 
 def _judge(symbol_id: str, name: str, facts: dict, *,
-           backend=None, timeout_s: float = 280) -> dict:
+           backend=None, timeout_s: float = 1800) -> dict:
     """Apply chart_rules.md (claude -p) to the extracted facts → rich verdict.
 
     Short-circuits to a low-confidence insufficient_data verdict WITHOUT calling
@@ -282,7 +282,7 @@ def _judge(symbol_id: str, name: str, facts: dict, *,
 
 def evaluate_symbol(symbol_id: str, *, name: Optional[str] = None,
                     date: Optional[str] = None, backend=None,
-                    timeout_s: float = 280) -> dict:
+                    timeout_s: float = 1800) -> dict:
     """Collect facts → judge (rulebook via claude -p) → persist. Returns dict."""
     date = date or datetime.now(_KST).strftime("%Y-%m-%d")
     name = name or symbol_id

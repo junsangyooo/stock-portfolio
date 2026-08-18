@@ -37,9 +37,13 @@ from datetime import datetime
 from ..core.kst import KST as _KST
 from ..core.paths import analysis_path, ensure_dirs
 
-# Single-verdict latency measured up to 390s (commit 5cf47f6 widened the API
-# timeouts to 480 for the same reason) — batch uses the same ceiling.
-_TIMEOUT_S = 480.0
+# Hang guard, NOT error detection. At 480 this ceiling sat inside the body of
+# the real latency distribution (743 chart runs: mean 352s, p90 439s, p95 461s)
+# and manufactured its own failures: 98 of 99 recorded chart errors were the
+# timeout itself, ~12% of runs every night, on a distribution that has not
+# drifted in months. The only thing a ceiling has to catch is a claude -p that
+# never returns and would otherwise stall the batch forever.
+_TIMEOUT_S = 1800.0
 
 
 

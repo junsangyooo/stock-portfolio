@@ -315,7 +315,7 @@ def _fallback_verdict(inputs: dict, reason: str) -> dict:
 
 
 def _judge(symbol_id: str, name: str, inputs: dict, *,
-           backend=None, timeout_s: float = 320) -> dict:
+           backend=None, timeout_s: float = 1800) -> dict:
     avail = inputs.get("data_available", {})
     # Need at least 2 of 3 domains to render a meaningful judgment.
     n_have = sum(1 for v in avail.values() if v)
@@ -379,7 +379,7 @@ def _judge(symbol_id: str, name: str, inputs: dict, *,
 
 def evaluate_symbol(symbol_id: str, *, name: Optional[str] = None,
                     date: Optional[str] = None, backend=None,
-                    timeout_s: float = 320) -> dict:
+                    timeout_s: float = 1800) -> dict:
     """assemble → judge → persist. Returns the result dict (also written to
     data/analysis/judge/{symbol}/{YYYYMMDD}.json)."""
     date = date or datetime.now(_KST).strftime("%Y-%m-%d")

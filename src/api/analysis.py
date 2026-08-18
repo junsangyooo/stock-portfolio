@@ -30,7 +30,7 @@ _VALID_KINDS = ("chart", "fundamental", "news", "judge")
 
 # Only the two rulebook-heavy agents need the widened ceiling; the others run
 # well inside evaluate_symbol's own default.
-_RUN_TIMEOUT_S = {"chart": 480, "judge": 480}
+_RUN_TIMEOUT_S = {"chart": 1800, "judge": 1800}  # hang guard only — see verdict_job._TIMEOUT_S
 
 
 def _stamp() -> str:
