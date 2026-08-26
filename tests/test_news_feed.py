@@ -64,7 +64,8 @@ def test_feed_merges_cross_theme_and_joins_importance(tmp_path, monkeypatch):
     dig = tmp_path / "ana" / "battery" / f"{today}.json"
     dig.parent.mkdir(parents=True, exist_ok=True)
     dig.write_text(json.dumps(
-        {"items": [{"url": "https://ex.com/1", "importance": 5}]}))
+        {"items": [{"url": "https://ex.com/1", "importance": 5,
+                    "summary": "한 문장 요약"}]}, ensure_ascii=False))
 
     # yesterday's semiconductor digest carries the overview bullets
     ydig = tmp_path / "ana" / "semiconductor" / \
@@ -81,4 +82,30 @@ def test_feed_merges_cross_theme_and_joins_importance(tmp_path, monkeypatch):
     assert {t["id"] for t in n["themes"]} == {"battery", "semiconductor"}
     assert n["image"] == "https://cdn.ex.com/x.jpg"  # merged from the dup
     assert n["importance"] == 5
+    # the digest one-liner rides along so cards can be read without leaving
+    assert n["gist"] == "한 문장 요약"
     assert n["published_iso"] == "2026-07-11T09:00:00+09:00"
+
+
+def test_unselected_article_has_no_gist(tmp_path, monkeypatch):
+    """Only digest-selected items carry a summary; the rest must be None so
+    the card renders without an empty line."""
+    from src.agents.news import feed as F
+    from src.agents.news.catalog import load_catalog
+    from src.core import paths as P
+    monkeypatch.setattr(P, "signals_news_path",
+                        lambda theme, ym: tmp_path / "sig" / theme / f"{ym}.jsonl")
+    monkeypatch.setattr(P, "analysis_news_daily_path",
+                        lambda theme, d: tmp_path / "ana" / theme / f"{d}.json")
+    cat = load_catalog()
+    monkeypatch.setattr(F, "live_themes", lambda c: [cat.get("battery")])
+
+    now = datetime.now(_KST)
+    _write_jsonl(tmp_path / "sig" / "battery" / f"{now.strftime('%Y%m')}.jsonl", [
+        {"kind": "rss", "lead_lag": "lagging", "theme": "battery",
+         "source_id": "electrek", "title": "비선정 기사",
+         "url": "https://ex.com/9", "published": None,
+         "fetched_at": now.isoformat()},
+    ])
+    out = news_feed(limit=50)
+    assert [n["gist"] for n in out["news"]] == [None]

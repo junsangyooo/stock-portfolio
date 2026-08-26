@@ -62,9 +62,10 @@ def _read_digests(themes, now_kst: datetime) -> tuple[dict[str, int], list[dict]
     """Per theme, the newest available daily digest (today, else yesterday —
     before the dawn batch today's file doesn't exist yet).
 
-    Returns (importance by url, per-theme overview bullets). Both come off the
-    same file read: the overview is written by the digest LLM call itself, so
-    the '오늘의 요약' section costs no extra inference.
+    Returns (importance by url, one-line gist by url, per-theme overview
+    bullets). All three come off the same file read: the overview and the
+    per-article gist are written by the digest LLM call itself, so neither the
+    '오늘의 요약' section nor the card summary costs extra inference.
 
     A theme with nothing collected still gets a digest file, just an empty one.
     That must not hide yesterday's summary, so the overview keeps looking back
@@ -73,6 +74,7 @@ def _read_digests(themes, now_kst: datetime) -> tuple[dict[str, int], list[dict]
     dates = [now_kst.strftime("%Y-%m-%d"),
              (now_kst - timedelta(days=1)).strftime("%Y-%m-%d")]
     importance: dict[str, int] = {}
+    gist: dict[str, str] = {}
     summary: list[dict] = []
     for t in themes:
         newest = True
@@ -90,13 +92,15 @@ def _read_digests(themes, now_kst: datetime) -> tuple[dict[str, int], list[dict]
                     if u:
                         importance[u] = max(importance.get(u, 0),
                                             int(di.get("importance") or 0))
+                        if di.get("summary") and u not in gist:
+                            gist[u] = str(di["summary"])
                 newest = False
             bullets = dig.get("overview") or []
             if bullets:
                 summary.append({"theme": t.theme_id, "theme_kr": t.name_kr,
                                 "date": dig.get("date") or d, "bullets": bullets})
                 break
-    return importance, summary
+    return importance, gist, summary
 
 
 def build(limit: int = 60) -> dict:
@@ -106,7 +110,7 @@ def build(limit: int = 60) -> dict:
     cat = load_catalog()
     themes = live_themes(cat)
     name_kr = {t.theme_id: t.name_kr for t in cat.themes.values()}
-    importance, summary = _read_digests(themes, now_kst)
+    importance, gist, summary = _read_digests(themes, now_kst)
 
     news_by_key: dict[str, dict] = {}
     social_by_key: dict[str, dict] = {}
@@ -154,6 +158,7 @@ def build(limit: int = 60) -> dict:
                 "published_iso": published_iso(r.get("published")),
                 "fetched_at": r.get("fetched_at"),
                 "importance": importance.get(url),   # digest join (may be None)
+                "gist": gist.get(url),               # digest one-liner (may be None)
                 "image": r.get("image"),             # A: RSS media thumbnail
                 "favicon": _favicon(url),            # C: source favicon fallback
             }
