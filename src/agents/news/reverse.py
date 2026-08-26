@@ -44,6 +44,35 @@ _STOPNAMES = {
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
 
+_HANGUL = ("가", "힣")
+
+# Korean glues a particle straight onto the noun — 삼성전자'가', 하이닉스'는' —
+# so "reject any Hangul neighbour" would throw away most real mentions. These
+# are the syllables a particle can start with; any other Hangul means the name
+# ran into a compound word instead (디바이스 inside 디바이스솔루션).
+_PARTICLE_HEADS = set("가이은는을를의에도와과로만라고며등및측부까처보한서야께짜")
+
+
+def _is_hangul(ch: str) -> bool:
+    return _HANGUL[0] <= ch <= _HANGUL[1]
+
+
+def _boundary_ok(corpus: str, i: int, n: int, hangul_name: bool) -> bool:
+    """True when corpus[i:i+n] stands as a name, not as part of a longer word.
+
+    Catches the two real failures seen in production: '디바이스' matching inside
+    '디바이스솔루션' and 'DGI' matching inside 'DGIST'.
+    """
+    prev_ch = corpus[i - 1] if i > 0 else ""
+    next_ch = corpus[i + n] if i + n < len(corpus) else ""
+    if prev_ch and (_is_hangul(prev_ch) or prev_ch.isalnum()):
+        return False
+    if not next_ch:
+        return True
+    if hangul_name:
+        return not _is_hangul(next_ch) or next_ch in _PARTICLE_HEADS
+    return not (next_ch.isascii() and next_ch.isalnum())
+
 
 def _strip_html(s: str) -> str:
     return _WS_RE.sub(" ", _TAG_RE.sub(" ", s or ""))
@@ -129,15 +158,19 @@ def _count_masked(corpus: str, entries: Iterable[tuple[str, str]]) -> dict[str, 
     hits: dict[str, int] = {}
     for name, sid in entries:
         n = len(name)
+        hangul_name = _is_hangul(name[0])
         start, found = 0, 0
         while True:
             i = corpus.find(name, start)
             if i < 0:
                 break
             start = i + n
-            if not any(taken[i:i + n]):
-                taken[i:i + n] = b"\x01" * n
-                found += 1
+            if any(taken[i:i + n]):
+                continue
+            if not _boundary_ok(corpus, i, n, hangul_name):
+                continue
+            taken[i:i + n] = b"\x01" * n
+            found += 1
         if found:
             hits[sid] = hits.get(sid, 0) + found
     return hits
