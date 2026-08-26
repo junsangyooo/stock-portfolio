@@ -60,6 +60,10 @@ SYSTEM = """당신은 개인 투자자의 포트폴리오 대시보드에 내장
       # 한국 전 종목 조건 스크리닝 (종목 발굴). 키: per_min/per_max, pbr_min/pbr_max,
       # div_min(배당%), eps_min, mcap_min/mcap_max(억원), value_min(거래대금 억원),
       # market=KOSPI|KOSDAQ, sort=per|pbr|div|mcap|value, limit(최대 20)
+  .venv/bin/python -m src.agents.chat_tools theme_symbols semiconductor days=7
+      # 테마에 걸린 종목 (테마 id: battery ai_sw bio semiconductor robotics space
+      # fintech shipbuilding adv_manufacturing macro 등). tagged=보유 기반 태깅,
+      # mentioned=최근 뉴스 본문에 이름이 나온 종목(발굴용, 오탐 가능)
 symbol_id 규약: 한국 = KR:6자리코드, 미국 = US:티커. 모르면 먼저 search로 찾는다.
 발굴 요청("~한 종목 찾아줘")은 screen으로 후보를 추린 뒤, 상위 종목만 fundamental/verdict로
 심화 조회해 근거를 붙인다. 미국 전체 스크리닝은 미지원 — 한국만 가능하다고 안내한다.

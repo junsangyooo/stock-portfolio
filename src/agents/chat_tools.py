@@ -22,9 +22,17 @@ Commands:
                                       eps_min mcap_min mcap_max value_min
                                       market=KOSPI|KOSDAQ sort limit
                                 (억원 단위: mcap_*, value_min. div=배당수익률 %)
+    theme_symbols <theme_id>    theme → symbols (tagged + news-mentioned)
+                                opt: days=7 limit=30
+
+stdout carries the JSON and nothing else: pykrx prints a KRX login warning
+straight to stdout, so command output is captured and only the result object
+is written to the real stream.
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import sys
 
@@ -155,6 +163,17 @@ def _cmd_screen(*args: str) -> dict:
             "note": "matched = market 필터 적용 전 건수. 억원 단위: mcap_eok/value_eok"}
 
 
+def _cmd_theme_symbols(theme_id: str, *args: str) -> dict:
+    from .news.reverse import symbols_for_theme
+    opts = {"days": 7, "limit": 30}
+    for a in args:
+        k, sep, v = a.partition("=")
+        if not sep or k not in opts:
+            raise ValueError(f"theme_symbols opts are days=/limit=, got {a!r}")
+        opts[k] = int(v)
+    return symbols_for_theme(theme_id.strip(), **opts)
+
+
 _COMMANDS = {
     "search": _cmd_search,
     "screen": _cmd_screen,
@@ -163,16 +182,22 @@ _COMMANDS = {
     "fundamental": _cmd_fundamental,
     "verdict": _cmd_verdict,
     "news": _cmd_news,
+    "theme_symbols": _cmd_theme_symbols,
 }
 
 
 def main(argv: list[str]) -> int:
+    # Dependencies print to stdout (pykrx: "KRX 로그인 실패: ..."), which would
+    # sit in front of the JSON the model has to read. Swallow anything the
+    # command writes and emit only the result object.
+    noise = io.StringIO()
     try:
-        if not argv or argv[0] not in _COMMANDS:
-            out = {"error": "usage: chat_tools <command> [arg ...]",
-                   "commands": sorted(_COMMANDS)}
-        else:
-            out = _COMMANDS[argv[0]](*argv[1:])
+        with contextlib.redirect_stdout(noise):
+            if not argv or argv[0] not in _COMMANDS:
+                out = {"error": "usage: chat_tools <command> [arg ...]",
+                       "commands": sorted(_COMMANDS)}
+            else:
+                out = _COMMANDS[argv[0]](*argv[1:])
     except Exception as e:  # noqa: BLE001 — the model reads the error and retries
         out = {"error": f"{type(e).__name__}: {e}"[:400]}
     print(json.dumps(out, ensure_ascii=False, default=str))
