@@ -35,3 +35,20 @@ def test_no_match_returns_empty():
 def test_strip_html_flattens_rss_summary():
     raw = '<div class="md"><p>SK하이닉스</p>  <br/>HBM</div>'
     assert _strip_html(raw) == " SK하이닉스 HBM "
+
+
+def test_naive_timestamp_is_made_aware():
+    # Feeds mix offsets with bare local timestamps; a naive one anywhere in the
+    # list made the sort raise "can't compare offset-naive and offset-aware".
+    from src.agents.news.reverse import _published_dt
+    aware = _published_dt({"published": "2026-08-26T10:00:00+00:00"})
+    naive = _published_dt({"published": "2026-08-26T10:00:00"})
+    assert aware.tzinfo is not None
+    assert naive.tzinfo is not None
+    assert sorted([aware, naive])  # must not raise
+
+
+def test_fetched_at_is_the_fallback():
+    from src.agents.news.reverse import _published_dt
+    dt = _published_dt({"published": None, "fetched_at": "2026-08-01T06:07:14+09:00"})
+    assert dt.year == 2026 and dt.tzinfo is not None

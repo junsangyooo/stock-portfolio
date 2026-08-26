@@ -62,14 +62,17 @@ def _months_back(days: int) -> list[str]:
 
 
 def _published_dt(item: dict) -> Optional[datetime]:
+    """Always tz-aware. Feeds mix offsets with bare local timestamps, and a
+    naive one anywhere in the list poisons the whole sort."""
     for key in ("published", "fetched_at"):
         raw = item.get(key)
         if not raw:
             continue
         try:
-            return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
         except ValueError:
             continue
+        return dt if dt.tzinfo else dt.replace(tzinfo=KST)
     return None
 
 
