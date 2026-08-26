@@ -141,9 +141,15 @@ def _name_entries() -> list[tuple[str, str]]:
         sid = it.get("symbol_id")
         if not sid:
             continue
-        for key, floor in (("name_kr", _MIN_LEN_KR), ("name_en", _MIN_LEN_EN)):
+        for key in ("name_kr", "name_en"):
             name = (it.get(key) or "").strip()
-            if len(name) >= floor and name not in _STOPNAMES:
+            if not name or name in _STOPNAMES:
+                continue
+            # Floor by script, not by field: name_kr often holds a Latin name
+            # ("NEW"), and three Latin letters are far too common to identify a
+            # company the way three Hangul syllables do.
+            floor = _MIN_LEN_KR if _is_hangul(name[0]) else _MIN_LEN_EN
+            if len(name) >= floor:
                 entries.append((name, sid))
     entries.sort(key=lambda e: len(e[0]), reverse=True)
     return entries

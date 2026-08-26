@@ -78,3 +78,22 @@ def test_korean_particles_still_count_as_a_mention():
 def test_name_preceded_by_hangul_is_rejected():
     entries = [("디바이스", "KR:187870")]
     assert _count_masked("차세대디바이스 시장", entries) == {}
+
+
+def test_short_latin_name_in_the_korean_field_is_floored_as_latin():
+    # KR:160550's name_kr is "NEW". Picking the floor by field gave it the
+    # 3-char Hangul floor, and it scored on every "NEW" in English prose.
+    from src.agents.news.reverse import _name_entries
+    import src.universe.search as uni
+
+    uni._items = [
+        {"symbol_id": "KR:160550", "name_kr": "NEW", "name_en": None},
+        {"symbol_id": "KR:005930", "name_kr": "삼성전자", "name_en": None},
+    ]
+    uni._loaded_at = float("inf")
+    try:
+        names = [n for n, _ in _name_entries()]
+    finally:
+        uni._items, uni._loaded_at = [], 0.0
+    assert "NEW" not in names
+    assert "삼성전자" in names
