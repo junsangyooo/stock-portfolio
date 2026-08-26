@@ -60,15 +60,35 @@ def _cmd_quote(symbol_id: str) -> dict:
     return get_quotes(symbols=symbol_id.strip().upper())
 
 
+def _ensure_tracked(symbol_id: str) -> None:
+    """First sight of a symbol: pull ~3y OHLCV on the spot (≈2s).
+
+    chart/fundamental only read stored parquet, so an untracked symbol used
+    to come back no_data — the discovery agent found candidates in the news
+    and then could not examine a single one of them (cycle #1, 2026-08-26).
+    """
+    from ..market.store import ohlcv_store
+    if ohlcv_store.last_ts(symbol_id) == 0:
+        from ..market.pipeline.gap_filler import fill_one
+        fill_one(symbol_id)
+
+
 def _cmd_chart(symbol_id: str) -> dict:
     from ..api.analysis import get_analysis
     market, code = _split(symbol_id)
+    _ensure_tracked(f"{market}:{code}")
     return get_analysis("chart", market, code)
 
 
 def _cmd_fundamental(symbol_id: str) -> dict:
     from ..api.analysis import get_fundamental_facts
+    from ..market.store import financials_store
     market, code = _split(symbol_id)
+    sid = f"{market}:{code}"
+    _ensure_tracked(sid)                       # valuation derives from closes
+    if financials_store.read(sid).empty:       # first sight: statements too (~5s)
+        from ..market.pipeline.fundamental_backfill import fill_one
+        fill_one(sid)
     facts = get_fundamental_facts(market, code)
     series = facts.get("financials_series")
     if isinstance(series, list) and len(series) > 4:
