@@ -39,11 +39,13 @@ BACKUP_DIR = DATA / "backup"
 # KR stock code (6-digit) → DART 8-digit corp_code mapping, cached once.
 DART_CORP_CODES = UNIVERSE_DIR / "dart_corp_codes.json"
 
+QUANT_DIR = DATA / "quant"          # auto-trade runtime state (token cache, lock)
+
 
 def ensure_dirs() -> None:
     for d in (DATA, UNIVERSE_DIR, MARKET_DIR, OHLCV_DIR, QUOTE_DIR,
               VALUATION_DIR, FINANCIALS_DIR, SECTOR_DIR, ETF_DIR,
-              ANALYSIS_DIR, SIGNALS_DIR, LOGS_DIR, BACKUP_DIR):
+              ANALYSIS_DIR, SIGNALS_DIR, LOGS_DIR, BACKUP_DIR, QUANT_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
 
