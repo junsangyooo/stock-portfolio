@@ -145,8 +145,8 @@ def _screen_us(market: str, args) -> dict:
                 f"US screen keys are {sorted(_US_SCREEN_KEYS)}(_min|_max), "
                 f"market, limit — got {k!r}")
         filters[f"{_US_SCREEN_KEYS[stem]}_{bound}"] = float(v)
-    from ..quant.broker import overseas
-    return overseas.screen(market, filters, limit=limit)
+    from ..quant.broker import kis_screen
+    return kis_screen.screen(market, filters, limit=limit)
 
 
 def _cmd_screen(*args: str) -> dict:

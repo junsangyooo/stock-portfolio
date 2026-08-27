@@ -8,6 +8,9 @@ __pycache__/
 # ── Runtime data (Oracle 단방향, NEVER git add) ─────────────────────
 data/portfolio.db
 data/portfolio.db-*
+data/quant.db
+data/quant.db-*
+data/quant/
 data/universe/
 data/market/
 data/analysis/
