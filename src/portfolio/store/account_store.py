@@ -72,11 +72,18 @@ def get_pin_hash(account_id: str) -> Optional[str]:
 
 
 def get(account_id: str) -> Optional[dict]:
+    """The account row WITHOUT pin_hash. Callers hand this straight to API
+    responses (service.aggregate embeds it), so the hash must not ride along;
+    get_pin_hash() is the one way to read it."""
     with connect() as c:
         row = c.execute(
             "SELECT * FROM accounts WHERE account_id = ?", (account_id,)
         ).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        d = dict(row)
+        d.pop("pin_hash", None)
+        return d
 
 
 def list_all() -> List[dict]:
