@@ -10,6 +10,8 @@ Idempotent: stores append/upsert and dedup. Safe to call repeatedly.
 """
 from __future__ import annotations
 
+import logging
+
 import sys
 from datetime import datetime
 from typing import List
@@ -22,6 +24,9 @@ from ...core.paths import split_symbol
 
 _yf = YFinanceSource()
 _dart = None  # lazy: only constructed when a KR symbol needs DART
+
+
+log = logging.getLogger(__name__)
 
 
 def _dart_source():
@@ -37,21 +42,27 @@ def _ymd(d: datetime) -> str:
 
 
 def valuation(symbol_id: str, n: int = 760) -> int:
-    """KR: derive from stored DART financials + OHLCV close (run financials
-    first). US: yfinance .info snapshot appended for this fetch date."""
+    """Derive a daily valuation series from stored financials + OHLCV closes
+    (run financials first). kr_valuation.build is market-neutral — it only
+    needs rows and closes — so US symbols get the same series once EDGAR has
+    filled their statements. US falls back to the yfinance .info snapshot
+    when no statements are stored (pre-EDGAR symbols)."""
     market, _ = split_symbol(symbol_id)
+    rows = financials_store.rows_as_dicts(symbol_id)
+    df = ohlcv_store.read(symbol_id, n=n)
+    closes = ([] if df.empty else
+              [(int(r.ts), float(r.close)) for r in df.itertuples(index=False)])
     if market == "KR":
-        rows = financials_store.rows_as_dicts(symbol_id)
-        df = ohlcv_store.read(symbol_id, n=n)
-        if df.empty or not rows:
+        if not rows or not closes:
             return 0
-        closes = [(int(r.ts), float(r.close)) for r in df.itertuples(index=False)]
         try:
             dps_rec = _dart_source().get_dps(symbol_id)
         except Exception:  # noqa: BLE001 — dividend is enrichment, not core
             dps_rec = None
         pts = kr_valuation.build(rows, closes,
                                  dps=(dps_rec or {}).get("dps"))
+    elif rows and closes and any(r.get("source") == "edgar" for r in rows):
+        pts = kr_valuation.build(rows, closes)
     else:
         pts = _yf.get_valuation(symbol_id)
     return valuation_store.write(symbol_id, pts)
@@ -86,7 +97,18 @@ def financials(symbol_id: str, years: int = 4) -> int:
         except Exception:
             rows = []
     else:
-        rows = _yf.get_financials(symbol_id, years=years)
+        # EDGAR first (full filing history), yfinance as the fallback —
+        # its quarterly frames stop around 6 quarters.
+        try:
+            from ..source import edgar_source
+            rows = edgar_source.get_financials(symbol_id,
+                                               years=max(years, 6))
+        except Exception as e:  # noqa: BLE001 — fall back, but say so
+            log.warning("edgar %s failed, falling back to yfinance: %s",
+                        symbol_id, e)
+            rows = []
+        if not rows:
+            rows = _yf.get_financials(symbol_id, years=years)
     return financials_store.write(symbol_id, rows)
 
 

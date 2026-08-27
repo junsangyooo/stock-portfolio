@@ -97,3 +97,33 @@ def test_short_latin_name_in_the_korean_field_is_floored_as_latin():
         uni._items, uni._loaded_at = [], 0.0
     assert "NEW" not in names
     assert "삼성전자" in names
+
+
+def test_us_names_match_without_legal_suffix_and_by_ticker():
+    # Cycle #1: universe says "Broadcom Inc" / "NVIDIA Corporation" but prose
+    # says "Broadcom" and "AVGO" — literal match found zero US companies.
+    from src.agents.news.reverse import _name_entries, _strip_en_suffix
+    import src.universe.search as uni
+
+    assert _strip_en_suffix("Broadcom Inc") == "Broadcom"
+    assert _strip_en_suffix("Alphabet Inc. Class A") == "Alphabet"
+    assert _strip_en_suffix("NVIDIA Corporation") == "NVIDIA"
+    assert _strip_en_suffix("Amazon.com Inc") == "Amazon.com"
+
+    uni._items = [
+        {"symbol_id": "US:AVGO", "name_kr": None, "name_en": "Broadcom Inc"},
+        {"symbol_id": "US:F", "name_kr": None, "name_en": "Ford Motor Company"},
+    ]
+    uni._loaded_at = float("inf")
+    try:
+        entries = _name_entries()
+    finally:
+        uni._items, uni._loaded_at = [], 0.0
+    names = {n for n, _ in entries}
+    assert {"Broadcom Inc", "Broadcom", "AVGO"} <= names
+    assert "F" not in names          # 1-letter ticker stays out
+    assert "Ford Motor" in names     # suffix stripped
+
+    corpus = "Broadcom beats estimates; AVGO up 5% after hours"
+    hits = _count_masked(corpus, entries)
+    assert hits.get("US:AVGO") == 2

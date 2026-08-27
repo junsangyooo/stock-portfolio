@@ -17,7 +17,10 @@ Commands:
     fundamental <SYMBOL_ID>     valuation + financials facts (trimmed)
     verdict <SYMBOL_ID> [kind]  latest persisted verdict (default: judge)
     news <SYMBOL_ID>            connected news signals (themes, developments)
-    screen k=v ...              KR whole-market factor screen (pykrx daily)
+    screen k=v ...              KR whole-market factor screen (pykrx daily);
+                                market=NASD|NYSE|AMEX면 KIS 해외조건검색으로 전환
+                                (US 키: per/eps/price/rate/volume/mcap/value
+                                 _min|_max — mcap·value는 백만달러)
                                 keys: per_min per_max pbr_min pbr_max div_min
                                       eps_min mcap_min mcap_max value_min
                                       market=KOSPI|KOSDAQ sort limit
@@ -117,7 +120,40 @@ _SCREEN_SORTS = {  # key -> (column, ascending)
 }
 
 
+_US_EXCHANGES = {"NASD", "NASDAQ", "NAS", "NYSE", "NYS", "AMEX", "AMS"}
+_US_SCREEN_KEYS = {"per": "per", "eps": "eps", "price": "price",
+                   "rate": "rate", "volume": "volume",
+                   "mcap": "mcap_musd", "value": "value_musd"}
+
+
+def _screen_us(market: str, args) -> dict:
+    """KIS 해외주식조건검색 (HHDFS76410000). 키: per/eps/price/rate/volume
+    _min|_max, mcap·value(_min|_max, 백만달러), limit. PBR·배당 필터 없음."""
+    filters, limit = {}, 30
+    for a in args:
+        k, sep, v = a.partition("=")
+        if not sep:
+            raise ValueError(f"screen args must be key=value, got {a!r}")
+        if k == "market":
+            continue
+        if k == "limit":
+            limit = max(1, min(50, int(float(v))))
+            continue
+        stem, _, bound = k.rpartition("_")
+        if bound not in ("min", "max") or stem not in _US_SCREEN_KEYS:
+            raise ValueError(
+                f"US screen keys are {sorted(_US_SCREEN_KEYS)}(_min|_max), "
+                f"market, limit — got {k!r}")
+        filters[f"{_US_SCREEN_KEYS[stem]}_{bound}"] = float(v)
+    from ..quant.broker import overseas
+    return overseas.screen(market, filters, limit=limit)
+
+
 def _cmd_screen(*args: str) -> dict:
+    for a in args:
+        k, sep, v = a.partition("=")
+        if sep and k == "market" and v.upper() in _US_EXCHANGES:
+            return _screen_us(v.upper(), args)
     filters: dict = {}
     for a in args:
         k, sep, v = a.partition("=")

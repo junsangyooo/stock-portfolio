@@ -131,26 +131,61 @@ def read_items(theme_id: str, days: int) -> list[dict]:
     return items
 
 
+# Legal suffixes news prose never carries: the universe says "Broadcom Inc"
+# where every article says "Broadcom". Stripped variants are matched alongside
+# the registered name. Applied word-by-word from the tail, so "Class A" and
+# "Inc." both fall off "Alphabet Inc. Class A".
+_EN_SUFFIXES = {"inc", "inc.", "incorporated", "corp", "corp.", "corporation",
+                "co", "co.", "company", "ltd", "ltd.", "limited", "plc",
+                "sa", "s.a.", "nv", "n.v.", "ag", "se",
+                "a", "b", "c", "class"}
+
+
+def _strip_en_suffix(name: str) -> str:
+    words = name.split()
+    while len(words) > 1 and words[-1].lower().rstrip(",") in _EN_SUFFIXES:
+        words.pop()
+    return " ".join(words)
+
+
 def _name_entries() -> list[tuple[str, str]]:
     """(display_name, symbol_id) for every universe entry worth matching,
-    longest name first so the masking pass prefers the specific name."""
+    longest name first so the masking pass prefers the specific name.
+
+    US coverage needs two extra entry kinds (cycle #1: discovery could name
+    AVGO/MRVL from the news but literal match found nothing):
+      - the suffix-stripped English name ("Broadcom" for "Broadcom Inc")
+      - the ticker itself, 4+ chars — prose that says "AVGO" means the stock,
+        and the latin boundary check already rejects DGIST-style supersets.
+    """
     from ...universe import search as uni_search
     uni_search._ensure_loaded()  # noqa: SLF001 — module-level cache, no public warm
     entries: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(name: str, sid: str) -> None:
+        if not name or name in _STOPNAMES or (name, sid) in seen:
+            return
+        floor = _MIN_LEN_KR if _is_hangul(name[0]) else _MIN_LEN_EN
+        if len(name) >= floor:
+            seen.add((name, sid))
+            entries.append((name, sid))
+
     for it in uni_search._items:  # noqa: SLF001
         sid = it.get("symbol_id")
         if not sid:
             continue
         for key in ("name_kr", "name_en"):
             name = (it.get(key) or "").strip()
-            if not name or name in _STOPNAMES:
+            if not name:
                 continue
-            # Floor by script, not by field: name_kr often holds a Latin name
-            # ("NEW"), and three Latin letters are far too common to identify a
-            # company the way three Hangul syllables do.
-            floor = _MIN_LEN_KR if _is_hangul(name[0]) else _MIN_LEN_EN
-            if len(name) >= floor:
-                entries.append((name, sid))
+            add(name, sid)
+            if not _is_hangul(name[0]):
+                add(_strip_en_suffix(name), sid)
+        if sid.startswith("US:"):
+            ticker = sid.split(":", 1)[1]
+            if ticker.isalpha() and ticker.isupper():
+                add(ticker, sid)
     entries.sort(key=lambda e: len(e[0]), reverse=True)
     return entries
 
