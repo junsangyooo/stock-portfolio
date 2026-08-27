@@ -113,7 +113,8 @@ CREATE TABLE IF NOT EXISTS plans (
   updated_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_plans_account ON plans(account_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_plans_status ON plans(account_id, status);
+-- idx_plans_status lives in _migrate(): it references a migrated column, and
+-- SCHEMA runs before _migrate on existing DBs.
 
 -- quant: the auto-trading plugin. One account opts in via accounts.auto_trade.
 CREATE TABLE IF NOT EXISTS quant_cycles (
@@ -202,6 +203,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
         if col not in cols:
             conn.execute(f"ALTER TABLE plans ADD COLUMN {col} {decl}")
             conn.commit()
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_plans_status "
+                 "ON plans(account_id, status)")
+    conn.commit()
 
 
 def _init_once() -> None:
