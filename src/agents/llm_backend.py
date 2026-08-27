@@ -101,8 +101,17 @@ class ClaudeCliBackend:
         for k in [k for k in env if _SENSITIVE_ENV.search(k)]:
             env.pop(k, None)
         try:
+            # --safe-mode: no project instruction files / hooks / plugins / MCP in the agent
+            # context. Without it every call from the repo root ingested the
+            # 500-line ops document (verified 2026-08-27: the agent quoted
+            # §7 verbatim) — token waste plus dev-instruction contamination.
+            # Verified compatible: subscription auth, --allowedTools, and
+            # --resume --fork-session prompt-cache inheritance all work under
+            # it. (--bare is stronger but never reads OAuth → breaks §7
+            # subscription-only billing, so it is not an option.)
             r = subprocess.run(
-                [self.bin, "-p", "--output-format", "text", "--model", m]
+                [self.bin, "-p", "--safe-mode",
+                 "--output-format", "text", "--model", m]
                 + (extra_args or []),
                 input=prompt, capture_output=True, text=True,
                 timeout=timeout_s, env=env,
