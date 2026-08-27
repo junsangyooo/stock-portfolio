@@ -1,13 +1,15 @@
 """FastAPI dashboard server for portfolio-dashboard.
 
 Routes:
-  GET /              — landing.html (홈 / 소식)
+  GET /              — landing.html (홈 / 소식) — quant.* host serves /q instead
   GET /a/{id}        — account.html (per-account view)
+  GET /q             — quant.html (auto-trading cockpit)
   GET /stock         — account.html (legacy alias, will be dropped later)
   /api/universe/*    — symbol master search
   /api/accounts/*    — account CRUD + holdings + balances + snapshots + chat
   /api/market/*      — ohlcv + quotes
   /api/analysis/*    — chart / fundamental / news / judge verdicts + news feed
+  /api/quant/*       — auto-trading state, plans, watch, journal
 
 Run:
   python -m src.dashboard_web.server --port 8888 --host 127.0.0.1
@@ -130,9 +132,45 @@ def _serve(name: str) -> HTMLResponse:
     return HTMLResponse(content=body, headers=_NO_CACHE_HEADERS)
 
 
+# quant.jsyoo.dev and portfolio.jsyoo.dev are the same app behind the same
+# nginx block; only the Host header separates them. Session cookies are
+# host-only, so the quant origin has its own login — a portfolio session
+# cannot reach the order book, and vice versa.
+_QUANT_HOST_RE = re.compile(r"^quant\b", re.IGNORECASE)
+
+
+def _is_quant_host(request: Request) -> bool:
+    return bool(_QUANT_HOST_RE.match(request.headers.get("host", "")))
+
+
 @app.get("/", response_class=HTMLResponse)
-def landing() -> HTMLResponse:
+def landing(request: Request) -> HTMLResponse:
+    if _is_quant_host(request):
+        return _serve_quant()
     return _serve("landing.html")
+
+
+@app.get("/q", response_class=HTMLResponse)
+def quant_page() -> HTMLResponse:
+    return _serve_quant()
+
+
+def _serve_quant() -> HTMLResponse:
+    """The page is bound to one account, and a fresh browser has no cookie to
+    learn which — so the id is injected here rather than opening a public
+    endpoint just to name it."""
+    from src.quant import store as qstore
+    try:
+        account_id = qstore.auto_trade_account() or ""
+    except Exception as exc:  # noqa: BLE001 — an unreachable DB is not a 500 page
+        logging.error("quant account lookup failed: %s", exc)
+        account_id = ""
+    resp = _serve("quant.html")
+    body = resp.body.decode()
+    tag = f'<script>window.QUANT_ACCOUNT = {json.dumps(account_id)};</script>'
+    m = _HEAD_RE.search(body)
+    body = (body[:m.end()] + "\n" + tag + body[m.end():]) if m else tag + body
+    return HTMLResponse(content=body, headers=_NO_CACHE_HEADERS)
 
 
 @app.get("/a/{account_id}", response_class=HTMLResponse)
