@@ -10,10 +10,13 @@ Results persist to portfolio.db ``holding_themes`` (relation primary|related).
 """
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from .catalog import Catalog, Theme
 from ..llm_backend import ClaudeCliBackend, SLOW_MODEL, _parse_json
+
+log = logging.getLogger(__name__)
 
 
 # ── ETF: deterministic name rule ─────────────────────────────────────────────
@@ -116,6 +119,58 @@ def resolve_symbol_themes(name: str, market: str, is_etf: bool,
     return rows
 
 
+def ensure_theme_mapping(symbol_id: str) -> None:
+    """Auto-tag a newly-tracked symbol into themes. Best-effort, never raises.
+
+    Skips if already mapped. ETF -> deterministic name rule, individual -> one
+    LLM tag. New primary themes then start collecting on the next daily_job;
+    the mapping is what makes news coverage follow what is actually held.
+
+    Lives here, not in a router, because both books call it: portfolio when a
+    holding is added, quant when a position opens or a symbol is watched.
+    """
+    from ...core.paths import split_symbol
+    from ...portfolio.store.db import connect
+    from ...universe import search as uni_search
+    from .catalog import load_catalog
+    try:
+        with connect() as c:
+            if has_holding_themes(symbol_id, c):
+                return  # already mapped — don't burn an LLM call
+        rec = uni_search.get(symbol_id) or {}
+        name = rec.get("name_kr") or rec.get("name_en") or symbol_id
+        market, _ = split_symbol(symbol_id)
+        rows = resolve_symbol_themes(name, rec.get("market") or market,
+                                     bool(rec.get("is_etf")), load_catalog())
+        if not rows:
+            return
+        with connect() as c:
+            save_holding_themes(symbol_id, rows, c)
+    except Exception as e:  # noqa: BLE001 — background, must not surface
+        log.warning("theme auto-map failed for %s: %s", symbol_id, e)
+        try:
+            from ...core.notify import discord
+            discord.send(f"⚠️ theme auto-map failed for {symbol_id}: {str(e)[:200]}")
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def quant_symbols() -> list[str]:
+    """Symbols the auto-trading book holds or watches. They live in quant.db,
+    a separate file, so they are unreachable by the JOIN below — but they must
+    still pull their themes into the nightly collection or the cycle would be
+    reading news about everything except what it trades.
+
+    Best-effort: quant.db may not exist yet on a fresh install.
+    """
+    try:
+        from ...quant import store as qstore
+        return qstore.tracked_symbols()
+    except Exception as exc:  # noqa: BLE001 — news must not die with quant
+        log.warning("quant symbols unavailable for theme activation: %s", exc)
+        return []
+
+
 def held_primary_theme_ids(conn) -> set[str]:
     """theme_ids that at least one currently-held symbol maps to as ``primary``.
 
@@ -123,13 +178,25 @@ def held_primary_theme_ids(conn) -> set[str]:
     holding names it as its core business (§ holdings-driven activation).
     Related-only mappings do NOT keep a theme alive — most related themes are
     already some other holding's primary, so this stays coverage-safe.
+
+    "Held" spans both books: portfolio.db holdings and quant.db positions or
+    watchlist.
     """
     rows = conn.execute(
         "SELECT DISTINCT ht.theme_id FROM holding_themes ht "
         "JOIN holdings h ON h.symbol_id = ht.symbol_id "
         "WHERE ht.relation = 'primary'"
     ).fetchall()
-    return {r["theme_id"] for r in rows}
+    themes = {r["theme_id"] for r in rows}
+
+    qsyms = quant_symbols()
+    if qsyms:
+        marks = ",".join("?" * len(qsyms))
+        themes |= {r[0] for r in conn.execute(
+            f"SELECT DISTINCT theme_id FROM holding_themes "
+            f"WHERE relation = 'primary' AND symbol_id IN ({marks})",
+            qsyms).fetchall()}
+    return themes
 
 
 def has_holding_themes(symbol_id: str, conn) -> bool:

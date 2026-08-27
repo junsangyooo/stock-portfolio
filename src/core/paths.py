@@ -19,6 +19,13 @@ DATA = ROOT / "data"
 
 DB_PATH = DATA / "portfolio.db"
 
+# The auto-trading account lives in its own file. Pipelines and news are shared
+# (they are symbol-keyed files under data/, not SQLite), but the account side is
+# operated separately: a different schema, a different growth profile — a hot
+# append-only journal has no business sharing a file with a small static record
+# set — and a migration on one cannot reach the other.
+QUANT_DB_PATH = DATA / "quant.db"
+
 UNIVERSE_DIR = DATA / "universe"
 
 MARKET_DIR = DATA / "market"

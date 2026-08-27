@@ -161,7 +161,7 @@ def _serve_quant() -> HTMLResponse:
     endpoint just to name it."""
     from src.quant import store as qstore
     try:
-        account_id = qstore.auto_trade_account() or ""
+        account_id = qstore.account_id() or ""
     except Exception as exc:  # noqa: BLE001 — an unreachable DB is not a 500 page
         logging.error("quant account lookup failed: %s", exc)
         account_id = ""

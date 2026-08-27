@@ -23,6 +23,7 @@ from pydantic import BaseModel
 
 from ..core import security
 from ..core.notify import discord
+from ..agents.news.mapping import ensure_theme_mapping
 from ..market.pipeline import gap_filler
 from ..portfolio import service
 from ..portfolio.store import (
@@ -199,40 +200,6 @@ def _currency_of(symbol_id: str) -> str:
     return "USD" if region == "US" else "KRW"
 
 
-def _ensure_theme_mapping(symbol_id: str) -> None:
-    """Auto-tag a newly-held symbol into themes (background task, best-effort).
-
-    Skips if already mapped. ETF -> deterministic name rule, individual -> one
-    LLM tag. New primary themes then start collecting on the next daily_job;
-    the mapping is what makes news coverage follow the portfolio automatically.
-    Never raises — a failed tag just leaves the symbol unmapped (re-add retries).
-    """
-    try:
-        from ..agents.news.catalog import load_catalog
-        from ..agents.news.mapping import (
-            has_holding_themes, resolve_symbol_themes, save_holding_themes,
-        )
-        with connect() as c:
-            if has_holding_themes(symbol_id, c):
-                return  # already mapped — don't burn an LLM call
-        rec = uni_search.get(symbol_id) or {}
-        name = rec.get("name_kr") or rec.get("name_en") or symbol_id
-        market, _ = split_symbol(symbol_id)
-        rows = resolve_symbol_themes(
-            name, rec.get("market") or market,
-            bool(rec.get("is_etf")), load_catalog(),
-        )
-        if not rows:
-            return
-        with connect() as c:
-            save_holding_themes(symbol_id, rows, c)
-    except Exception as e:  # noqa: BLE001 — background, must not surface
-        try:
-            discord.send(f"⚠️ theme auto-map failed for {symbol_id}: {str(e)[:200]}")
-        except Exception:  # noqa: BLE001
-            pass
-
-
 @router.post("/{account_id}/holdings")
 def add_holding(account_id: str, body: HoldingUpsert,
                 background: BackgroundTasks,
@@ -247,7 +214,7 @@ def add_holding(account_id: str, body: HoldingUpsert,
         avg_cost=body.avg_cost, qty=body.qty, note=body.note, name=body.name,
     )
     # Map the symbol into themes off the request path (may make an LLM call).
-    background.add_task(_ensure_theme_mapping, body.symbol_id)
+    background.add_task(ensure_theme_mapping, body.symbol_id)
 
     # Auto-adjust cash balance on a recorded trade. The backend computes the
     # notional itself (it does not trust a client-supplied delta).
