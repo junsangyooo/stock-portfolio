@@ -1610,18 +1610,6 @@ a { color: inherit; text-decoration: none; }
   .tb-search { flex: 1 1 100%; }
 }
 
-.footer-bar {
-  margin-top: 8px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  padding: 6px 12px;
-  font-size: 10px;
-  color: var(--dim);
-  display: flex;
-  justify-content: space-between;
-}
-.footer-bar .green { color: var(--green); }
-
 /* ─────────────────────────────────────────────────────────────
    CLAUDE CHAT — right slide-in panel (portfolio-wide Q&A)
    ───────────────────────────────────────────────────────────── */
@@ -1895,11 +1883,6 @@ body.chat-open { padding-right: 388px; }
 <div class="stock-grid" id="stock-grid"></div>
 <div class="reorder-banner" id="reorder-banner">⇅ 순서 변경 모드 — 좌측 ≡ 핸들을 드래그해 위·아래로 옮긴 뒤 [✓ 완료]를 누르세요</div>
 
-<div class="footer-bar">
-  <div><span class="green">●</span> portfolio-dashboard</div>
-  <div>레이아웃: 노트북 2열 · 모바일 1열</div>
-  <div>last render <span id="footer-ts">—</span></div>
-</div>
 
 <!-- CLAUDE CHAT PANEL — portfolio-wide Q&A (context assembled server-side) -->
 <div class="chat-panel" id="chat-panel">
@@ -3245,7 +3228,6 @@ async function renderAll() {
     ]);
     grid.appendChild(empty);
     document.getElementById('portfolio-count').textContent = '0 종목';
-    document.getElementById('footer-ts').textContent = fmtClock();
     return;
   }
 
@@ -3257,7 +3239,6 @@ async function renderAll() {
   const heldCount = STOCKS.filter(s => s.qty != null).length;
   document.getElementById('portfolio-count').textContent =
     heldCount + ' 보유 · ' + STOCKS.length + ' 추적';
-  document.getElementById('footer-ts').textContent = fmtClock();
 
   // re-apply user-driven UI state after the grid is rebuilt (drag handlers,
   // sort, filter). These globals are set up by the reorderSortFilter IIFE
@@ -3337,8 +3318,6 @@ async function runSearch(q) {
 }
 
 async function addHolding(symbolId, label) {
-  document.getElementById('footer-ts').textContent =
-    label + ' 추가 중 (히스토리 backfill…)';
   try {
     const r = await fetch(API.addHolding(), {
       method: 'POST',
@@ -3378,7 +3357,6 @@ document.getElementById('btn-add').addEventListener('click', () => {
 });
 
 document.getElementById('btn-refresh').addEventListener('click', async () => {
-  document.getElementById('footer-ts').textContent = '전 계좌 종목 갱신 중…';
   try {
     await fetch(API.marketRefresh(), { method: 'POST' });
   } catch (_) {}
@@ -3487,17 +3465,13 @@ renderAll();
       const s = STOCKS.find(x => x.symbolId === sid);
       if (s) s._order = i;
     });
-    document.getElementById('footer-ts').textContent = '순서 저장중…';
     try {
       await fetch(API.reorderHoldings(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order }),
       });
-      document.getElementById('footer-ts').textContent = '순서 저장 완료';
-    } catch (e) {
-      document.getElementById('footer-ts').textContent = '순서 저장 실패: ' + e.message;
-    }
+    } catch (_) {}
   }
 
   reorderBtn.addEventListener('click', () => {
@@ -4181,7 +4155,7 @@ renderAll();
       // a newer watcher took over this pane → this poller dies silently
       if (opts.isStale && opts.isStale()) return;
       // user switched symbol mid-run → keep polling DETACHED so completion can
-      // still update the Level-0 badge / footer (완성된 판단을 버리지 않는다)
+      // still update the Level-0 badge (완성된 판단을 버리지 않는다)
       const detached = !!(opts.sym && (!currentStock || currentStock.symbolId !== opts.sym));
       await sleep(POLL_MS);
       let s;
@@ -4396,17 +4370,15 @@ renderAll();
   }
 
   // 진행 UI + 폴링 (신규 start 또는 running resume).
-  // 완료 시 pane 렌더 + Level 0 배지 in-place 갱신 + footer 알림.
+  // 완료 시 pane 렌더 + Level 0 배지 in-place 갱신.
   function watchJudgeJob(pane, sym, mkt, code, opts) {
     const my = ++_watchSeq.judge;
-    const stockName = (currentStock && currentStock.name) || sym;
     clear(pane);
     const prog = makeJobProgress('종합 분석');
     pane.appendChild(prog.root);
     window._setJudgeBadge(sym, { running: true });
     const finish = (body, date) => {
       window._setJudgeBadge(sym, { action_ko: body.action_ko, date: date || body.date });
-      document.getElementById('footer-ts').textContent = stockName + ' 종합 분석 완료 · ' + fmtClock();
     };
     const common = {
       sym,
@@ -4425,7 +4397,7 @@ renderAll();
         renderJudgeVerdict(pane, body, date);
         finish(body, date);
       },
-      // 다른 종목을 보는 중에 완료 → pane은 건드리지 않고 배지/footer만 갱신
+      // 다른 종목을 보는 중에 완료 → pane은 건드리지 않고 배지만 갱신
       onBackgroundDone: finish,
     };
     if (opts && opts.resumeSec != null) {
@@ -5444,7 +5416,6 @@ renderAll();
 window.deleteHolding = async function (stock) {
   const label = stock.name + ' (' + stock.market + ' · ' + stock.code + ')';
   if (!confirm(label + ' 을(를) 포트폴리오에서 제거할까요?\n\n(히스토리 데이터는 디스크에 보존됩니다.)')) return;
-  document.getElementById('footer-ts').textContent = label + ' 제거중…';
   try {
     const r = await fetch(API.removeHolding(stock.symbolId),
                           { method: 'DELETE' });
