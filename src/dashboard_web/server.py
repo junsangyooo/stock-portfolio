@@ -57,10 +57,21 @@ _OPEN_API = {
 }
 
 
+# /api/quant/* is exempt from the aggregate gate below and gated by its own
+# router instead: every route there carries Depends(require_quant), which
+# checks the quant book's OWN cookie and PIN. The aggregate gate only asks
+# "does this request carry some portfolio account session", which is both too
+# weak for the order book and — since the quant cookie is not pdash_a_* —
+# unable to recognise a legitimate quant login at all.
+_SELF_GATED_PREFIX = "/api/quant/"
+
+
 @app.middleware("http")
 async def api_session_gate(request: Request, call_next):
     path = request.url.path
-    if path.startswith("/api/") and (request.method, path) not in _OPEN_API:
+    if (path.startswith("/api/")
+            and not path.startswith(_SELF_GATED_PREFIX)
+            and (request.method, path) not in _OPEN_API):
         is_pin_post = request.method == "POST" and path.endswith("/auth")
         if not is_pin_post and not security.has_any_session(request.cookies):
             return JSONResponse({"detail": "PIN required"}, status_code=403)
