@@ -105,10 +105,15 @@ CREATE TABLE IF NOT EXISTS plans (
   price       REAL NOT NULL,
   qty         REAL NOT NULL,
   note        TEXT,
+  status      TEXT,                     -- NULL=manual note | armed|entered|done
+                                        -- |stopped|abandoned|expired (quant lifecycle)
+  conditions  TEXT,                     -- JSON {entry, take_profit, stop} (quant)
+  expires_at  INTEGER,                  -- unix; past due -> expired (quant)
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_plans_account ON plans(account_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_plans_status ON plans(account_id, status);
 
 -- quant: the auto-trading plugin. One account opts in via accounts.auto_trade.
 CREATE TABLE IF NOT EXISTS quant_cycles (
@@ -191,6 +196,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "name" not in cols:
         conn.execute("ALTER TABLE holdings ADD COLUMN name TEXT")
         conn.commit()
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(plans)").fetchall()}
+    for col, decl in (("status", "TEXT"), ("conditions", "TEXT"),
+                      ("expires_at", "INTEGER")):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE plans ADD COLUMN {col} {decl}")
+            conn.commit()
 
 
 def _init_once() -> None:
