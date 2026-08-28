@@ -3,10 +3,7 @@
   data/portfolio.db                                 — SQLite (accounts, holdings, balances, snapshots)
   data/market.db                                    — SQLite (ohlcv, valuation, financials, sector, etf, symbol_themes)
   data/universe/{kr,us,etf_kr}.json                 — symbol master (daily refresh)
-  data/market/ohlcv/{MARKET}/{CODE}.parquet         — per-symbol daily bars
   data/market/quote/last.json                       — last-known quote snapshot
-  data/market/valuation/{MARKET}/{CODE}.parquet     — daily valuation (PER/PBR/EPS/...)
-  data/market/financials/{MARKET}/{CODE}.parquet    — quarterly/annual statements
   data/signals/news/{THEME}/{YYYYMM}.jsonl          — theme-keyed qualitative signals
   data/universe/dart_corp_codes.json                — KR code → DART corp_code map
   data/analysis/{kind}/{MARKET}_{CODE}/{YYYYMMDD}.json
@@ -35,12 +32,7 @@ MARKET_DB_PATH = DATA / "market.db"
 UNIVERSE_DIR = DATA / "universe"
 
 MARKET_DIR = DATA / "market"
-OHLCV_DIR = MARKET_DIR / "ohlcv"
-QUOTE_DIR = MARKET_DIR / "quote"
-VALUATION_DIR = MARKET_DIR / "valuation"
-FINANCIALS_DIR = MARKET_DIR / "financials"
-SECTOR_DIR = MARKET_DIR / "sector"
-ETF_DIR = MARKET_DIR / "etf"
+QUOTE_DIR = MARKET_DIR / "quote"   # last.json only — the rest is market.db
 
 ANALYSIS_DIR = DATA / "analysis"
 
@@ -56,8 +48,7 @@ QUANT_DIR = DATA / "quant"          # auto-trade runtime state (token cache, loc
 
 
 def ensure_dirs() -> None:
-    for d in (DATA, UNIVERSE_DIR, MARKET_DIR, OHLCV_DIR, QUOTE_DIR,
-              VALUATION_DIR, FINANCIALS_DIR, SECTOR_DIR, ETF_DIR,
+    for d in (DATA, UNIVERSE_DIR, MARKET_DIR, QUOTE_DIR,
               ANALYSIS_DIR, SIGNALS_DIR, LOGS_DIR, BACKUP_DIR, QUANT_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
@@ -65,29 +56,6 @@ def ensure_dirs() -> None:
 def signals_news_path(theme: str, yyyymm: str) -> Path:
     """Raw qualitative signals per theme, monthly jsonl (L3 collect output)."""
     return SIGNALS_DIR / "news" / theme / f"{yyyymm}.jsonl"
-
-
-def ohlcv_path(market: str, code: str) -> Path:
-    return OHLCV_DIR / market.upper() / f"{code}.parquet"
-
-
-def valuation_path(market: str, code: str) -> Path:
-    return VALUATION_DIR / market.upper() / f"{code}.parquet"
-
-
-def financials_path(market: str, code: str) -> Path:
-    return FINANCIALS_DIR / market.upper() / f"{code}.parquet"
-
-
-def sector_path(market: str, code: str) -> Path:
-    """Per-symbol sector/industry tag cache (refreshed in the daily batch)."""
-    return SECTOR_DIR / market.upper() / f"{code}.json"
-
-
-def etf_path(market: str, code: str) -> Path:
-    """Per-ETF daily snapshot (NAV/AUM/괴리율/3M return).
-    Single file overwritten each day — history lives in OHLCV instead."""
-    return ETF_DIR / market.upper() / f"{code}.json"
 
 
 def analysis_path(kind: str, symbol_id: str, yyyymmdd: str) -> Path:
