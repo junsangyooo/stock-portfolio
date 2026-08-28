@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Optional
 
 from ...core.kst import KST
-from ...core.paths import DATA, UNIVERSE_DIR
+from ...core.paths import MARKET_DIR, UNIVERSE_DIR
 from ..store.db import connect
 
 log = logging.getLogger(__name__)
@@ -395,7 +395,11 @@ def us_financials(years: int = 6, zip_path: Optional[Path] = None) -> dict:
     import requests
     from ..source.edgar_source import _cik_map, _UA, rows_from_facts, latest_filed
 
-    zip_path = zip_path or (DATA / "companyfacts.zip")
+    # under data/market/ because that directory is already gitignored;
+    # a 1.4GB blob one `git add -A` away from a commit is not a risk
+    # worth taking for a cache file.
+    zip_path = zip_path or (MARKET_DIR / "companyfacts.zip")
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
     if not zip_path.exists():
         _log(f"  us-financials: downloading {_FACTS_ZIP} → {zip_path}")
         tmp = zip_path.with_suffix(".zip.part")
