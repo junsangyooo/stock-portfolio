@@ -117,7 +117,28 @@ def get_financials(symbol_id: str, years: int = 6) -> List[FinancialRow]:
     except (requests.RequestException, ValueError) as e:
         log.warning("edgar %s companyfacts failed: %s", symbol_id, e)
         return []
+    return rows_from_facts(facts, years=years)
 
+
+def latest_filed(facts: dict) -> Optional[str]:
+    """Newest `filed` date anywhere in a companyfacts blob — what the symbol's
+    financial rows should be stamped with."""
+    newest = ""
+    for concepts in _CONCEPTS.values():
+        for e in _iter_entries(facts, concepts):
+            f = e.get("filed") or ""
+            if f > newest:
+                newest = f
+    return newest or None
+
+
+def rows_from_facts(facts: dict, years: int = 6) -> List[FinancialRow]:
+    """Parse one companyfacts blob into rows.
+
+    Split out of get_financials so the bulk path can feed it members of
+    companyfacts.zip — 7,069 symbols in one download instead of one request
+    each — without a second copy of this mapping.
+    """
     cutoff = date.today().replace(year=date.today().year - years)
     # (period_label, field) -> (filed, value); latest filing wins (restatements)
     cells: Dict[tuple, tuple] = {}
