@@ -249,9 +249,8 @@ def remove_holding(account_id: str, symbol_id: str,
             account_id, cash_currency, sell_price * sell_qty)
     n = holding_store.remove(account_id, symbol_id)
     if n and symbol_id not in holding_store.all_symbol_ids():
-        from ..agents.news.mapping import drop_holding_themes
-        with connect() as c:
-            drop_holding_themes(symbol_id, c)
+        from ..market.store import theme_store
+        theme_store.drop(symbol_id)
     return {"ok": n > 0, "deleted": n,
             "cash_currency": cash_currency, "cash_balance": cash_balance}
 

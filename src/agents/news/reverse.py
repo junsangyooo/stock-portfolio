@@ -6,7 +6,7 @@ theme that is moving, which listed companies are in it?
 
 Two sources, because neither alone is enough:
 
-  tagged     holding_themes reversed. Precise, but only ever contains symbols
+  tagged     symbol_themes reversed. Precise, but only ever contains symbols
              somebody already holds — useless for finding something new.
   mentioned  company names recovered from the theme's own news corpus
              (data/signals/news/{theme}/{yyyymm}.jsonl). This is the mechanical
@@ -218,15 +218,9 @@ def _count_masked(corpus: str, entries: Iterable[tuple[str, str]]) -> dict[str, 
 
 
 def _tagged(theme_id: str) -> list[dict]:
-    """holding_themes reversed — symbols somebody already mapped to this theme."""
-    from ...portfolio.store.db import connect
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT symbol_id, relation, weight FROM holding_themes "
-            "WHERE theme_id = ? ORDER BY relation, symbol_id", (theme_id,)
-        ).fetchall()
-    return [{"symbol_id": r["symbol_id"], "relation": r["relation"],
-             "weight": float(r["weight"])} for r in rows]
+    """symbol_themes reversed — symbols somebody already mapped to this theme."""
+    from ...market.store import theme_store
+    return theme_store.symbols_for(theme_id)
 
 
 def _held_symbols() -> set[str]:
@@ -290,7 +284,7 @@ def symbols_for_theme(theme_id: str, days: int = 7, limit: int = 30) -> dict:
         "items_scanned": len(items),
         "tagged": tagged,
         "mentioned": mentioned,
-        "note": (f"tagged = holding_themes 역조회(보유 기반, 정밀). "
+        "note": (f"tagged = symbol_themes 역조회(보유 기반, 정밀). "
                  f"mentioned = 최근 {days}일 뉴스 본문에서 종목명 literal 매칭"
                  f"(발굴용, 동명이의 오탐 가능). "
                  f"한글 {_MIN_LEN_KR}자·영문 {_MIN_LEN_EN}자 미만 종목명은 "

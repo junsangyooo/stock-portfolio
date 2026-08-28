@@ -1,32 +1,13 @@
 """Round-trip tests for valuation_store + financials_store.
 
-Path functions are monkeypatched into a tmp dir so tests never touch the
-real data/ tree.
+Both now live in market.db; the autouse `market_db` fixture in conftest points
+them at a throwaway file, so nothing here touches the real data/ tree.
 """
-import pytest
-
 from src.market.store import valuation_store, financials_store
 from src.market.source.base import ValuationPoint, FinancialRow
 
 
-@pytest.fixture
-def tmp_paths(tmp_path, monkeypatch):
-    def vpath(market, code):
-        p = tmp_path / "valuation" / market.upper() / f"{code}.parquet"
-        return p
-
-    def fpath(market, code):
-        p = tmp_path / "financials" / market.upper() / f"{code}.parquet"
-        return p
-
-    monkeypatch.setattr(valuation_store, "valuation_path", vpath)
-    monkeypatch.setattr(valuation_store, "ensure_dirs", lambda: None)
-    monkeypatch.setattr(financials_store, "financials_path", fpath)
-    monkeypatch.setattr(financials_store, "ensure_dirs", lambda: None)
-    return tmp_path
-
-
-def test_valuation_write_dedup_and_latest(tmp_paths):
+def test_valuation_write_dedup_and_latest():
     sid = "KR:000000"
     n1 = valuation_store.write(sid, [
         ValuationPoint(ts=100, per=10.0, pbr=1.0),
@@ -47,9 +28,8 @@ def test_valuation_write_dedup_and_latest(tmp_paths):
     assert latest["ts"] == 300 and latest["per"] == 12.0
 
 
-def test_financials_upsert_and_sort(tmp_paths):
+def test_financials_upsert_and_sort():
     sid = "KR:000000"
-    valuation_store  # noqa: keep import used
     financials_store.write(sid, [
         FinancialRow(period="2024Q3", revenue=300.0, source="dart"),
         FinancialRow(period="2024Q1", revenue=100.0, source="dart"),

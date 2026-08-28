@@ -1,7 +1,7 @@
 """L4 step 3 — per-symbol qualitative (news/trend/issue) evaluation.
 
 Triggered on-demand by the UI 📰 button (POST /api/analysis/news/{m}/{c}/run).
-Reads the symbol's theme mapping (holding_themes) + each theme's rolling state
+Reads the symbol's theme mapping (market.db symbol_themes) + each theme's rolling state
 (refreshed by the 06:00 daily_job: collect→digest→state) and applies
 src/agents/news/news_rules.md via claude -p to produce a qualitative verdict.
 
@@ -19,7 +19,7 @@ information-diffusion stage (lead_lag / novelty / watchlist), NOT observed price
 (rulebook §I). Cross-domain fusion is the Judge's job.
 
 Pipeline:
-  assemble_inputs — holding_themes + per-theme state (primary full / related
+  assemble_inputs — symbol_themes + per-theme state (primary full / related
                     brief + edge_relation from the primary theme's themes.json
                     edges / macro brief). Read-only — does NOT collect.
   _judge          — applies news_rules.md via claude -p → rich verdict
@@ -30,13 +30,11 @@ Pipeline:
 from __future__ import annotations
 
 import json
-from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from ...core.kst import KST as _KST
-from ...portfolio.store.db import connect
 from ..llm_backend import ClaudeCliBackend, SLOW_MODEL, _parse_json
 from ..verdict import clamp_confidence, clamp_score, label_from_score, persist
 from .catalog import Catalog, load_catalog
@@ -52,14 +50,10 @@ _HORIZONS = ("immediate", "near", "mid", "long")
 _RULES = (Path(__file__).parent / "news_rules.md").read_text(encoding="utf-8")
 
 
-def get_symbol_themes(symbol_id: str, conn) -> list[dict]:
-    """Theme mapping for one symbol from holding_themes (primary first)."""
-    rows = conn.execute(
-        "SELECT theme_id, relation, weight FROM holding_themes "
-        "WHERE symbol_id = ? ORDER BY relation, weight DESC",
-        (symbol_id,),
-    ).fetchall()
-    return [{"theme_id": r[0], "relation": r[1], "weight": r[2]} for r in rows]
+def get_symbol_themes(symbol_id: str) -> list[dict]:
+    """Theme mapping for one symbol from market.db symbol_themes (primary first)."""
+    from ...market.store import theme_store
+    return theme_store.get(symbol_id)
 
 
 # ── input assembly ────────────────────────────────────────────────────────
@@ -78,7 +72,7 @@ def _theme_block(state: dict, relation: str, weight: float,
                  edge_relation: Optional[str], name_kr: str, full: bool) -> dict:
     """One theme's state shaped for the prompt. primary=full, others=brief.
 
-    `relation`      = holding_themes relation (primary | related | macro) — §F.
+    `relation`      = symbol_themes relation (primary | related | macro) — §F.
     `edge_relation` = themes.json edge from the PRIMARY theme (upstream/
                       downstream/...) — §E read-through path (related only).
     """
@@ -101,8 +95,7 @@ def _theme_block(state: dict, relation: str, weight: float,
     return blk
 
 
-def assemble_inputs(symbol_id: str, *, catalog: Optional[Catalog] = None,
-                    conn=None) -> dict:
+def assemble_inputs(symbol_id: str, *, catalog: Optional[Catalog] = None) -> dict:
     """Gather the symbol's theme states for evaluation (read-only).
 
     primary theme  → full state (horizon + sentiment + recent + watchlist).
@@ -111,8 +104,7 @@ def assemble_inputs(symbol_id: str, *, catalog: Optional[Catalog] = None,
     macro          → brief state, always injected as the backbone (§F3).
     """
     catalog = catalog or load_catalog()
-    with (connect() if conn is None else nullcontext(conn)) as c:
-        themes = get_symbol_themes(symbol_id, c)
+    themes = get_symbol_themes(symbol_id)
 
     # edge_relation map: the primary theme's themes.json related edges
     # ({related_theme_id: relation}) — used to annotate related themes (§E1).
@@ -286,7 +278,7 @@ def _judge(symbol_id: str, name: str, inputs: dict, *,
 
 
 def evaluate_symbol(symbol_id: str, *, name: Optional[str] = None,
-                    catalog: Optional[Catalog] = None, conn=None,
+                    catalog: Optional[Catalog] = None,
                     date: Optional[str] = None, backend=None,
                     timeout_s: float = 280) -> dict:
     """Assemble inputs → judge (rulebook via claude -p) → persist. Returns dict."""
@@ -294,7 +286,7 @@ def evaluate_symbol(symbol_id: str, *, name: Optional[str] = None,
     date = date or datetime.now(_KST).strftime("%Y-%m-%d")
     name = name or symbol_id
 
-    inputs = assemble_inputs(symbol_id, catalog=catalog, conn=conn)
+    inputs = assemble_inputs(symbol_id, catalog=catalog)
     verdict = _judge(symbol_id, name, inputs, backend=backend, timeout_s=timeout_s)
 
     result = {

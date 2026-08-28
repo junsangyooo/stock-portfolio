@@ -6,7 +6,8 @@ Two paths:
 
 Called from the holdings API when a newly-added symbol has no mapping yet.
 
-Results persist to portfolio.db ``holding_themes`` (relation primary|related).
+Results persist to market.db ``symbol_themes`` (relation primary|related) —
+the symbol book, so both account books read the same mapping.
 """
 from __future__ import annotations
 
@@ -127,16 +128,16 @@ def ensure_theme_mapping(symbol_id: str) -> None:
     the mapping is what makes news coverage follow what is actually held.
 
     Lives here, not in a router, because both books call it: portfolio when a
-    holding is added, quant when a position opens or a symbol is watched.
+    holding is added, quant when a position opens or a symbol is watched. The
+    mapping itself is stored per-symbol in market.db, so neither book owns it.
     """
     from ...core.paths import split_symbol
-    from ...portfolio.store.db import connect
+    from ...market.store import theme_store
     from ...universe import search as uni_search
     from .catalog import load_catalog
     try:
-        with connect() as c:
-            if has_holding_themes(symbol_id, c):
-                return  # already mapped — don't burn an LLM call
+        if theme_store.has(symbol_id):
+            return  # already mapped — don't burn an LLM call
         rec = uni_search.get(symbol_id) or {}
         name = rec.get("name_kr") or rec.get("name_en") or symbol_id
         market, _ = split_symbol(symbol_id)
@@ -144,21 +145,20 @@ def ensure_theme_mapping(symbol_id: str) -> None:
                                      bool(rec.get("is_etf")), load_catalog())
         if not rows:
             return
-        with connect() as c:
-            save_holding_themes(symbol_id, rows, c)
+        theme_store.save(symbol_id, rows)
     except Exception as e:  # noqa: BLE001 — background, must not surface
         log.warning("theme auto-map failed for %s: %s", symbol_id, e)
         try:
             from ...core.notify import discord
-            discord.send(f"⚠️ theme auto-map failed for {symbol_id}: {str(e)[:200]}")
+            discord.send(f"\u26a0\ufe0f theme auto-map failed for {symbol_id}: {str(e)[:200]}")
         except Exception:  # noqa: BLE001
             pass
 
 
 def quant_symbols() -> list[str]:
     """Symbols the auto-trading book holds or watches. They live in quant.db,
-    a separate file, so they are unreachable by the JOIN below — but they must
-    still pull their themes into the nightly collection or the cycle would be
+    a separate file from the holdings this pipeline started from, so the
+    collection set has to union the two books explicitly or the cycle would be
     reading news about everything except what it trades.
 
     Best-effort: quant.db may not exist yet on a fresh install.
@@ -171,7 +171,7 @@ def quant_symbols() -> list[str]:
         return []
 
 
-def held_primary_theme_ids(conn) -> set[str]:
+def held_primary_theme_ids() -> set[str]:
     """theme_ids that at least one currently-held symbol maps to as ``primary``.
 
     Drives the daily collection set: a theme is collected only while some
@@ -180,39 +180,12 @@ def held_primary_theme_ids(conn) -> set[str]:
     already some other holding's primary, so this stays coverage-safe.
 
     "Held" spans both books: portfolio.db holdings and quant.db positions or
-    watchlist.
+    watchlist. The themes themselves come from market.db, which is why this is
+    two reads and not a JOIN.
     """
-    rows = conn.execute(
-        "SELECT DISTINCT ht.theme_id FROM holding_themes ht "
-        "JOIN holdings h ON h.symbol_id = ht.symbol_id "
-        "WHERE ht.relation = 'primary'"
-    ).fetchall()
-    themes = {r["theme_id"] for r in rows}
-
-    qsyms = quant_symbols()
-    if qsyms:
-        marks = ",".join("?" * len(qsyms))
-        themes |= {r[0] for r in conn.execute(
-            f"SELECT DISTINCT theme_id FROM holding_themes "
-            f"WHERE relation = 'primary' AND symbol_id IN ({marks})",
-            qsyms).fetchall()}
-    return themes
-
-
-def has_holding_themes(symbol_id: str, conn) -> bool:
-    """True if the symbol is already mapped — the guard that stops a re-add
-    from burning another LLM tagging call."""
-    return conn.execute(
-        "SELECT 1 FROM holding_themes WHERE symbol_id = ? LIMIT 1",
-        (symbol_id,),
-    ).fetchone() is not None
-
-
-def drop_holding_themes(symbol_id: str, conn) -> None:
-    """Forget a symbol's theme mapping — called once no account holds it, so
-    themes with no remaining holder stop collecting on the next daily_job."""
-    conn.execute("DELETE FROM holding_themes WHERE symbol_id = ?", (symbol_id,))
-    conn.commit()
+    from ...market.store import theme_store
+    from ...portfolio.store.holding_store import all_symbol_ids
+    return theme_store.primary_themes_of(set(all_symbol_ids()) | set(quant_symbols()))
 
 
 def live_themes(catalog: Catalog) -> list[Theme]:
@@ -224,25 +197,6 @@ def live_themes(catalog: Catalog) -> list[Theme]:
     source of truth for both nightly collection and the landing feed, so adding
     or removing a holding grows/shrinks the news footprint by itself.
     """
-    from ...portfolio.store.db import connect
-
-    with connect() as c:
-        held = held_primary_theme_ids(c)
+    held = held_primary_theme_ids()
     return [t for t in catalog.themes.values()
             if not t.shadow and (t.always_on or t.theme_id in held)]
-
-
-def save_holding_themes(symbol_id: str, rows: list[dict], conn,
-                        updated_at: Optional[str] = None) -> None:
-    """Replace holding_themes for one symbol (idempotent upsert by delete+insert)."""
-    import time
-    ts = updated_at or time.strftime("%Y-%m-%dT%H:%M:%S")
-    conn.execute("DELETE FROM holding_themes WHERE symbol_id = ?", (symbol_id,))
-    conn.executemany(
-        "INSERT INTO holding_themes "
-        "(symbol_id, theme_id, relation, weight, source, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        [(symbol_id, r["theme_id"], r["relation"], r["weight"],
-          r.get("source", "auto"), ts) for r in rows],
-    )
-    conn.commit()

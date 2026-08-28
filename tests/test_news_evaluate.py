@@ -1,8 +1,6 @@
-"""Tests for L4 evaluate: theme lookup (sqlite), input assembly (with
+"""Tests for L4 evaluate: theme lookup (market.db), input assembly (with
 edge_relation from the catalog), and the rulebook judge (stubbed claude)."""
 from __future__ import annotations
-
-import sqlite3
 
 import pytest
 
@@ -15,23 +13,17 @@ from src.agents.news.catalog import load_catalog
 
 
 @pytest.fixture
-def conn():
-    c = sqlite3.connect(":memory:")
-    c.execute(
-        "CREATE TABLE holding_themes (symbol_id TEXT, theme_id TEXT, "
-        "relation TEXT, weight REAL, source TEXT, updated_at TEXT, "
-        "PRIMARY KEY (symbol_id, theme_id))"
-    )
-    c.executemany(
-        "INSERT INTO holding_themes VALUES (?,?,?,?,?,?)",
-        [
-            ("KR:247540", "battery", "primary", 1.0, "auto", "t"),
-            ("KR:247540", "ev", "related", 0.8, "auto", "t"),
-            ("KR:247540", "materials_raw", "related", 0.7, "auto", "t"),
-        ],
-    )
-    c.commit()
-    return c
+def mapped():
+    """One symbol mapped into a primary + two related themes.
+
+    Writes to the throwaway market.db the autouse conftest fixture points at.
+    """
+    from src.market.store import theme_store
+    theme_store.save("KR:247540", [
+        {"theme_id": "battery", "relation": "primary", "weight": 1.0},
+        {"theme_id": "ev", "relation": "related", "weight": 0.8},
+        {"theme_id": "materials_raw", "relation": "related", "weight": 0.7},
+    ])
 
 
 def _fake_state(theme_id):
@@ -51,22 +43,22 @@ def _fake_state(theme_id):
 
 # ── theme lookup ────────────────────────────────────────────────────────────
 
-def test_get_symbol_themes_primary_first(conn):
-    rows = get_symbol_themes("KR:247540", conn)
+def test_get_symbol_themes_primary_first(mapped):
+    rows = get_symbol_themes("KR:247540")
     assert rows[0]["theme_id"] == "battery" and rows[0]["relation"] == "primary"
     assert {r["theme_id"] for r in rows} == {"battery", "ev", "materials_raw"}
 
 
-def test_get_symbol_themes_empty(conn):
-    assert get_symbol_themes("KR:000000", conn) == []
+def test_get_symbol_themes_empty(mapped):
+    assert get_symbol_themes("KR:000000") == []
 
 
 # ── input assembly ──────────────────────────────────────────────────────────
 
-def test_assemble_inputs_shape_and_edges(conn, monkeypatch):
+def test_assemble_inputs_shape_and_edges(mapped, monkeypatch):
     monkeypatch.setattr(ev, "load_state", _fake_state)
     cat = load_catalog()
-    inp = assemble_inputs("KR:247540", catalog=cat, conn=conn)
+    inp = assemble_inputs("KR:247540", catalog=cat)
 
     assert inp["primary_theme"] == "battery"
     assert inp["data_available"]["themes_mapped"] is True
@@ -79,7 +71,7 @@ def test_assemble_inputs_shape_and_edges(conn, monkeypatch):
     # edge_relation pulled from the primary theme's themes.json edges
     assert blocks["ev"]["edge_relation"] == "downstream"
     assert blocks["materials_raw"]["edge_relation"] == "upstream"
-    # macro backbone auto-injected (not in holding_themes)
+    # macro backbone auto-injected (not in symbol_themes)
     assert "macro" in blocks and blocks["macro"]["relation"] == "macro"
 
 

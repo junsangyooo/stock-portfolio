@@ -1,73 +1,73 @@
-"""Per-symbol daily OHLCV parquet store.
-
-Path: data/market/ohlcv/{MARKET}/{code}.parquet
-       where MARKET ∈ {KR, US} (matches symbol_id prefix).
+"""Daily OHLCV store — data/market.db, table `ohlcv`.
 
 We store ONLY daily bars. Coarser periods (week/month/year) are derived on
 the fly by src/market/pipeline/resampler.py — storage cost of duplicates
 is higher than CPU cost of resampling, and avoids divergence.
+
+Was one parquet per symbol. At 53 held symbols that was fine; at the whole
+universe it is 11k files that cannot answer "every symbol on this date"
+without opening all of them.
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Iterable, List
 
 import pandas as pd
 
-from ...core.paths import ensure_dirs, ohlcv_path, split_symbol
 from ..source.base import OHLCVBar
+from .db import connect
 
 COLS = ["ts", "open", "high", "low", "close", "volume"]
 
 
-def _path(symbol_id: str) -> Path:
-    market, code = split_symbol(symbol_id)
-    p = ohlcv_path(market, code)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    return p
-
-
 def write(symbol_id: str, bars: Iterable[OHLCVBar]) -> int:
-    """Append + dedup on ts. Returns number of NEW rows added."""
-    ensure_dirs()
+    """Append, ignoring bars already stored. Returns number of NEW rows."""
     bars = list(bars)
     if not bars:
         return 0
-    new_df = pd.DataFrame([
-        {"ts": b.ts, "open": b.open, "high": b.high, "low": b.low,
-         "close": b.close, "volume": b.volume}
-        for b in bars
-    ])
-    path = _path(symbol_id)
-    if path.exists():
-        old = pd.read_parquet(path)
-        old_ts = set(old["ts"].astype(int).tolist())
-        new_df = new_df[~new_df["ts"].astype(int).isin(old_ts)]
-        if new_df.empty:
-            return 0
-        merged = pd.concat([old, new_df], ignore_index=True)
-        merged = merged.drop_duplicates("ts").sort_values("ts").reset_index(drop=True)
-    else:
-        merged = new_df.sort_values("ts").reset_index(drop=True)
-    merged.to_parquet(path, index=False)
-    return len(new_df)
+    with connect() as c:
+        before = c.total_changes
+        c.executemany(
+            "INSERT OR IGNORE INTO ohlcv "
+            "(symbol_id, ts, open, high, low, close, volume) "
+            "VALUES (?,?,?,?,?,?,?)",
+            [(symbol_id, int(b.ts), b.open, b.high, b.low, b.close, b.volume)
+             for b in bars],
+        )
+        c.commit()
+        return c.total_changes - before
 
 
 def read(symbol_id: str, n: int = 0) -> pd.DataFrame:
-    path = _path(symbol_id)
-    if not path.exists():
+    """Ascending daily bars; `n` > 0 keeps only the most recent n."""
+    with connect() as c:
+        if n > 0:
+            # newest n, then flip back to ascending
+            rows = c.execute(
+                "SELECT ts, open, high, low, close, volume FROM ohlcv "
+                "WHERE symbol_id = ? ORDER BY ts DESC LIMIT ?",
+                (symbol_id, n)).fetchall()
+            rows = rows[::-1]
+        else:
+            rows = c.execute(
+                "SELECT ts, open, high, low, close, volume FROM ohlcv "
+                "WHERE symbol_id = ? ORDER BY ts", (symbol_id,)).fetchall()
+    if not rows:
         return pd.DataFrame(columns=COLS)
-    df = pd.read_parquet(path).sort_values("ts").reset_index(drop=True)
-    if n > 0:
-        df = df.tail(n).reset_index(drop=True)
-    return df
+    df = pd.DataFrame([tuple(r) for r in rows], columns=COLS)
+    # Pin the dtypes. Parquet carried them; SQLite does not, so an all-NULL
+    # column would come back as `object` and change arithmetic downstream.
+    return df.astype({"ts": "int64", **{c: "float64" for c in COLS[1:]}})
 
 
 def last_ts(symbol_id: str) -> int:
-    df = read(symbol_id)
-    if df.empty:
-        return 0
-    return int(df["ts"].iloc[-1])
+    """Newest stored bar time, 0 when the symbol has none. Used by the gap
+    filler to decide between a 3-year backfill and a short catch-up, so it
+    must not pay for reading the whole series."""
+    with connect() as c:
+        row = c.execute("SELECT MAX(ts) FROM ohlcv WHERE symbol_id = ?",
+                        (symbol_id,)).fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
 
 
 def to_payload(df: pd.DataFrame) -> List[dict]:

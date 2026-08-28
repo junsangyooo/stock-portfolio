@@ -1,7 +1,4 @@
-"""Per-symbol sector/industry tag cache.
-
-A tiny JSON file per symbol at data/market/sector/{MARKET}/{code}.json:
-    {"symbol_id", "sector", "industry", "source", "updated_at"}
+"""Sector/industry tag store — data/market.db, table `sector`.
 
 Sector is (nearly) static, so the daily batch only refetches when the cache is
 missing or stale. The fundamental agent reads it to apply the rulebook's §E
@@ -10,29 +7,22 @@ doc's scope boundary).
 """
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from typing import Optional
 
-from ...core.paths import sector_path, split_symbol
+from .db import connect
 
 
 def read(symbol_id: str) -> Optional[dict]:
-    market, code = split_symbol(symbol_id)
-    p = sector_path(market, code)
-    if not p.exists():
-        return None
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
+    with connect() as c:
+        row = c.execute(
+            "SELECT symbol_id, sector, industry, source, updated_at "
+            "FROM sector WHERE symbol_id = ?", (symbol_id,)).fetchone()
+    return dict(row) if row else None
 
 
 def write(symbol_id: str, sector: Optional[str], industry: Optional[str],
           source: str = "yfinance") -> dict:
-    market, code = split_symbol(symbol_id)
-    p = sector_path(market, code)
-    p.parent.mkdir(parents=True, exist_ok=True)
     rec = {
         "symbol_id": symbol_id,
         "sector": sector or None,
@@ -40,7 +30,15 @@ def write(symbol_id: str, sector: Optional[str], industry: Optional[str],
         "source": source,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    p.write_text(json.dumps(rec, ensure_ascii=False, indent=1), encoding="utf-8")
+    with connect() as c:
+        c.execute(
+            "INSERT INTO sector (symbol_id, sector, industry, source, updated_at) "
+            "VALUES (?,?,?,?,?) ON CONFLICT(symbol_id) DO UPDATE SET "
+            "sector=excluded.sector, industry=excluded.industry, "
+            "source=excluded.source, updated_at=excluded.updated_at",
+            (symbol_id, rec["sector"], rec["industry"], source,
+             rec["updated_at"]))
+        c.commit()
     return rec
 
 

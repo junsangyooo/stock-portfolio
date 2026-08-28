@@ -5,7 +5,6 @@ Relational data ONLY:
   - holdings                (account_id, symbol_id) with avg_cost, qty
   - balances                (account_id, currency) cash
   - snapshots               (date, account_id, currency) daily history
-  - holding_themes          (symbol_id, theme_id) qualitative theme mapping (L1)
   - chat_sessions           (session_id) per-account chat threads + transcript
   - plans                   (plan_id) per-account 매매 계획 노트
 
@@ -14,7 +13,10 @@ The auto-trading book is NOT here — it has its own file, data/quant.db
 
 Symbol master lives in data/universe/*.json (not in SQLite — too volatile,
 loaded into memory by src/universe).
-Market data lives in data/market/* (parquet, json).
+Everything true about a *symbol* — bars, statements, valuation, sector,
+ETF facts, theme membership — lives in data/market.db (src/market/store/db.py),
+shared with the quant book. Theme mapping was `holding_themes` here until
+2026-08-28; it never was account data.
 """
 from __future__ import annotations
 
@@ -71,17 +73,6 @@ CREATE TABLE IF NOT EXISTS snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_snapshots_date ON snapshots(date);
 CREATE INDEX IF NOT EXISTS idx_snapshots_account ON snapshots(account_id);
-
-CREATE TABLE IF NOT EXISTS holding_themes (
-  symbol_id   TEXT NOT NULL,             -- 'KR:247540' (per-symbol, account-agnostic)
-  theme_id    TEXT NOT NULL,             -- 'battery' (see src/agents/news/themes.json)
-  relation    TEXT NOT NULL,             -- 'primary' | 'related'
-  weight      REAL NOT NULL DEFAULT 1.0, -- 0.0~1.0 evaluation weight
-  source      TEXT NOT NULL DEFAULT 'auto', -- 'auto' | 'manual'
-  updated_at  TEXT NOT NULL,
-  PRIMARY KEY (symbol_id, theme_id)
-);
-CREATE INDEX IF NOT EXISTS idx_holding_themes_theme ON holding_themes(theme_id);
 
 CREATE TABLE IF NOT EXISTS chat_sessions (
   session_id  TEXT PRIMARY KEY,           -- uuid4, doubles as the claude CLI --session-id

@@ -1,20 +1,16 @@
-"""Unit tests for the sector tag cache (no network)."""
-from __future__ import annotations
+"""Unit tests for the sector tag cache (no network).
 
-import importlib
+The autouse `market_db` fixture in conftest already redirects the store at a
+throwaway database, so these only need the module.
+"""
+from __future__ import annotations
 
 import pytest
 
 
 @pytest.fixture
-def store(tmp_path, monkeypatch):
-    """Point the paths module at a temp dir, then reload the store."""
-    import src.core.paths as paths
-    monkeypatch.setattr(paths, "SECTOR_DIR", tmp_path / "sector")
-    monkeypatch.setattr(paths, "sector_path",
-                        lambda m, c: paths.SECTOR_DIR / m.upper() / f"{c}.json")
+def store():
     import src.market.store.sector_store as ss
-    importlib.reload(ss)
     return ss
 
 

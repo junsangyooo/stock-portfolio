@@ -122,15 +122,11 @@ def news_signals(market: str, code: str) -> dict:
     symbol_id = f"{market.upper()}:{code}"
     from ..agents.news.catalog import load_catalog
     from ..agents.news.state import load_state
-    from ..portfolio.store.db import connect
+    from ..market.store import theme_store
 
     cat = load_catalog()
-    with connect() as conn:
-        rows = [tuple(r) for r in conn.execute(
-            "SELECT theme_id, relation, weight FROM holding_themes "
-            "WHERE symbol_id = ? ORDER BY relation, weight DESC",
-            (symbol_id,),
-        ).fetchall()]
+    rows = [(r["theme_id"], r["relation"], r["weight"])
+            for r in theme_store.get(symbol_id)]
 
     themes_out, devs, seen = [], [], set()
     for theme_id, relation, weight in rows:

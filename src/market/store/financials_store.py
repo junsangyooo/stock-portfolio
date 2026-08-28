@@ -1,38 +1,27 @@
-"""Per-symbol quarterly/annual financial-statement parquet store (L2).
+"""Quarterly/annual statement store (L2) — data/market.db, table `financials`.
 
-Path: data/market/financials/{MARKET}/{code}.parquet
-Wide table, one row per reporting period:
-    period, fs_div, report_date, source,
-    revenue, gross_profit, operating_income, net_income,
-    total_assets, total_liabilities, total_equity,
-    current_assets, current_liabilities,
-    operating_cf, investing_cf, financing_cf
+One row per reporting period. Dedup key = (symbol_id, period); a re-fetch of
+the same period overwrites, which is how restatements land.
 
-Dedup key = period. A re-fetch of the same period overwrites (restatements).
+Period ordering ('2024Q3' < '2024FY') is not lexicographic, so it stays in
+Python — a per-symbol series is ~20 rows and sorting them here is cheaper than
+teaching SQL the rule.
 """
 from __future__ import annotations
 
 from dataclasses import asdict
-from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, Optional
 
 import pandas as pd
 
-from ...core.paths import ensure_dirs, financials_path, split_symbol
 from ..source.base import FinancialRow
+from .db import connect
 
 NUMERIC = ["revenue", "gross_profit", "operating_income", "net_income", "eps",
            "total_assets", "total_liabilities", "total_equity",
            "current_assets", "current_liabilities",
            "operating_cf", "investing_cf", "financing_cf"]
 COLS = ["period", "fs_div", "report_date", "source"] + NUMERIC
-
-
-def _path(symbol_id: str) -> Path:
-    market, code = split_symbol(symbol_id)
-    p = financials_path(market, code)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    return p
 
 
 def _period_sort_key(period: str) -> tuple:
@@ -46,34 +35,46 @@ def _period_sort_key(period: str) -> tuple:
     return (year, q)
 
 
-def write(symbol_id: str, rows: Iterable[FinancialRow]) -> int:
-    """Upsert on period (re-fetch overwrites). Returns number of NEW periods."""
-    ensure_dirs()
+def write(symbol_id: str, rows: Iterable[FinancialRow],
+          filed_at: Optional[str] = None) -> int:
+    """Upsert on period (re-fetch overwrites). Returns number of NEW periods.
+
+    `filed_at` is the disclosure receipt date, stamped on every row of this
+    batch. The event-driven refresh (DART 공시검색 / SEC daily-index) passes it
+    so a later run can tell "we already have this filing" from "the company
+    restated"; the plain backfill leaves it NULL.
+    """
     rows = list(rows)
     if not rows:
         return 0
-    new_df = pd.DataFrame([asdict(r) for r in rows])[COLS]
-    path = _path(symbol_id)
-    if path.exists():
-        old = pd.read_parquet(path)
-        before = set(old["period"].tolist())
-        merged = pd.concat([old, new_df], ignore_index=True)
-        merged = merged.drop_duplicates("period", keep="last")
-        added = len([p for p in merged["period"] if p not in before])
-    else:
-        merged = new_df.drop_duplicates("period", keep="last")
-        added = len(merged)
-    merged = merged.sort_values(
-        "period", key=lambda s: s.map(_period_sort_key)).reset_index(drop=True)
-    merged.to_parquet(path, index=False)
-    return added
+    by_period = {r.period: r for r in rows}
+    placeholders = ",".join(["?"] * (len(COLS) + 2))  # + symbol_id, filed_at
+    updates = ", ".join(f"{c}=excluded.{c}" for c in COLS[1:] + ["filed_at"])
+    with connect() as c:
+        marks = ",".join("?" * len(by_period))
+        existing = {r[0] for r in c.execute(
+            f"SELECT period FROM financials WHERE symbol_id = ? "
+            f"AND period IN ({marks})", [symbol_id, *by_period]).fetchall()}
+        c.executemany(
+            f"INSERT INTO financials (symbol_id, {', '.join(COLS)}, filed_at) "
+            f"VALUES ({placeholders}) "
+            f"ON CONFLICT(symbol_id, period) DO UPDATE SET {updates}",
+            [(symbol_id, *[asdict(r)[k] for k in COLS], filed_at)
+             for r in by_period.values()],
+        )
+        c.commit()
+    return len(by_period) - len(existing)
 
 
 def read(symbol_id: str, n: int = 0) -> pd.DataFrame:
-    path = _path(symbol_id)
-    if not path.exists():
+    cols = ", ".join(COLS)
+    with connect() as c:
+        rows = c.execute(f"SELECT {cols} FROM financials WHERE symbol_id = ?",
+                         (symbol_id,)).fetchall()
+    if not rows:
         return pd.DataFrame(columns=COLS)
-    df = pd.read_parquet(path)
+    df = pd.DataFrame([tuple(r) for r in rows], columns=COLS)
+    df = df.astype({c: "float64" for c in NUMERIC})   # see ohlcv_store.read
     df = df.sort_values("period", key=lambda s: s.map(_period_sort_key))
     df = df.reset_index(drop=True)
     if n > 0:
@@ -95,3 +96,12 @@ def _row_to_dict(row) -> dict:
 def rows_as_dicts(symbol_id: str, n: int = 0) -> List[dict]:
     df = read(symbol_id, n=n)
     return [_row_to_dict(df.iloc[i]) for i in range(len(df))]
+
+
+def latest_filed_at(symbol_id: str) -> Optional[str]:
+    """Newest filing date we hold for this symbol — the event-driven refresh
+    compares it against the regulator's feed to skip an unchanged company."""
+    with connect() as c:
+        row = c.execute("SELECT MAX(filed_at) FROM financials "
+                        "WHERE symbol_id = ?", (symbol_id,)).fetchone()
+    return row[0] if row and row[0] else None

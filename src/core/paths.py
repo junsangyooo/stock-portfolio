@@ -1,6 +1,7 @@
 """Filesystem layout for the new portfolio-dashboard.
 
   data/portfolio.db                                 — SQLite (accounts, holdings, balances, snapshots)
+  data/market.db                                    — SQLite (ohlcv, valuation, financials, sector, etf, symbol_themes)
   data/universe/{kr,us,etf_kr}.json                 — symbol master (daily refresh)
   data/market/ohlcv/{MARKET}/{CODE}.parquet         — per-symbol daily bars
   data/market/quote/last.json                       — last-known quote snapshot
@@ -25,6 +26,11 @@ DB_PATH = DATA / "portfolio.db"
 # append-only journal has no business sharing a file with a small static record
 # set — and a migration on one cannot reach the other.
 QUANT_DB_PATH = DATA / "quant.db"
+
+# The symbol book: bars, statements, valuation, sector, ETF facts and theme
+# membership — everything true about a symbol regardless of who owns it. Both
+# account books read it, neither owns it. See src/market/store/db.py.
+MARKET_DB_PATH = DATA / "market.db"
 
 UNIVERSE_DIR = DATA / "universe"
 

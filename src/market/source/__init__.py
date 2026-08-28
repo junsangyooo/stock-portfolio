@@ -1,3 +1,2 @@
-from . import base, pykrx_source, yfinance_source, registry
-
-__all__ = ["base", "pykrx_source", "yfinance_source", "registry"]
+"""External market-data adapters. Import the one you need; the registry
+(`registry.for_symbol`) routes by symbol_id."""
