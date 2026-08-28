@@ -41,7 +41,10 @@ CREATE TABLE IF NOT EXISTS signals (
   body          TEXT,                     -- the source's own summary/abstract
   source_id     TEXT NOT NULL,
   source_group  TEXT NOT NULL,            -- research | social | news
-  lead_lag      TEXT NOT NULL,            -- leading | coincident | lagging | backbone
+  lead_lag      TEXT NOT NULL,            -- leading | coincident | lagging
+                                          -- (from source_group; the old
+                                          -- "backbone" is now just macro
+                                          -- theme membership)
   image         TEXT,
   published_at  TEXT,                     -- ISO, as the source reported it
   fetched_at    TEXT NOT NULL,            -- ISO KST, when we pulled it
@@ -70,14 +73,24 @@ CREATE TABLE IF NOT EXISTS signal_themes (
 );
 CREATE INDEX IF NOT EXISTS idx_signal_themes_theme ON signal_themes(theme_id);
 
--- What happened in one field on one day, as bullets. The landing page's
--- 「오늘의 요약」 reads this directly.
+-- What happened in one field on one day. The landing page's 「오늘의 요약」
+-- reads `overview` directly.
+--
+-- sentiment and watchlist ride on the same call that writes the bullets: they
+-- are the same reading, and the judge and the quant brief need a number and a
+-- list of open issues rather than prose. They used to come from a rolling
+-- state file with its own LLM rewrite; folding them in here costs no extra
+-- inference and leaves exactly one long memory (weekly/monthly) instead of two
+-- that can disagree.
 CREATE TABLE IF NOT EXISTS theme_daily (
-  theme_id   TEXT NOT NULL,
-  date       TEXT NOT NULL,               -- 'YYYY-MM-DD' KST
-  overview   TEXT NOT NULL,               -- JSON ["bullet", ...]
-  n_items    INTEGER NOT NULL DEFAULT 0,
-  built_at   TEXT NOT NULL,
+  theme_id         TEXT NOT NULL,
+  date             TEXT NOT NULL,         -- 'YYYY-MM-DD' KST
+  overview         TEXT NOT NULL,         -- JSON ["bullet", ...]
+  sentiment_score  REAL,                  -- -1 ~ 1
+  sentiment_trend  TEXT,                  -- improving | flat | deteriorating
+  watchlist        TEXT,                  -- JSON ["open issue", ...]
+  n_items          INTEGER NOT NULL DEFAULT 0,
+  built_at         TEXT NOT NULL,
   PRIMARY KEY (theme_id, date)
 );
 

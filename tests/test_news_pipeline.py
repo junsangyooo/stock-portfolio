@@ -275,6 +275,41 @@ def test_daily_overview_is_written_and_rebuildable(monkeypatch):
     assert len(rows) == 1 and json.loads(rows[0][0]) == ["고쳐 쓴 요약"]
 
 
+def test_sentiment_and_watchlist_ride_on_the_same_call(monkeypatch):
+    """They replace the rolling state file; one call must produce all four."""
+    _seed(monkeypatch, 1)
+    enrich.run(backend=_Backend(
+        {"r": [{"i": 0, "s": "칩 수요", "imp": 5, "t": ["semiconductor"]}]}))
+    be = _Backend({"overview": ["오늘 반도체는 …"],
+                   "sentiment": {"score": 0.6, "trend": "improving"},
+                   "watchlist": ["HBM4 양산 일정", "관세 결정"]})
+    daily.run("2026-08-27", theme="semiconductor", backend=be)
+    assert len(be.calls) == 1
+    with connect() as c:
+        row = c.execute("SELECT * FROM theme_daily").fetchone()
+    assert row["sentiment_score"] == 0.6
+    assert row["sentiment_trend"] == "improving"
+    assert json.loads(row["watchlist"]) == ["HBM4 양산 일정", "관세 결정"]
+
+
+@pytest.mark.parametrize("sent,score,trend", [
+    ({"score": 9.9, "trend": "improving"}, 1.0, "improving"),   # clamped
+    ({"score": -5, "trend": "improving"}, -1.0, "improving"),
+    ({"score": "n/a", "trend": "improving"}, None, "improving"),
+    ({"score": 0.2, "trend": "vibes"}, 0.2, None),              # unknown trend
+    ("not a dict", None, None),
+])
+def test_bad_sentiment_is_dropped_not_guessed(monkeypatch, sent, score, trend):
+    _seed(monkeypatch, 1)
+    enrich.run(backend=_Backend(
+        {"r": [{"i": 0, "s": "x", "imp": 3, "t": ["semiconductor"]}]}))
+    row = daily.build_theme("semiconductor", "반도체", "2026-08-27",
+                            backend=_Backend({"overview": ["b"],
+                                              "sentiment": sent}))
+    assert row["sentiment_score"] == score and row["sentiment_trend"] == trend
+    assert row["overview"] == ["b"], "a bad sentiment must not cost the bullets"
+
+
 def test_a_theme_with_nothing_collected_writes_no_row(monkeypatch):
     out = daily.run("2026-08-27", theme="semiconductor",
                     backend=_Backend({"overview": ["never used"]}))

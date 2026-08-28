@@ -5,9 +5,13 @@ The input is already compressed, so prefill is roughly a sixth of what the old
 digest fed the model and this is back inside what the on-host Qwen can do;
 `local_or_claude` falls through to Haiku when it is down.
 
-Its output is what the landing page's 「오늘의 요약」 renders, and what the
-weekly cycle reads a week later. Nothing downstream ever re-reads the
-articles — compression only flows one way.
+One call, four outputs: the bullets the landing page renders, a sentiment
+score, and the open issues worth watching. Those last two used to live in a
+rolling state file with its own LLM rewrite; they are the same reading as the
+bullets, so they ride along and the second long memory goes away.
+
+Its output is also what the weekly cycle reads a week later. Nothing
+downstream ever re-reads the articles — compression only flows one way.
 """
 from __future__ import annotations
 
@@ -25,6 +29,8 @@ log = logging.getLogger(__name__)
 
 _MAX_ITEMS = 60      # per theme per day; ordered by importance
 _MAX_BULLETS = 8
+_MAX_WATCH = 5
+_TRENDS = ("improving", "flat", "deteriorating")
 
 _SYSTEM = ("너는 특정 산업 분야를 추적하는 애널리스트다. 하루치 항목을 읽고 "
            "무슨 일이 있었는지 정리한다. JSON만 출력한다.")
@@ -51,11 +57,14 @@ def _prompt(theme_name: str, date: str, items: list[dict]) -> str:
         for r in items)
     return (
         f"분야: {theme_name}\n날짜: {date}\n\n항목 {len(items)}건:\n{listing}\n\n"
-        "이 분야에 오늘 무슨 일이 있었는지 불렛으로 정리하라.\n"
-        "- 각 불렛은 한국어 1~2문장.\n"
-        "- 기사 제목 나열이 아니라 흐름과 의미를 써라.\n"
-        "- 개수 제한은 없되 중요한 것만. 사소하면 빼라.\n"
-        '출력(JSON): {"overview": ["불렛", "..."]}'
+        "다음 셋을 작성하라.\n"
+        "- overview: 이 분야에 오늘 무슨 일이 있었는지 불렛. 각 한국어 1~2문장. "
+        "기사 제목 나열이 아니라 흐름과 의미를. 개수 제한은 없되 사소하면 빼라.\n"
+        "- sentiment: 이 분야의 현재 분위기. score는 -1(매우 부정)~1(매우 긍정), "
+        "trend는 improving|flat|deteriorating.\n"
+        "- watchlist: 전개 중이거나 예정된, 계속 지켜봐야 할 이슈 최대 5개.\n"
+        '출력(JSON): {"overview": ["불렛", "..."], '
+        '"sentiment": {"score": 0.0, "trend": "flat"}, "watchlist": ["..."]}'
     )
 
 
@@ -74,23 +83,42 @@ def build_theme(theme_id: str, theme_name: str, date: str,
                                  stage=f"daily:{theme_id}",
                                  validate=_parse_json,
                                  claude_timeout_s=timeout_s)
-    ov = _parse_json(raw).get("overview") or []
+    data = _parse_json(raw)
+    # Each field is parsed independently: a malformed watchlist must not cost
+    # us the bullets, and vice versa.
+    ov = data.get("overview") or []
     bullets = [str(b).strip()[:300] for b in ov if str(b).strip()][:_MAX_BULLETS] \
         if isinstance(ov, list) else []
+    wl = data.get("watchlist") or []
+    watch = [str(w).strip()[:200] for w in wl if str(w).strip()][:_MAX_WATCH] \
+        if isinstance(wl, list) else []
+    sent = data.get("sentiment") if isinstance(data.get("sentiment"), dict) else {}
+    try:
+        score = max(-1.0, min(1.0, float(sent.get("score"))))
+    except (TypeError, ValueError):
+        score = None
+    trend = sent.get("trend") if sent.get("trend") in _TRENDS else None
     return {"theme_id": theme_id, "date": date, "overview": bullets,
-            "n_items": len(items)}
+            "sentiment_score": score, "sentiment_trend": trend,
+            "watchlist": watch, "n_items": len(items)}
 
 
 def write(row: dict) -> None:
     with connect() as c:
         c.execute(
-            "INSERT INTO theme_daily (theme_id, date, overview, n_items, "
-            "built_at) VALUES (?,?,?,?,?) "
+            "INSERT INTO theme_daily (theme_id, date, overview, "
+            "sentiment_score, sentiment_trend, watchlist, n_items, built_at) "
+            "VALUES (?,?,?,?,?,?,?,?) "
             "ON CONFLICT(theme_id, date) DO UPDATE SET "
-            "overview=excluded.overview, n_items=excluded.n_items, "
+            "overview=excluded.overview, "
+            "sentiment_score=excluded.sentiment_score, "
+            "sentiment_trend=excluded.sentiment_trend, "
+            "watchlist=excluded.watchlist, n_items=excluded.n_items, "
             "built_at=excluded.built_at",
             (row["theme_id"], row["date"],
              json.dumps(row["overview"], ensure_ascii=False),
+             row.get("sentiment_score"), row.get("sentiment_trend"),
+             json.dumps(row.get("watchlist") or [], ensure_ascii=False),
              row["n_items"], datetime.now(KST).isoformat()))
         c.commit()
 
