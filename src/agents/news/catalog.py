@@ -1,10 +1,10 @@
-"""Theme catalog loader + integrity validation (L2).
+"""Config loaders for the qualitative pipeline: themes and sources.
 
-Loads ``themes.json`` (the single source of truth for theme definitions,
-keywords, related-edges and source sets) into ``Theme`` dataclasses and
-validates referential integrity (every related-edge points to a real theme).
-
-See docs/qualitative-analysis-design.md §1.
+``themes.json`` defines the fields we reason about — keywords, related-edges,
+definitions. ``sources.json`` is a flat list of feeds. The two are deliberately
+NOT linked: collection sweeps every source once and themes are attached to
+individual articles, so a feed that happens to cover three fields is fetched
+once and stored once instead of three times under three theme folders.
 """
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 _CATALOG_PATH = Path(__file__).resolve().parent / "themes.json"
+_SOURCES_PATH = Path(__file__).resolve().parent / "sources.json"
 
 
 @dataclass
@@ -98,3 +99,67 @@ def load_catalog(path: Optional[Path] = None) -> Catalog:
                   updated=raw.get("updated", ""), themes=themes)
     cat.validate()
     return cat
+
+
+# ── sources ──────────────────────────────────────────────────────────────────
+# group -> lead/lag lane. A research preprint leads the market, a Reddit thread
+# moves with it, a news article trails it.
+LEAD_LAG = {"research": "leading", "social": "coincident", "news": "lagging"}
+
+
+@dataclass
+class Feed:
+    """One entry from sources.json.
+
+    Attributes:
+        source_id: stable id, e.g. "thelec_battery".
+        kind:      'rss' | 'arxiv' | 'x'.
+        group:     'research' | 'social' | 'news' — decides lead_lag.
+        url:       feed url (rss).
+        query:     search expression (arxiv).
+        broad:     whole-site feed. Its off-topic articles are dropped by a
+                   keyword gate before they cost an enrichment slot.
+    """
+
+    source_id: str
+    kind: str
+    group: str
+    url: Optional[str] = None
+    query: Optional[str] = None
+    broad: bool = False
+
+    @property
+    def lead_lag(self) -> str:
+        return LEAD_LAG.get(self.group, "lagging")
+
+
+def load_sources(path: Optional[Path] = None) -> list[Feed]:
+    """Load sources.json. Raises on a duplicate id or an unusable entry —
+    a silently dropped feed is a field that quietly stops being covered."""
+    p = Path(path) if path else _SOURCES_PATH
+    raw = json.loads(p.read_text(encoding="utf-8"))
+    feeds: list[Feed] = []
+    seen: set[str] = set()
+    for e in raw["sources"]:
+        f = Feed(source_id=e["id"], kind=e["kind"], group=e["group"],
+                 url=e.get("url"), query=e.get("query"),
+                 broad=bool(e.get("broad", False)))
+        if f.source_id in seen:
+            raise ValueError(f"duplicate source id '{f.source_id}'")
+        if f.kind == "rss" and not f.url:
+            raise ValueError(f"rss source '{f.source_id}' has no url")
+        if f.kind == "arxiv" and not f.query:
+            raise ValueError(f"arxiv source '{f.source_id}' has no query")
+        seen.add(f.source_id)
+        feeds.append(f)
+    return feeds
+
+
+def all_keywords(catalog: Catalog) -> list[str]:
+    """Every theme keyword, lowercased — the gate a broad feed's articles pass
+    before they are stored at all."""
+    out: set[str] = set()
+    for t in catalog.themes.values():
+        for lst in (t.keywords or {}).values():
+            out.update(k.lower() for k in lst if k)
+    return sorted(out)

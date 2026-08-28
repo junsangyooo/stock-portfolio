@@ -14,6 +14,8 @@ data/quant/
 data/universe/
 data/market.db
 data/market.db-*
+data/news.db
+data/news.db-*
 data/market/
 data/analysis/
 data/signals/

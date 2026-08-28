@@ -2,6 +2,7 @@
 
   data/portfolio.db                                 — SQLite (accounts, holdings, balances, snapshots)
   data/market.db                                    — SQLite (ohlcv, valuation, financials, sector, etf, symbol_themes)
+  data/news.db                                      — SQLite (signals, signal_themes, theme_daily/weekly/monthly)
   data/universe/{kr,us,etf_kr}.json                 — symbol master (daily refresh)
   data/market/quote/last.json                       — last-known quote snapshot
   data/signals/news/{THEME}/{YYYYMM}.jsonl          — theme-keyed qualitative signals
@@ -28,6 +29,11 @@ QUANT_DB_PATH = DATA / "quant.db"
 # membership — everything true about a symbol regardless of who owns it. Both
 # account books read it, neither owns it. See src/market/store/db.py.
 MARKET_DB_PATH = DATA / "market.db"
+
+# The outside world: collected articles, their theme membership, and the
+# daily/weekly/monthly summaries built on top of them. The only book that is
+# not about what we own. See src/agents/news/db.py.
+NEWS_DB_PATH = DATA / "news.db"
 
 UNIVERSE_DIR = DATA / "universe"
 

@@ -1,0 +1,198 @@
+{
+  "version": 1,
+  "updated": "2026-08-28",
+  "note": "소스 목록. 테마에 묶이지 않는다 — 수집은 이 목록을 한 번씩 훑고, 테마는 기사 단위로 붙는다. group이 lead_lag을 결정한다: research=leading, social=coincident, news=lagging. broad=true는 전체 사이트 피드라 enrich 전에 키워드 사전 필터를 탄다.",
+  "sources": [
+    {
+      "id": "3dpi",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://3dprintingindustry.com/feed/"
+    },
+    {
+      "id": "aitimes",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.aitimes.com/rss/allArticle.xml",
+      "broad": true
+    },
+    {
+      "id": "bok_press",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.bok.or.kr/portal/bbs/B0000338/news.rss"
+    },
+    {
+      "id": "docdocdoc",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.docdocdoc.co.kr/rss/allArticle.xml",
+      "broad": true
+    },
+    {
+      "id": "einfomax",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://news.einfomax.co.kr/rss/allArticle.xml",
+      "broad": true
+    },
+    {
+      "id": "electrek",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://electrek.co/feed/"
+    },
+    {
+      "id": "etnews_it",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://rss.etnews.com/Section902.xml",
+      "broad": true
+    },
+    {
+      "id": "fed_press",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.federalreserve.gov/feeds/press_all.xml"
+    },
+    {
+      "id": "finextra",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.finextra.com/rss/headlines.aspx"
+    },
+    {
+      "id": "gcaptain",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://gcaptain.com/feed/"
+    },
+    {
+      "id": "geeknews",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://news.hada.io/rss/news"
+    },
+    {
+      "id": "hk_finance",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.hankyung.com/feed/finance"
+    },
+    {
+      "id": "irobotnews",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.irobotnews.com/rss/allArticle.xml",
+      "broad": true
+    },
+    {
+      "id": "mk_stock",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.mk.co.kr/rss/30100041/"
+    },
+    {
+      "id": "payload",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://payloadspace.com/feed/"
+    },
+    {
+      "id": "robotreport",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.therobotreport.com/feed/"
+    },
+    {
+      "id": "semianalysis",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.semianalysis.com/feed"
+    },
+    {
+      "id": "spacenews",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://spacenews.com/feed/"
+    },
+    {
+      "id": "splash247",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://splash247.com/feed/"
+    },
+    {
+      "id": "statnews",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.statnews.com/feed/"
+    },
+    {
+      "id": "thelec_battery",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.thelec.kr/rss/allArticle.xml",
+      "broad": true
+    },
+    {
+      "id": "arxiv_ai",
+      "kind": "arxiv",
+      "group": "research",
+      "query": "cat:cs.AI OR cat:cs.CL OR cat:cs.LG"
+    },
+    {
+      "id": "arxiv_battery",
+      "kind": "arxiv",
+      "group": "research",
+      "query": "cat:cond-mat.mtrl-sci AND (abs:battery OR abs:\"solid-state electrolyte\" OR abs:cathode OR abs:anode)"
+    },
+    {
+      "id": "arxiv_hardware",
+      "kind": "arxiv",
+      "group": "research",
+      "query": "cat:cs.AR OR cat:eess.SP"
+    },
+    {
+      "id": "arxiv_qbio",
+      "kind": "arxiv",
+      "group": "research",
+      "query": "cat:q-bio.QM OR cat:q-bio.BM"
+    },
+    {
+      "id": "arxiv_robotics",
+      "kind": "arxiv",
+      "group": "research",
+      "query": "cat:cs.RO"
+    },
+    {
+      "id": "biorxiv",
+      "kind": "rss",
+      "group": "research",
+      "url": "https://connect.biorxiv.org/biorxiv_xml.php?subject=all"
+    },
+    {
+      "id": "reddit_ml",
+      "kind": "rss",
+      "group": "social",
+      "url": "https://www.reddit.com/r/MachineLearning/.rss"
+    },
+    {
+      "id": "reddit_robotics",
+      "kind": "rss",
+      "group": "social",
+      "url": "https://www.reddit.com/r/robotics/.rss"
+    },
+    {
+      "id": "reddit_semi",
+      "kind": "rss",
+      "group": "social",
+      "url": "https://www.reddit.com/r/semiconductors/.rss"
+    },
+    {
+      "id": "x_sne",
+      "kind": "x",
+      "group": "social"
+    }
+  ]
+}
