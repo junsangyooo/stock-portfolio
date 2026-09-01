@@ -16,17 +16,22 @@ the weekly and monthly summaries, which are one call per theme.
 Batches are the unit of failure: a batch that fails or comes back unparseable
 leaves its articles unenriched, and the next run picks them up.
 
-A run is capped. The migration left ~29k unenriched articles behind and an
-uncapped pass would spend 18 hours on two-month-old news before touching
-today's. The queue is newest-first, so the cap protects today's articles and
-lets whatever backlog is worth having drain over the following cycles —
-without ever making a cycle unbounded.
+The queue has a freshness window as well as a cap. Enrichment is only ever
+read inside a 7-day horizon — recent developments look 7 days back, the
+roll-ups read theme_daily rather than articles, and the company-name miner
+reads raw titles — so summarising a two-month-old article buys nothing. The
+migration left ~29k of them behind; draining that backlog would have burnt an
+hour of Haiku a day for eighteen days producing text no code path reads.
+
+Enrich exactly as far back as something reads. The cap is then a ceiling that
+almost never binds (a real day is ~250 articles), and exists so a burst or a
+gap in the cron cannot make one cycle unbounded.
 """
 from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from ...core.kst import KST
@@ -37,7 +42,8 @@ from .db import connect
 log = logging.getLogger(__name__)
 
 _BATCH = 80          # measured flat from 20 to 80; larger is untested
-_RUN_CAP = 800       # ~10 batches, ~20 min — a cycle's share of Haiku
+_RUN_CAP = 800       # ~10 batches — a ceiling, not the usual load
+_WINDOW_DAYS = 7     # matches read._HORIZON_DAYS: nothing reads further back
 _BODY_TRUNC = 400    # chars of the source's own summary fed to the model
 
 _SYSTEM = ("너는 투자 정보 큐레이터다. 주어진 기사 목록을 빠짐없이 평가한다. "
@@ -61,14 +67,27 @@ def _prompt(items: list[dict], theme_ids: list[str]) -> str:
     )
 
 
-def pending(limit: int = 0, date: Optional[str] = None) -> list[dict]:
-    """Articles collected but not yet enriched, newest first."""
+def _since(days: int, now: Optional[datetime] = None) -> str:
+    d = (now or datetime.now(KST)).date() - timedelta(days=max(days - 1, 0))
+    return d.isoformat()
+
+
+def pending(limit: int = 0, date: Optional[str] = None,
+            window_days: int = _WINDOW_DAYS) -> list[dict]:
+    """Articles collected but not yet enriched, newest first.
+
+    Bounded by `window_days` because nothing reads an older summary. Pass 0 to
+    lift the window (backfilling an old date by hand).
+    """
     sql = ("SELECT signal_id, title, body FROM signals "
            "WHERE enriched_at IS NULL")
     args: list = []
     if date:
         sql += " AND collected_on = ?"
         args.append(date)
+    elif window_days > 0:
+        sql += " AND collected_on >= ?"
+        args.append(_since(window_days))
     sql += " ORDER BY collected_on DESC, signal_id DESC"
     if limit > 0:
         sql += " LIMIT ?"
@@ -77,14 +96,19 @@ def pending(limit: int = 0, date: Optional[str] = None) -> list[dict]:
         return [dict(r) for r in c.execute(sql, args).fetchall()]
 
 
-def _backlog(date: Optional[str] = None) -> int:
-    """How many articles are still waiting — reported so a cap that never
-    drains is visible instead of merely quiet."""
+def _backlog(date: Optional[str] = None,
+             window_days: int = _WINDOW_DAYS) -> int:
+    """Articles still waiting *inside the window* — reported so a cap that
+    never drains is visible instead of merely quiet. Articles that aged out
+    are not a backlog; nothing was ever going to read them."""
     sql = "SELECT COUNT(*) FROM signals WHERE enriched_at IS NULL"
     args: list = []
     if date:
         sql += " AND collected_on = ?"
         args.append(date)
+    elif window_days > 0:
+        sql += " AND collected_on >= ?"
+        args.append(_since(window_days))
     with connect() as c:
         return c.execute(sql, args).fetchone()[0]
 
@@ -123,16 +147,16 @@ def _apply(items: list[dict], parsed: list[dict], valid: set[str],
 
 def run(*, catalog: Optional[Catalog] = None, date: Optional[str] = None,
         limit: int = _RUN_CAP, batch: int = _BATCH, backend=None,
-        timeout_s: float = 600) -> dict:
+        window_days: int = _WINDOW_DAYS, timeout_s: float = 600) -> dict:
     """Enrich outstanding articles, newest first, up to `limit` (0 = no cap)."""
     catalog = catalog or load_catalog()
     theme_ids = sorted(catalog.themes)
     valid = set(theme_ids)
-    todo = pending(limit=limit, date=date)
+    todo = pending(limit=limit, date=date, window_days=window_days)
     if not todo:
         return {"pending": 0, "enriched": 0, "batches": 0, "failed": 0,
                 "backlog": 0}
-    backlog = _backlog(date)
+    backlog = _backlog(date, window_days=window_days)
 
     backend = backend or ClaudeCliBackend(model=FAST_MODEL)
     now_iso = datetime.now(KST).isoformat()

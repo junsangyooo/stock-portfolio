@@ -384,7 +384,9 @@ def _enriched(monkeypatch, items, themes_by_index, *, day=None):
     monkeypatch.setattr(collect_all, "fetch_rss",
                         lambda url, sid, timeout=15.0: list(items))
     collect_all.collect_one(_feed(), [], None, now=day or NOW)
-    enrich.run(backend=_Backend({"r": [
+    # window_days=0: this seeds fixtures at fixed past dates, and the freshness
+    # window is measured against the real clock.
+    enrich.run(window_days=0, backend=_Backend({"r": [
         {"i": i, "s": f"요약{i}", "imp": 5 - i, "nov": i == 0, "t": t}
         for i, t in enumerate(themes_by_index)]}))
 
@@ -568,3 +570,19 @@ def test_an_enrich_run_is_capped_and_takes_the_newest_first(monkeypatch):
             "SELECT title FROM signals WHERE enriched_at IS NOT NULL "
             "ORDER BY signal_id")]
     assert done == ["T3", "T4"], "newest first"
+
+
+def test_enrichment_ignores_articles_older_than_anything_reads(monkeypatch):
+    """Summaries are only read inside a 7-day horizon, so a two-month-old
+    article is not a backlog — it is work nobody would look at."""
+    monkeypatch.setattr(collect_all, "enrich_images", lambda its, **kw: 0)
+    for when, title in ((NOW, "fresh"), (NOW - timedelta(days=60), "ancient")):
+        monkeypatch.setattr(
+            collect_all, "fetch_rss",
+            lambda url, sid, timeout=15.0, t=title: [_item(t, f"http://{t}")])
+        collect_all.collect_one(_feed(), [], None, now=when)
+    monkeypatch.setattr(enrich, "_since", lambda days, now=None:
+                        (NOW - timedelta(days=days - 1)).strftime("%Y-%m-%d"))
+    assert [r["title"] for r in enrich.pending()] == ["fresh"]
+    # the window can be lifted on purpose, for a hand-run backfill
+    assert len(enrich.pending(window_days=0)) == 2
