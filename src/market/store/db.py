@@ -88,6 +88,29 @@ CREATE TABLE IF NOT EXISTS etf (
   updated_at  TEXT NOT NULL
 );
 
+-- Deterministic chart readings for one symbol on one trading day: every
+-- indicator's state and value across daily/weekly/monthly, plus the structure
+-- detections. No score, no label, no LLM — judgment reads this, it does not
+-- live here.
+--
+-- `date` is the last CLOSED daily bar, not the day we computed it. Run the
+-- analysis three times on a Saturday and it is one row, which is what makes
+-- "same day overwrites" mean anything.
+--
+-- `facts` is JSON rather than 90 columns (15 indicators x 3 timeframes x
+-- state/value, plus 9 structure blocks): adding an indicator would otherwise
+-- be a migration. Query it with json_extract, and add an expression index on
+-- the specific path if a cross-sectional screen ever proves slow.
+CREATE TABLE IF NOT EXISTS chart_facts (
+  symbol_id       TEXT NOT NULL,
+  date            TEXT NOT NULL,          -- 'YYYY-MM-DD', last closed bar
+  facts           TEXT NOT NULL,          -- JSON {timeframes, structure}
+  engine_version  TEXT NOT NULL,
+  built_at        TEXT NOT NULL,
+  PRIMARY KEY (symbol_id, date)
+);
+CREATE INDEX IF NOT EXISTS idx_chart_facts_date ON chart_facts(date);
+
 -- Theme membership is a property of the symbol, not of an account. It lived
 -- in portfolio.db as `holding_themes`, which forced quant.db's symbols to be
 -- fetched from the other file and spliced into an IN clause. Here both books

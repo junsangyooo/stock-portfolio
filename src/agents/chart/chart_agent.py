@@ -13,13 +13,14 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+
+from ...core.kst import KST
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-from ...core import paths
-from ...market.store import ohlcv_store
+from ...market.store import chart_store, ohlcv_store
 from . import engine, structure
 from .indicators import ALL_INDICATORS
 from .indicators.volume import volume_spike
@@ -44,12 +45,19 @@ def _facts_for_tf(frame: pd.DataFrame, tf: str) -> dict:
 
 
 def collect_facts(symbol_id: str, now: Optional[datetime] = None,
-                  daily_df: Optional[pd.DataFrame] = None, persist: bool = True) -> dict:
+                  daily_df: Optional[pd.DataFrame] = None,
+                  persist: bool = True, force: bool = False) -> dict:
     """Collect all chart FACTS for a symbol across timeframes (+ structure).
 
-    `daily_df` injects data without disk read (tests / batch). Persists to
-    data/analysis/chart/{symbol}/{yyyymmdd}.json when `persist` and data exists.
+    Deterministic — no LLM, no judgment. Reuses today's stored row unless
+    `force`: the facts for a closed bar cannot change, so running the
+    comprehensive analysis three times in one day still computes the chart
+    once. `daily_df` injects data without a read (tests / batch).
     """
+    if persist and not force and daily_df is None:
+        cached = _cached_today(symbol_id, now)
+        if cached is not None:
+            return cached
     daily = daily_df if daily_df is not None else ohlcv_store.read(symbol_id)
 
     timeframes = {}
@@ -72,9 +80,33 @@ def collect_facts(symbol_id: str, now: Optional[datetime] = None,
     }
 
     if persist and asof:
-        p = paths.analysis_path("chart", symbol_id, asof.replace("-", ""))
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(out, ensure_ascii=False, indent=2, default=_json_default))
-        out["_saved"] = str(p)
+        chart_store.write(symbol_id, asof,
+                          {"timeframes": timeframes, "structure": struct},
+                          ENGINE_VERSION)
+        out["_stored"] = True
 
     return out
+
+
+def _cached_today(symbol_id: str, now: Optional[datetime]) -> Optional[dict]:
+    """Stored facts if they are already for the newest closed bar.
+
+    Compares against the last stored bar rather than the calendar date, so a
+    weekend or a holiday reuses Friday's row instead of recomputing it.
+    """
+    row = chart_store.read(symbol_id)
+    if not row or row.get("engine_version") != ENGINE_VERSION:
+        return None
+    last = ohlcv_store.last_ts(symbol_id)
+    if not last:
+        return None
+    newest = datetime.fromtimestamp(last, tz=KST).strftime("%Y-%m-%d")
+    if row["date"] != newest:
+        return None
+    return {
+        "symbol_id": symbol_id, "kind": "chart", "asof": row["date"],
+        "timeframes": row.get("timeframes", {}),
+        "structure": row.get("structure", {}),
+        "engine_version": row["engine_version"],
+        "generated_at": row["built_at"], "_cached": True,
+    }
