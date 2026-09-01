@@ -35,7 +35,7 @@ def map_etf_by_name(name: str, catalog: Catalog) -> list[str]:
     """
     norm = _norm(name)
     hits: list[str] = []
-    for t in catalog.active_themes():  # active_themes excludes shadow
+    for t in catalog.themes.values():   # macro included: index ETFs belong to it
         for kw in t.keywords.get("ko", []):
             if kw and _norm(kw) in norm:
                 hits.append(t.theme_id)
@@ -53,7 +53,7 @@ _SYSTEM = (
 def _build_user_prompt(name: str, market: str, catalog: Catalog) -> str:
     primary_choices = "\n".join(
         f"- {t.theme_id}: {t.name_kr} — {t.definition}"
-        for t in catalog.active_themes() if not t.always_on
+        for t in catalog.primary_candidates()
     )
     related_choices = ", ".join(sorted(catalog.themes))
     return (
@@ -124,8 +124,8 @@ def ensure_theme_mapping(symbol_id: str) -> None:
     """Auto-tag a newly-tracked symbol into themes. Best-effort, never raises.
 
     Skips if already mapped. ETF -> deterministic name rule, individual -> one
-    LLM tag. New primary themes then start collecting on the next daily_job;
-    the mapping is what makes news coverage follow what is actually held.
+    LLM tag. Collection itself does not depend on this — every field is always
+    collected — but the mapping is what connects a symbol to its field's news.
 
     Lives here, not in a router, because both books call it: portfolio when a
     holding is added, quant when a position opens or a symbol is watched. The
@@ -153,50 +153,3 @@ def ensure_theme_mapping(symbol_id: str) -> None:
             discord.send(f"\u26a0\ufe0f theme auto-map failed for {symbol_id}: {str(e)[:200]}")
         except Exception:  # noqa: BLE001
             pass
-
-
-def quant_symbols() -> list[str]:
-    """Symbols the auto-trading book holds or watches. They live in quant.db,
-    a separate file from the holdings this pipeline started from, so the
-    collection set has to union the two books explicitly or the cycle would be
-    reading news about everything except what it trades.
-
-    Best-effort: quant.db may not exist yet on a fresh install.
-    """
-    try:
-        from ...quant import store as qstore
-        return qstore.tracked_symbols()
-    except Exception as exc:  # noqa: BLE001 — news must not die with quant
-        log.warning("quant symbols unavailable for theme activation: %s", exc)
-        return []
-
-
-def held_primary_theme_ids() -> set[str]:
-    """theme_ids that at least one currently-held symbol maps to as ``primary``.
-
-    Drives the daily collection set: a theme is collected only while some
-    holding names it as its core business (§ holdings-driven activation).
-    Related-only mappings do NOT keep a theme alive — most related themes are
-    already some other holding's primary, so this stays coverage-safe.
-
-    "Held" spans both books: portfolio.db holdings and quant.db positions or
-    watchlist. The themes themselves come from market.db, which is why this is
-    two reads and not a JOIN.
-    """
-    from ...market.store import theme_store
-    from ...portfolio.store.holding_store import all_symbol_ids
-    return theme_store.primary_themes_of(set(all_symbol_ids()) | set(quant_symbols()))
-
-
-def live_themes(catalog: Catalog) -> list[Theme]:
-    """The themes this portfolio actually runs on (§ holdings-driven activation).
-
-    A theme is live iff some current holding maps to it as ``primary``, plus
-    the always-on backbones (macro). This — not the static ``active`` flag in
-    themes.json, which stays the taxonomy of *taggable* themes — is the single
-    source of truth for both nightly collection and the landing feed, so adding
-    or removing a holding grows/shrinks the news footprint by itself.
-    """
-    held = held_primary_theme_ids()
-    return [t for t in catalog.themes.values()
-            if not t.shadow and (t.always_on or t.theme_id in held)]

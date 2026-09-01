@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from src.agents.news import collect_all, daily, enrich, rollup
+from src.agents.news import collect_all, daily, enrich, read, rollup
 from src.agents.news.catalog import Feed, load_catalog, load_sources
 from src.agents.news.db import connect
 from src.agents.news.sources.base import RawItem
@@ -374,3 +374,159 @@ def test_monthly_reads_the_weeks_not_the_days():
 def test_a_month_with_no_weekly_rows_produces_nothing():
     assert rollup.build_month("semiconductor", "반도체", "2026-08",
                               backend=_Backend({"summary": "x"})) is None
+
+
+# ── read side: landing feed ─────────────────────────────────────────────────
+
+def _enriched(monkeypatch, items, themes_by_index, *, day=None):
+    """Collect `items`, then enrich them with the given theme assignment."""
+    monkeypatch.setattr(collect_all, "enrich_images", lambda its, **kw: 0)
+    monkeypatch.setattr(collect_all, "fetch_rss",
+                        lambda url, sid, timeout=15.0: list(items))
+    collect_all.collect_one(_feed(), [], None, now=day or NOW)
+    enrich.run(backend=_Backend({"r": [
+        {"i": i, "s": f"요약{i}", "imp": 5 - i, "nov": i == 0, "t": t}
+        for i, t in enumerate(themes_by_index)]}))
+
+
+def test_published_iso_parses_both_dialects():
+    assert read.published_iso("Sat, 11 Jul 2026 09:00:00 +0900") \
+        == "2026-07-11T09:00:00+09:00"
+    assert read.published_iso("2026-07-11T00:00:00Z") == "2026-07-11T00:00:00+00:00"
+    assert read.published_iso("not a date") is None
+    assert read.published_iso(None) is None
+
+
+def test_one_article_carries_every_theme_it_belongs_to(monkeypatch):
+    """The jsonl layout needed a merge-by-url pass for this; it is a join now."""
+    _enriched(monkeypatch, [_item("A", "http://a")],
+              [["semiconductor", "ai_sw"]])
+    out = read.feed(now=NOW)
+    assert len(out["news"]) == 1
+    assert {t["id"] for t in out["news"][0]["themes"]} == {"semiconductor", "ai_sw"}
+
+
+def test_the_feed_splits_news_from_social_and_drops_research(monkeypatch):
+    monkeypatch.setattr(collect_all, "enrich_images", lambda its, **kw: 0)
+    for group, title in (("news", "N"), ("social", "S"), ("research", "R")):
+        monkeypatch.setattr(
+            collect_all, "fetch_rss",
+            lambda url, sid, timeout=15.0, t=title: [_item(t, f"http://{t}")])
+        collect_all.collect_one(_feed(source_id=group, group=group), [], None,
+                                now=NOW)
+    out = read.feed(now=NOW)
+    assert [c["title"] for c in out["news"]] == ["N"]
+    assert [c["title"] for c in out["social"]] == ["S"]
+
+
+def test_the_feed_carries_the_gist_and_importance(monkeypatch):
+    _enriched(monkeypatch, [_item("A", "http://a")], [["semiconductor"]])
+    card = read.feed(now=NOW)["news"][0]
+    assert card["gist"] == "요약0" and card["importance"] == 5
+    assert card["favicon"] and card["source"] == "s1"
+
+
+def test_an_unenriched_article_still_shows_without_a_gist(monkeypatch):
+    """Collection and enrichment fail independently; the feed must survive the
+    window between them."""
+    monkeypatch.setattr(collect_all, "enrich_images", lambda its, **kw: 0)
+    _collect(monkeypatch, [_item("A", "http://a")])
+    card = read.feed(now=NOW)["news"][0]
+    assert card["title"] == "A" and card["gist"] is None
+
+
+def test_the_summary_section_falls_back_to_yesterday(monkeypatch):
+    """Before the dawn batch today's overview does not exist yet."""
+    yesterday = (NOW - timedelta(days=1)).strftime("%Y-%m-%d")
+    with connect() as c:
+        c.execute("INSERT INTO theme_daily (theme_id, date, overview, n_items, "
+                  "built_at) VALUES ('semiconductor',?,?,1,'t')",
+                  (yesterday, json.dumps(["어제의 반도체"])))
+        c.commit()
+    out = read.feed(now=NOW)
+    assert [s["bullets"] for s in out["summary"]] == [["어제의 반도체"]]
+
+
+def test_todays_overview_wins_over_yesterdays():
+    with connect() as c:
+        for d, b in ((NOW - timedelta(days=1), "어제"), (NOW, "오늘")):
+            c.execute("INSERT INTO theme_daily (theme_id, date, overview, "
+                      "n_items, built_at) VALUES ('semiconductor',?,?,1,'t')",
+                      (d.strftime("%Y-%m-%d"), json.dumps([b])))
+        c.commit()
+    assert read.feed(now=NOW)["summary"][0]["bullets"] == ["오늘"]
+
+
+def test_no_overview_at_all_yields_no_summary_section():
+    assert read.feed(now=NOW)["summary"] == []
+
+
+# ── read side: theme state (replaces state.json) ────────────────────────────
+
+def test_theme_state_of_an_untouched_theme_is_the_empty_shape():
+    st = read.theme_state("semiconductor", now=NOW)
+    assert st["horizon_summary"] == "" and st["recent_developments"] == []
+    assert st["sentiment"] == {"score": 0.0, "trend": "flat"}
+    assert st["watchlist"] == [] and st["last_shift"] == ""
+
+
+def test_theme_state_pulls_sentiment_and_watchlist_from_the_day(monkeypatch):
+    _enriched(monkeypatch, [_item("A", "http://a")], [["semiconductor"]])
+    daily.run("2026-08-27", theme="semiconductor", backend=_Backend(
+        {"overview": ["불렛"], "sentiment": {"score": -0.4, "trend": "deteriorating"},
+         "watchlist": ["관세"]}))
+    st = read.theme_state("semiconductor", now=NOW)
+    assert st["sentiment"] == {"score": -0.4, "trend": "deteriorating"}
+    assert st["watchlist"] == ["관세"] and st["updated"] == "2026-08-27"
+
+
+def test_the_weekly_summary_becomes_the_long_memory(monkeypatch):
+    _enriched(monkeypatch, [_item("A", "http://a")], [["semiconductor"]])
+    daily.run("2026-08-27", theme="semiconductor",
+              backend=_Backend({"overview": ["오늘 불렛"]}))
+    # before the first Sunday the day's bullets stand in
+    assert read.theme_state("semiconductor", now=NOW)["horizon_summary"] == "오늘 불렛"
+    with connect() as c:
+        c.execute("INSERT INTO theme_weekly (theme_id, week_start, summary, "
+                  "bullets, n_days, built_at) VALUES "
+                  "('semiconductor','2026-08-24','한 주의 흐름','[]',5,'t')")
+        c.commit()
+    st = read.theme_state("semiconductor", now=NOW)
+    assert st["horizon_summary"] == "한 주의 흐름"
+    assert st["week_summary"] == "한 주의 흐름"
+
+
+def test_recent_developments_stop_at_the_horizon(monkeypatch):
+    inside = NOW - timedelta(days=3)
+    outside = NOW - timedelta(days=30)
+    for when, title in ((inside, "recent"), (outside, "ancient")):
+        _enriched(monkeypatch, [_item(title, f"http://{title}")],
+                  [["semiconductor"]], day=when)
+    points = {d["point"] for d in
+              read.theme_state("semiconductor", now=NOW)["recent_developments"]}
+    assert points == {"요약0"}          # only the in-window article survives
+    assert len(points) == 1
+
+
+def test_last_shift_is_computed_not_remembered():
+    """The old state file had a model write this sentence; the trend history
+    makes it a fact."""
+    with connect() as c:
+        for d, trend in (("2026-08-25", "flat"), ("2026-08-26", "flat"),
+                         ("2026-08-27", "improving")):
+            c.execute("INSERT INTO theme_daily (theme_id, date, overview, "
+                      "sentiment_trend, n_items, built_at) "
+                      "VALUES ('semiconductor',?,'[]',?,1,'t')", (d, trend))
+        c.commit()
+    assert read.theme_state("semiconductor", now=NOW)["last_shift"] \
+        == "2026-08-27: flat→improving"
+
+
+def test_active_themes_are_the_ones_with_recent_news():
+    with connect() as c:
+        c.execute("INSERT INTO theme_daily (theme_id, date, overview, n_items, "
+                  "built_at) VALUES ('semiconductor','2026-08-27','[]',1,'t')")
+        c.execute("INSERT INTO theme_daily (theme_id, date, overview, n_items, "
+                  "built_at) VALUES ('space','2026-01-01','[]',1,'t')")
+        c.commit()
+    assert read.active_themes(now=NOW) == ["semiconductor"]

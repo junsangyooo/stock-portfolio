@@ -56,7 +56,7 @@ def test_get_symbol_themes_empty(mapped):
 # ── input assembly ──────────────────────────────────────────────────────────
 
 def test_assemble_inputs_shape_and_edges(mapped, monkeypatch):
-    monkeypatch.setattr(ev, "load_state", _fake_state)
+    monkeypatch.setattr(ev, "theme_state", _fake_state)
     cat = load_catalog()
     inp = assemble_inputs("KR:247540", catalog=cat)
 

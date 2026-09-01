@@ -1,8 +1,13 @@
-"""Qualitative analysis (news / trend / issue) agent — Phase 2.
+"""Qualitative analysis — what happened in the world, per field.
 
-Pipeline layers:
-  L1 MAPPING   symbol -> themes        (mapping.py, market.db.symbol_themes)
-  L2 CATALOG   theme master            (themes.json + catalog.py)
-  L3 COLLECT   theme-level sources      (collect.py — N1)
-  L4 EVALUATE  digest -> state -> score (digest/state/evaluate.py — N2/N3)
+  CATALOG    theme master + source registry   themes.json / sources.json / catalog.py
+  COLLECT    one sweep over every source      collect_all.py  → news.db signals
+  ENRICH     summary·importance·novelty·theme enrich.py       → news.db signals + signal_themes
+  DAILY      per-theme overview + sentiment   daily.py        → news.db theme_daily
+  ROLLUP     weekly / monthly compression     rollup.py       → theme_weekly / theme_monthly
+  READ       every query against news.db      read.py
+  EVALUATE   per-symbol news verdict          evaluate.py     (on demand)
+
+cycle.py is the cron entry. Collection is independent of holdings — every
+field is always on, and the filtering lives on the read side.
 """

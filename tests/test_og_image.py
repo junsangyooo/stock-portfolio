@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from src.agents.news.sources.og_image import extract_og_image
-from src.agents.news.collect import _keyword_hit
+from src.agents.news.collect_all import _keyword_hit
 
 
 def test_og_image_property_first():

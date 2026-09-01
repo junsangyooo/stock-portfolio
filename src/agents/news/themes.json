@@ -1,12 +1,11 @@
 {
-  "version": 1,
-  "updated": "2026-05-28",
-  "note": "Theme catalog (L2). Single source of truth for theme definitions, keywords, related-edges and source sets. See docs/qualitative-analysis-design.md. verified:true = feed confirmed reachable+parseable by N1 collect probe (2026-05-24). 'x' (social) sources stay verified:false until N4.",
+  "version": 2,
+  "updated": "2026-09-01",
+  "note": "테마 분류 체계. 소스 목록은 sources.json에 있고 테마에 묶이지 않는다 — 수집은 전 분야를 항상 돌고, 테마는 기사 단위로 붙는다. always_on(macro)만 특별하며, 옛 active/shadow 플래그는 폐기됐다 (모든 테마가 실제로 수집된다).",
   "themes": [
     {
       "theme_id": "battery",
       "name_kr": "2차전지/배터리",
-      "active": true,
       "definition": "리튬이온/차세대 배터리 셀·소재(양극재·음극재·전해질·분리막)·장비·ESS 밸류체인",
       "keywords": {
         "ko": [
@@ -54,50 +53,11 @@
           "relation": "demand",
           "weight": 0.3
         }
-      ],
-      "sources": {
-        "research": [
-          {
-            "id": "arxiv_battery",
-            "kind": "arxiv",
-            "query": "cat:cond-mat.mtrl-sci AND (abs:battery OR abs:\"solid-state electrolyte\" OR abs:cathode OR abs:anode)",
-            "verified": true
-          }
-        ],
-        "social": [
-          {
-            "id": "x_sne",
-            "kind": "x",
-            "handle": "SNEResearch",
-            "lang": "ko",
-            "verified": false
-          }
-        ],
-        "news": [
-          {
-            "id": "electrek",
-            "kind": "rss",
-            "url": "https://electrek.co/feed/",
-            "lang": "en",
-            "paid": false,
-            "verified": true
-          },
-          {
-            "id": "thelec_battery",
-            "kind": "rss",
-            "broad": true,
-            "url": "https://www.thelec.kr/rss/allArticle.xml",
-            "lang": "ko",
-            "paid": false,
-            "verified": true
-          }
-        ]
-      }
+      ]
     },
     {
       "theme_id": "ai_sw",
       "name_kr": "AI/소프트웨어",
-      "active": true,
       "definition": "AI 모델·생성AI·클라우드/SaaS·국내외 SW 플랫폼 및 응용",
       "keywords": {
         "ko": [
@@ -136,59 +96,11 @@
           "relation": "downstream",
           "weight": 0.5
         }
-      ],
-      "sources": {
-        "research": [
-          {
-            "id": "arxiv_ai",
-            "kind": "arxiv",
-            "query": "cat:cs.AI OR cat:cs.CL OR cat:cs.LG",
-            "verified": true
-          }
-        ],
-        "social": [
-          {
-            "id": "reddit_ml",
-            "kind": "rss",
-            "url": "https://www.reddit.com/r/MachineLearning/.rss",
-            "lang": "en",
-            "verified": true
-          }
-        ],
-        "news": [
-          {
-            "id": "geeknews",
-            "kind": "rss",
-            "url": "https://news.hada.io/rss/news",
-            "lang": "ko",
-            "paid": false,
-            "verified": true
-          },
-          {
-            "id": "aitimes",
-            "kind": "rss",
-            "broad": true,
-            "url": "https://www.aitimes.com/rss/allArticle.xml",
-            "lang": "ko",
-            "paid": false,
-            "verified": true
-          },
-          {
-            "id": "etnews_it",
-            "kind": "rss",
-            "broad": true,
-            "url": "https://rss.etnews.com/Section902.xml",
-            "lang": "ko",
-            "paid": false,
-            "verified": true
-          }
-        ]
-      }
+      ]
     },
     {
       "theme_id": "bio",
       "name_kr": "바이오/헬스케어",
-      "active": true,
       "definition": "신약·바이오시밀러·CMO/CDMO·진단·의료기기 및 임상/규제 동향",
       "keywords": {
         "ko": [
@@ -224,49 +136,11 @@
           "relation": "policy",
           "weight": 0.7
         }
-      ],
-      "sources": {
-        "research": [
-          {
-            "id": "biorxiv",
-            "kind": "rss",
-            "url": "https://connect.biorxiv.org/biorxiv_xml.php?subject=all",
-            "lang": "en",
-            "verified": true
-          },
-          {
-            "id": "arxiv_qbio",
-            "kind": "arxiv",
-            "query": "cat:q-bio.QM OR cat:q-bio.BM",
-            "verified": true
-          }
-        ],
-        "social": [],
-        "news": [
-          {
-            "id": "statnews",
-            "kind": "rss",
-            "url": "https://www.statnews.com/feed/",
-            "lang": "en",
-            "paid": true,
-            "verified": true
-          },
-          {
-            "id": "docdocdoc",
-            "kind": "rss",
-            "broad": true,
-            "url": "https://www.docdocdoc.co.kr/rss/allArticle.xml",
-            "lang": "ko",
-            "paid": false,
-            "verified": true
-          }
-        ]
-      }
+      ]
     },
     {
       "theme_id": "semiconductor",
       "name_kr": "반도체",
-      "active": true,
       "definition": "메모리·파운드리·팹리스/디자인하우스·소부장(소재·부품·장비)·HBM/AI칩",
       "keywords": {
         "ko": [
@@ -302,59 +176,11 @@
           "relation": "upstream",
           "weight": 0.6
         }
-      ],
-      "sources": {
-        "research": [
-          {
-            "id": "arxiv_hardware",
-            "kind": "arxiv",
-            "query": "cat:cs.AR OR cat:eess.SP",
-            "verified": true
-          }
-        ],
-        "social": [
-          {
-            "id": "reddit_semi",
-            "kind": "rss",
-            "url": "https://www.reddit.com/r/semiconductors/.rss",
-            "lang": "en",
-            "verified": true
-          }
-        ],
-        "news": [
-          {
-            "id": "semianalysis",
-            "kind": "rss",
-            "url": "https://www.semianalysis.com/feed",
-            "lang": "en",
-            "paid": true,
-            "verified": true
-          },
-          {
-            "id": "thelec_semi",
-            "kind": "rss",
-            "broad": true,
-            "url": "https://www.thelec.kr/rss/allArticle.xml",
-            "lang": "ko",
-            "paid": false,
-            "verified": true
-          },
-          {
-            "id": "etnews_it",
-            "kind": "rss",
-            "broad": true,
-            "url": "https://rss.etnews.com/Section902.xml",
-            "lang": "ko",
-            "paid": false,
-            "verified": true
-          }
-        ]
-      }
+      ]
     },
     {
       "theme_id": "robotics",
       "name_kr": "로봇/휴머노이드",
-      "active": true,
       "definition": "휴머노이드·협동로봇·산업/서비스 로봇·로봇 구동/제어 및 피지컬AI",
       "keywords": {
         "ko": [
@@ -391,50 +217,11 @@
           "relation": "power",
           "weight": 0.4
         }
-      ],
-      "sources": {
-        "research": [
-          {
-            "id": "arxiv_robotics",
-            "kind": "arxiv",
-            "query": "cat:cs.RO",
-            "verified": true
-          }
-        ],
-        "social": [
-          {
-            "id": "reddit_robotics",
-            "kind": "rss",
-            "url": "https://www.reddit.com/r/robotics/.rss",
-            "lang": "en",
-            "verified": true
-          }
-        ],
-        "news": [
-          {
-            "id": "robotreport",
-            "kind": "rss",
-            "url": "https://www.therobotreport.com/feed/",
-            "lang": "en",
-            "paid": false,
-            "verified": true
-          },
-          {
-            "id": "irobotnews",
-            "kind": "rss",
-            "broad": true,
-            "url": "https://www.irobotnews.com/rss/allArticle.xml",
-            "lang": "ko",
-            "paid": false,
-            "verified": true
-          }
-        ]
-      }
+      ]
     },
     {
       "theme_id": "space",
       "name_kr": "우주/항공",
-      "active": true,
       "definition": "발사체·위성·우주 인프라/서비스 및 우주항공 정책",
       "keywords": {
         "ko": [
@@ -465,34 +252,11 @@
           "relation": "adjacent",
           "weight": 0.6
         }
-      ],
-      "sources": {
-        "research": [],
-        "social": [],
-        "news": [
-          {
-            "id": "spacenews",
-            "kind": "rss",
-            "url": "https://spacenews.com/feed/",
-            "lang": "en",
-            "paid": false,
-            "verified": true
-          },
-          {
-            "id": "payload",
-            "kind": "rss",
-            "url": "https://payloadspace.com/feed/",
-            "lang": "en",
-            "paid": false,
-            "verified": true
-          }
-        ]
-      }
+      ]
     },
     {
       "theme_id": "fintech",
       "name_kr": "핀테크",
-      "active": true,
       "definition": "간편결제·디지털금융·인터넷전문은행 및 핀테크 규제",
       "keywords": {
         "ko": [
@@ -517,34 +281,11 @@
           "relation": "policy",
           "weight": 0.7
         }
-      ],
-      "sources": {
-        "research": [],
-        "social": [],
-        "news": [
-          {
-            "id": "finextra",
-            "kind": "rss",
-            "url": "https://www.finextra.com/rss/headlines.aspx",
-            "lang": "en",
-            "paid": false,
-            "verified": true
-          },
-          {
-            "id": "hk_finance",
-            "kind": "rss",
-            "url": "https://www.hankyung.com/feed/finance",
-            "lang": "ko",
-            "paid": false,
-            "verified": true
-          }
-        ]
-      }
+      ]
     },
     {
       "theme_id": "shipbuilding",
       "name_kr": "조선/중공업",
-      "active": true,
       "definition": "조선·해양플랜트·LNG선·중공업 및 수주/운임 동향",
       "keywords": {
         "ko": [
@@ -579,34 +320,11 @@
           "relation": "upstream",
           "weight": 0.4
         }
-      ],
-      "sources": {
-        "research": [],
-        "social": [],
-        "news": [
-          {
-            "id": "gcaptain",
-            "kind": "rss",
-            "url": "https://gcaptain.com/feed/",
-            "lang": "en",
-            "paid": false,
-            "verified": true
-          },
-          {
-            "id": "splash247",
-            "kind": "rss",
-            "url": "https://splash247.com/feed/",
-            "lang": "en",
-            "paid": false,
-            "verified": true
-          }
-        ]
-      }
+      ]
     },
     {
       "theme_id": "adv_manufacturing",
       "name_kr": "적층제조/3D프린팅",
-      "active": true,
       "definition": "3D프린팅/적층제조 장비·소재·응용",
       "keywords": {
         "ko": [
@@ -627,26 +345,11 @@
           "relation": "adjacent",
           "weight": 0.3
         }
-      ],
-      "sources": {
-        "research": [],
-        "social": [],
-        "news": [
-          {
-            "id": "3dpi",
-            "kind": "rss",
-            "url": "https://3dprintingindustry.com/feed/",
-            "lang": "en",
-            "paid": false,
-            "verified": true
-          }
-        ]
-      }
+      ]
     },
     {
       "theme_id": "macro",
       "name_kr": "거시/지수",
-      "active": true,
       "always_on": true,
       "definition": "금리·환율·통화정책·지정학·주요 지수 등 전 종목 공통 거시 백본 (수치보다 정책/이슈 트렌드 위주)",
       "keywords": {
@@ -680,60 +383,11 @@
           "index"
         ]
       },
-      "related": [],
-      "sources": {
-        "research": [],
-        "social": [],
-        "news": [
-          {
-            "id": "fed_press",
-            "kind": "rss",
-            "url": "https://www.federalreserve.gov/feeds/press_all.xml",
-            "lang": "en",
-            "paid": false,
-            "verified": true
-          },
-          {
-            "id": "bok_press",
-            "kind": "rss",
-            "url": "https://www.bok.or.kr/portal/bbs/B0000338/news.rss",
-            "lang": "ko",
-            "paid": false,
-            "verified": true
-          },
-          {
-            "id": "einfomax",
-            "kind": "rss",
-            "broad": true,
-            "url": "https://news.einfomax.co.kr/rss/allArticle.xml",
-            "lang": "ko",
-            "paid": false,
-            "verified": true
-          },
-          {
-            "id": "mk_stock",
-            "kind": "rss",
-            "url": "https://www.mk.co.kr/rss/30100041/",
-            "lang": "ko",
-            "paid": false,
-            "verified": true
-          },
-          {
-            "id": "hk_finance",
-            "kind": "rss",
-            "url": "https://www.hankyung.com/feed/finance",
-            "lang": "ko",
-            "paid": false,
-            "verified": true
-          }
-        ]
-      }
+      "related": []
     },
     {
       "theme_id": "ev",
       "name_kr": "전기차",
-      "active": false,
-      "shadow": true,
       "definition": "전기차 OEM·수요·정책 (연관 신호용 그림자 테마)",
       "keywords": {
         "ko": [
@@ -755,27 +409,11 @@
           "relation": "upstream",
           "weight": 0.8
         }
-      ],
-      "sources": {
-        "research": [],
-        "social": [],
-        "news": [
-          {
-            "id": "electrek_ev",
-            "kind": "rss",
-            "url": "https://electrek.co/feed/",
-            "lang": "en",
-            "paid": false,
-            "verified": true
-          }
-        ]
-      }
+      ]
     },
     {
       "theme_id": "materials_raw",
       "name_kr": "원자재/소재",
-      "active": false,
-      "shadow": true,
       "definition": "리튬·니켈·코발트 등 배터리 원자재 가격/공급 (연관 신호용)",
       "keywords": {
         "ko": [
@@ -797,18 +435,11 @@
           "relation": "downstream",
           "weight": 0.7
         }
-      ],
-      "sources": {
-        "research": [],
-        "social": [],
-        "news": []
-      }
+      ]
     },
     {
       "theme_id": "grid_ess",
       "name_kr": "전력망/ESS",
-      "active": false,
-      "shadow": true,
       "definition": "전력망·에너지저장장치 수요 (연관 신호용)",
       "keywords": {
         "ko": [
@@ -828,18 +459,11 @@
           "relation": "upstream",
           "weight": 0.6
         }
-      ],
-      "sources": {
-        "research": [],
-        "social": [],
-        "news": []
-      }
+      ]
     },
     {
       "theme_id": "equipment",
       "name_kr": "장비",
-      "active": false,
-      "shadow": true,
       "definition": "반도체/배터리 제조 장비 (연관 신호용)",
       "keywords": {
         "ko": [
@@ -860,18 +484,11 @@
           "relation": "downstream",
           "weight": 0.6
         }
-      ],
-      "sources": {
-        "research": [],
-        "social": [],
-        "news": []
-      }
+      ]
     },
     {
       "theme_id": "datacenter_power",
       "name_kr": "데이터센터/전력",
-      "active": false,
-      "shadow": true,
       "definition": "AI 데이터센터 전력·냉각 수요 (연관 신호용)",
       "keywords": {
         "ko": [
@@ -891,18 +508,11 @@
           "relation": "upstream",
           "weight": 0.5
         }
-      ],
-      "sources": {
-        "research": [],
-        "social": [],
-        "news": []
-      }
+      ]
     },
     {
       "theme_id": "defense",
       "name_kr": "방산",
-      "active": false,
-      "shadow": true,
       "definition": "방위산업·국방 (우주/조선 연관 신호용)",
       "keywords": {
         "ko": [
@@ -922,18 +532,11 @@
           "relation": "adjacent",
           "weight": 0.6
         }
-      ],
-      "sources": {
-        "research": [],
-        "social": [],
-        "news": []
-      }
+      ]
     },
     {
       "theme_id": "regulation_fda",
       "name_kr": "규제(FDA/식약처)",
-      "active": false,
-      "shadow": true,
       "definition": "의약품 규제·승인 정책 (바이오 연관 신호용)",
       "keywords": {
         "ko": [
@@ -954,18 +557,11 @@
           "relation": "policy",
           "weight": 0.7
         }
-      ],
-      "sources": {
-        "research": [],
-        "social": [],
-        "news": []
-      }
+      ]
     },
     {
       "theme_id": "regulation_fin",
       "name_kr": "금융규제",
-      "active": false,
-      "shadow": true,
       "definition": "금융/핀테크 규제 정책 (핀테크 연관 신호용)",
       "keywords": {
         "ko": [
@@ -984,18 +580,11 @@
           "relation": "policy",
           "weight": 0.7
         }
-      ],
-      "sources": {
-        "research": [],
-        "social": [],
-        "news": []
-      }
+      ]
     },
     {
       "theme_id": "energy",
       "name_kr": "에너지",
-      "active": false,
-      "shadow": true,
       "definition": "원유·가스·전력 등 에너지 (조선 LNG 연관 신호용)",
       "keywords": {
         "ko": [
@@ -1017,18 +606,11 @@
           "relation": "demand",
           "weight": 0.6
         }
-      ],
-      "sources": {
-        "research": [],
-        "social": [],
-        "news": []
-      }
+      ]
     },
     {
       "theme_id": "steel",
       "name_kr": "철강",
-      "active": false,
-      "shadow": true,
       "definition": "철강·후판 (조선 연관 신호용)",
       "keywords": {
         "ko": [
@@ -1047,12 +629,7 @@
           "relation": "downstream",
           "weight": 0.4
         }
-      ],
-      "sources": {
-        "research": [],
-        "social": [],
-        "news": []
-      }
+      ]
     }
   ]
 }

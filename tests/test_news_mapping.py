@@ -31,11 +31,9 @@ def test_etf_name_rule_mapping(cat, name, expected_subset):
     assert expected_subset.issubset(got), f"{name}: got {got}"
 
 
-def test_etf_mapping_only_returns_active_nonshadow(cat):
-    got = map_etf_by_name("TIGER 코리아휴머노이드로봇산업", cat)
-    for tid in got:
-        t = cat.themes[tid]
-        assert t.active and not t.shadow
+def test_a_sector_etf_does_not_pick_up_the_backbone(cat):
+    """Index ETFs map to macro by name; a sector ETF should not."""
+    assert "macro" not in map_etf_by_name("TIGER 코리아휴머노이드로봇산업", cat)
 
 
 def test_etf_unknown_returns_empty(cat):

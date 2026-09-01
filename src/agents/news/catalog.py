@@ -24,24 +24,22 @@ class Theme:
     Attributes:
         theme_id:   stable id, e.g. "battery".
         name_kr:    Korean display name.
-        active:     whether sources are fully collected for this theme.
-        shadow:     "shadow" theme — no held stock, related-signal only.
         always_on:  injected into every stock evaluation (macro backbone).
         definition: one-line scope description.
         keywords:   {"ko": [...], "en": [...]} — also used for ETF name rules.
         related:    list of {theme, relation, weight} edges.
-        sources:    {"research": [...], "social": [...], "news": [...]}.
+
+    The old ``active``/``shadow`` flags are gone. They encoded "we do not
+    collect for this field" and "this field has no holder", and collection is
+    now neither source-bound nor holdings-bound: every theme is real.
     """
 
     theme_id: str
     name_kr: str
     definition: str
-    active: bool = False
-    shadow: bool = False
     always_on: bool = False
     keywords: dict = field(default_factory=dict)
     related: list = field(default_factory=list)
-    sources: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -50,8 +48,14 @@ class Catalog:
     updated: str
     themes: dict  # theme_id -> Theme
 
-    def active_themes(self) -> list[Theme]:
-        return [t for t in self.themes.values() if t.active]
+    def primary_candidates(self) -> list[Theme]:
+        """Themes to offer the tagging model as a symbol's core business.
+
+        The backbone is excluded: macro applies to every symbol, so putting it
+        on the menu only invites the model to pick it for all of them. Rules
+        that match on names (index ETFs → macro) look at every theme instead.
+        """
+        return [t for t in self.themes.values() if not t.always_on]
 
     def get(self, theme_id: str) -> Optional[Theme]:
         return self.themes.get(theme_id)
@@ -71,8 +75,6 @@ class Catalog:
                         f"{t.theme_id} -> {edge.get('theme')} weight {w} "
                         "out of [0,1]"
                     )
-            if t.shadow and t.active:
-                raise ValueError(f"shadow theme '{t.theme_id}' must be inactive")
 
 
 def load_catalog(path: Optional[Path] = None) -> Catalog:
@@ -85,12 +87,9 @@ def load_catalog(path: Optional[Path] = None) -> Catalog:
             theme_id=entry["theme_id"],
             name_kr=entry["name_kr"],
             definition=entry.get("definition", ""),
-            active=bool(entry.get("active", False)),
-            shadow=bool(entry.get("shadow", False)),
             always_on=bool(entry.get("always_on", False)),
             keywords=entry.get("keywords", {}),
             related=entry.get("related", []),
-            sources=entry.get("sources", {}),
         )
         if t.theme_id in themes:
             raise ValueError(f"duplicate theme_id '{t.theme_id}'")

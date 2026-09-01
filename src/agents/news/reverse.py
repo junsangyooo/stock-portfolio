@@ -9,8 +9,8 @@ Two sources, because neither alone is enough:
   tagged     symbol_themes reversed. Precise, but only ever contains symbols
              somebody already holds — useless for finding something new.
   mentioned  company names recovered from the theme's own news corpus
-             (data/signals/news/{theme}/{yyyymm}.jsonl). This is the mechanical
-             form of "read today's news, notice a company, go look it up".
+             (news.db, via read.read_items). This is the mechanical form of
+             "read today's news, notice a company, go look it up".
 
 Matching is literal substring against the universe's display names, longest
 name first, with matched spans masked so "한화" inside "한화에어로스페이스"
@@ -29,7 +29,6 @@ from datetime import datetime, timedelta
 from typing import Iterable, Optional
 
 from ...core.kst import KST
-from ...core.paths import signals_news_path
 
 _MIN_LEN_KR = 3
 _MIN_LEN_EN = 4
@@ -78,57 +77,15 @@ def _strip_html(s: str) -> str:
     return _WS_RE.sub(" ", _TAG_RE.sub(" ", s or ""))
 
 
-def _months_back(days: int) -> list[str]:
-    """yyyymm strings covering `days` back from today (KST), newest first."""
-    now = datetime.now(KST)
-    seen, out = set(), []
-    for d in (now, now - timedelta(days=days)):
-        ym = d.strftime("%Y%m")
-        if ym not in seen:
-            seen.add(ym)
-            out.append(ym)
-    return out
-
-
-def _published_dt(item: dict) -> Optional[datetime]:
-    """Always tz-aware. Feeds mix offsets with bare local timestamps, and a
-    naive one anywhere in the list poisons the whole sort."""
-    for key in ("published", "fetched_at"):
-        raw = item.get(key)
-        if not raw:
-            continue
-        try:
-            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-        except ValueError:
-            continue
-        return dt if dt.tzinfo else dt.replace(tzinfo=KST)
-    return None
-
-
 def read_items(theme_id: str, days: int) -> list[dict]:
-    """Raw news/RSS/arXiv items for a theme within the window, newest first."""
-    cutoff = datetime.now(KST) - timedelta(days=days)
-    items: list[dict] = []
-    for ym in _months_back(days):
-        path = signals_news_path(theme_id, ym)
-        if not path.exists():
-            continue
-        with path.open(encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    it = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                dt = _published_dt(it)
-                if dt is None or dt.astimezone(KST) < cutoff:
-                    continue
-                it["_dt"] = dt
-                items.append(it)
-    items.sort(key=lambda x: x["_dt"], reverse=True)
-    return items
+    """Raw articles for a theme within the window, newest first.
+
+    Thin wrapper over read.read_items: the corpus moved into news.db, and the
+    month-file walk plus the tz-aware sort it needed went with it — the date
+    axis is a stored column now.
+    """
+    from .read import read_items as _read_items
+    return _read_items(theme_id, days=days)
 
 
 # Legal suffixes news prose never carries: the universe says "Broadcom Inc"

@@ -124,7 +124,7 @@ def _init_once() -> None:
         return
     ensure_dirs()
     with sqlite3.connect(DB_PATH) as conn:
-        # WAL so the cron writers (snapshot_job, news daily_job) never block
+        # WAL so the cron writers (snapshot_job, news cycle) never block
         # the dashboard's reads. A property of the file, set once.
         conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(SCHEMA)

@@ -121,7 +121,7 @@ def news_signals(market: str, code: str) -> dict:
     """
     symbol_id = f"{market.upper()}:{code}"
     from ..agents.news.catalog import load_catalog
-    from ..agents.news.state import load_state
+    from ..agents.news.read import theme_state
     from ..market.store import theme_store
 
     cat = load_catalog()
@@ -132,7 +132,7 @@ def news_signals(market: str, code: str) -> dict:
     for theme_id, relation, weight in rows:
         if relation == "macro":
             continue  # macro is background — too generic for the connected list
-        st = load_state(theme_id)
+        st = theme_state(theme_id)
         ct = cat.get(theme_id)
         nm = ct.name_kr if ct else theme_id
         themes_out.append({

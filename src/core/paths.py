@@ -5,7 +5,6 @@
   data/news.db                                      — SQLite (signals, signal_themes, theme_daily/weekly/monthly)
   data/universe/{kr,us,etf_kr}.json                 — symbol master (daily refresh)
   data/market/quote/last.json                       — last-known quote snapshot
-  data/signals/news/{THEME}/{YYYYMM}.jsonl          — theme-keyed qualitative signals
   data/universe/dart_corp_codes.json                — KR code → DART corp_code map
   data/analysis/{kind}/{MARKET}_{CODE}/{YYYYMMDD}.json
 """
@@ -59,24 +58,9 @@ def ensure_dirs() -> None:
         d.mkdir(parents=True, exist_ok=True)
 
 
-def signals_news_path(theme: str, yyyymm: str) -> Path:
-    """Raw qualitative signals per theme, monthly jsonl (L3 collect output)."""
-    return SIGNALS_DIR / "news" / theme / f"{yyyymm}.jsonl"
-
-
 def analysis_path(kind: str, symbol_id: str, yyyymmdd: str) -> Path:
     safe = symbol_id.replace(":", "_")
     return ANALYSIS_DIR / kind / safe / f"{yyyymmdd}.json"
-
-
-def analysis_news_daily_path(theme: str, date: str) -> Path:
-    """Per-theme daily digest (L4). date = 'YYYY-MM-DD'."""
-    return ANALYSIS_DIR / "news" / theme / "daily" / f"{date}.json"
-
-
-def analysis_news_state_path(theme: str) -> Path:
-    """Per-theme rolling state (L4 evaluation input). Always-current."""
-    return ANALYSIS_DIR / "news" / theme / "state.json"
 
 
 def split_symbol(symbol_id: str) -> tuple[str, str]:

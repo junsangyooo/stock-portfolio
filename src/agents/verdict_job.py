@@ -14,7 +14,7 @@ Cache: a symbol×kind whose file for today already exists is skipped (24h
 cache-hit; --force overrides). Failures are isolated per symbol; a summary of
 failed symbols (and any judge run missing holding_context) is sent to Discord
 (DISCORD_WEBHOOK_URL). Exit 0 on partial success, non-zero only if every
-symbol failed (cron convention, same as news.daily_job).
+symbol failed (cron convention, same as news.cycle).
 
 Designed for cron 21:30 UTC (06:30 KST), after the news/fundamental/etf
 batches. ~27 symbols × 2 LLM calls × ~6min ≈ 5h sequential; --workers 2

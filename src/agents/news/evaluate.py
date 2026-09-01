@@ -2,7 +2,7 @@
 
 Triggered on-demand by the UI 📰 button (POST /api/analysis/news/{m}/{c}/run).
 Reads the symbol's theme mapping (market.db symbol_themes) + each theme's rolling state
-(refreshed by the 06:00 daily_job: collect→digest→state) and applies
+(refreshed by the collection cycle: collect→enrich→daily) and applies
 src/agents/news/news_rules.md via claude -p to produce a qualitative verdict.
 
 The rulebook drives a 4-lens read (per news_rules.md):
@@ -38,7 +38,7 @@ from ...core.kst import KST as _KST
 from ..llm_backend import ClaudeCliBackend, SLOW_MODEL, _parse_json
 from ..verdict import clamp_confidence, clamp_score, label_from_score, persist
 from .catalog import Catalog, load_catalog
-from .state import load_state
+from .read import theme_state
 
 _RECENT_PRIMARY = 8   # recent developments injected for the primary theme
 _RECENT_RELATED = 3   # ... for each related/macro theme (kept brief)
@@ -122,7 +122,7 @@ def assemble_inputs(symbol_id: str, *, catalog: Optional[Catalog] = None) -> dic
     used: list[dict] = []
     have_macro = False
     for t in themes:
-        st = load_state(t["theme_id"])
+        st = theme_state(t["theme_id"])
         ct = catalog.get(t["theme_id"])
         name_kr = ct.name_kr if ct else t["theme_id"]
         full = t["relation"] == "primary"
@@ -136,7 +136,7 @@ def assemble_inputs(symbol_id: str, *, catalog: Optional[Catalog] = None) -> dic
     # Always inject macro as background backbone (§F3) if not already mapped.
     macro_ct = catalog.get("macro")
     if not have_macro and macro_ct:
-        blocks.append(_theme_block(load_state("macro"), "macro", 0.2, None,
+        blocks.append(_theme_block(theme_state("macro"), "macro", 0.2, None,
                                    macro_ct.name_kr, full=False))
         used.append({"theme_id": "macro", "relation": "macro", "weight": 0.2})
 

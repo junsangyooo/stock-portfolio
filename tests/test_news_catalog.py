@@ -11,14 +11,19 @@ def cat():
     return load_catalog()
 
 
-def test_loads_and_has_active_themes(cat):
-    # the 10 active themes from docs/qualitative-analysis-design.md §1.1
-    expected_active = {
+def test_loads_the_field_taxonomy(cat):
+    core = {
         "battery", "ai_sw", "bio", "semiconductor", "robotics",
         "space", "fintech", "shipbuilding", "adv_manufacturing", "macro",
     }
-    assert expected_active.issubset(set(cat.themes))
-    assert {t.theme_id for t in cat.active_themes()} == expected_active
+    assert core.issubset(set(cat.themes))
+
+
+def test_every_theme_is_a_primary_candidate_except_the_backbone(cat):
+    """The old active/shadow split is gone — collection covers every field, so
+    a theme nobody holds is still a theme a symbol can be tagged into."""
+    got = {t.theme_id for t in cat.primary_candidates()}
+    assert got == set(cat.themes) - {"macro"}
 
 
 def test_theme_ids_unique(cat):
@@ -41,18 +46,11 @@ def test_related_weights_in_range(cat):
             assert 0.0 <= edge["weight"] <= 1.0
 
 
-def test_active_themes_have_korean_name_and_keywords(cat):
-    for t in cat.active_themes():
-        assert t.name_kr
-        assert t.keywords.get("ko"), f"{t.theme_id} missing ko keywords"
-
-
-def test_macro_is_always_on(cat):
-    assert cat.themes["macro"].always_on is True
-    assert cat.themes["macro"].active is True
-
-
-def test_shadow_themes_are_inactive(cat):
+def test_every_theme_has_a_korean_name(cat):
     for t in cat.themes.values():
-        if t.shadow:
-            assert t.active is False
+        assert t.name_kr, f"{t.theme_id} has no name_kr"
+
+
+def test_macro_is_the_only_backbone(cat):
+    on = {t.theme_id for t in cat.themes.values() if t.always_on}
+    assert on == {"macro"}
