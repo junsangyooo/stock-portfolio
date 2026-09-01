@@ -59,6 +59,7 @@ _SCHEMA = """{
     "label": "strong_sell|sell|neutral|buy|strong_buy",
     "confidence": 0.0,
     "summary_ko": "비전문가용 2~3문장 결론",
+    "stance": "exit|trim|hold|watch|add",
     "drivers": ["긍정 동인"],
     "risks": ["위험"],
     "domain_view": {
@@ -100,6 +101,9 @@ _GUIDE_KO = """
   인덱스를 적는다. 근거를 못 가리키면 그건 관찰한 게 아니라 떠올린 것이다.
 - **counter** — 성의껏 써라. "약간의 위험은 있다" 같은 형식적 반박은 반박이 아니다.
   네 결론을 진짜로 무너뜨릴 논거를 찾아라.
+- **verdict.stance** — 지금 이 종목을 대하는 태도 한 단어. 주문이 아니다 —
+  수량도 시점도 여기서 정하지 않는다. 보유 중이면 exit/trim/hold, 보유하지
+  않으면 watch/add 가 자연스럽다(`context.holding` 참고).
 - **verdict.score** — -1(강한 약세) ~ +1(강한 강세). 라벨과 어긋나지 않게.
   confidence 는 확신이 아니라 **근거가 서로 얼마나 맞물리는지**다. 도메인이
   엇갈리거나 데이터가 비면 낮춘다.

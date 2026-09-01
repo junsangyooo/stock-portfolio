@@ -8,7 +8,7 @@ Routes:
   /api/universe/*    — symbol master search
   /api/accounts/*    — account CRUD + holdings + balances + snapshots + chat
   /api/market/*      — ohlcv + quotes
-  /api/analysis/*    — chart / fundamental / news / judge verdicts + news feed
+  /api/analysis/*    — 종합 분석 + 도메인별 facts + news feed
   /api/quant/*       — auto-trading state, plans, watch, journal
 
 Run:

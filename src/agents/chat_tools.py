@@ -15,7 +15,7 @@ Commands:
     quote <SYMBOL_ID>           latest price/prev-close (KR:005930 | US:AAPL)
     chart <SYMBOL_ID>           live chart facts (indicators, no LLM)
     fundamental <SYMBOL_ID>     valuation + financials facts (trimmed)
-    verdict <SYMBOL_ID> [kind]  latest persisted verdict (default: judge)
+    verdict <SYMBOL_ID> [kind]  latest stored analysis (default: analysis)
     news <SYMBOL_ID>            connected news signals (themes, developments)
     screen k=v ...              KR whole-market factor screen (pykrx daily);
                                 market=NASD|NYSE|AMEX면 KIS 해외조건검색으로 전환
@@ -100,7 +100,7 @@ def _cmd_fundamental(symbol_id: str) -> dict:
     return facts
 
 
-def _cmd_verdict(symbol_id: str, kind: str = "judge") -> dict:
+def _cmd_verdict(symbol_id: str, kind: str = "analysis") -> dict:
     from ..api.analysis import get_verdict
     market, code = _split(symbol_id)
     return get_verdict(kind, market, code)

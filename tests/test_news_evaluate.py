@@ -1,14 +1,14 @@
-"""Tests for L4 evaluate: theme lookup (market.db), input assembly (with
-edge_relation from the catalog), and the rulebook judge (stubbed claude)."""
+"""Tests for the news domain's deterministic assembly.
+
+The per-domain judgment that used to live beside this was removed on
+2026-09-01 — the three domains meet inside one call now
+(tests/test_analyze.py). What remains here is the assembly that call reads."""
 from __future__ import annotations
 
 import pytest
 
 from src.agents.news import evaluate as ev
-from src.agents.news.evaluate import (
-    get_symbol_themes, assemble_inputs, _judge,
-    clamp_score, label_from_score,
-)
+from src.agents.news.evaluate import get_symbol_themes, assemble_inputs
 from src.agents.news.catalog import load_catalog
 
 
@@ -73,91 +73,3 @@ def test_assemble_inputs_shape_and_edges(mapped, monkeypatch):
     assert blocks["materials_raw"]["edge_relation"] == "upstream"
     # macro backbone auto-injected (not in symbol_themes)
     assert "macro" in blocks and blocks["macro"]["relation"] == "macro"
-
-
-# ── judge (stubbed claude) ───────────────────────────────────────────────────
-
-class _StubBackend:
-    def __init__(self, payload):
-        self.payload = payload
-        self.called = False
-
-    def call(self, system, user, timeout_s=60, model=None):
-        self.called = True
-        return self.payload
-
-
-class _ExplodingBackend:
-    def call(self, *a, **k):
-        raise AssertionError("backend must not be called on empty input")
-
-
-def _ok_inputs():
-    return {
-        "symbol_id": "KR:247540", "primary_theme": "battery",
-        "themes": [{"theme_id": "battery", "relation": "primary", "weight": 1.0,
-                    "horizon_summary": "h", "sentiment": {}, "recent_developments": [],
-                    "watchlist": []}],
-        "themes_used": [{"theme_id": "battery", "relation": "primary", "weight": 1.0}],
-        "data_available": {"themes_mapped": True, "has_content": True, "n_developments": 1},
-    }
-
-
-def test_judge_clamps_score_and_extracts_rich_fields():
-    stub = _StubBackend(
-        '{"score": 1.7, "summary_ko": "쉬운결론", "priced_in": "unpriced", '
-        '"time_horizon": "long", "rationale": "강세", "drivers": ["수요"], '
-        '"risks": ["공급과잉"], "second_order": ["A → B"], "event_tags": ["기술돌파"], '
-        '"evidence": [{"theme":"battery","point":"x","lead_lag":"leading"}], '
-        '"watch": ["w1"], "confidence": 0.6, "methodology": ["B2","C2"]}'
-    )
-    res = _judge("KR:247540", "에코프로비엠", _ok_inputs(), backend=stub)
-    assert res["status"] == "ok"
-    assert res["score"] == 1.0 and res["label"] == "strong_buy"   # clamped 1.7
-    assert res["priced_in"] == "unpriced" and res["time_horizon"] == "long"
-    assert res["summary_ko"] == "쉬운결론"
-    assert res["second_order"] == ["A → B"] and res["event_tags"] == ["기술돌파"]
-    assert res["confidence"] == 0.6 and res["methodology"] == ["B2", "C2"]
-
-
-def test_judge_negative_and_enum_coercion():
-    stub = _StubBackend(
-        '{"score": -0.3, "priced_in": "bogus", "time_horizon": "soon", '
-        '"drivers": [], "risks": ["규제"]}'
-    )
-    res = _judge("KR:000000", "X", _ok_inputs(), backend=stub)
-    assert res["score"] == -0.3 and res["label"] == "sell"
-    assert res["priced_in"] is None and res["time_horizon"] is None  # invalid -> None
-    assert res["evidence"] == [] and res["second_order"] == []       # missing -> default
-
-
-def test_judge_no_mapping_short_circuits():
-    inp = {"themes": [], "themes_used": [],
-           "data_available": {"themes_mapped": False, "has_content": False}}
-    res = _judge("KR:000000", "X", inp, backend=_ExplodingBackend())
-    assert res["status"] == "insufficient_data" and res["label"] == "neutral"
-    assert res["score"] == 0.0 and res["confidence"] == 0.0
-
-
-def test_judge_no_content_surfaces_watchlist():
-    inp = {
-        "themes": [{"theme_id": "battery", "relation": "primary", "weight": 1.0,
-                    "watchlist": ["예정 카탈리스트"], "recent_developments": [],
-                    "horizon_summary": ""}],
-        "themes_used": [],
-        "data_available": {"themes_mapped": True, "has_content": False},
-    }
-    res = _judge("KR:247540", "X", inp, backend=_ExplodingBackend())
-    assert res["status"] == "insufficient_data" and res["label"] == "neutral"
-    assert res["watch"] == ["예정 카탈리스트"]   # future catalyst != no signal (§H14)
-
-
-# ── label / clamp utils ──────────────────────────────────────────────────────
-
-def test_label_thresholds():
-    assert label_from_score(-0.9) == "strong_sell"
-    assert label_from_score(-0.3) == "sell"
-    assert label_from_score(0.0) == "neutral"
-    assert label_from_score(0.3) == "buy"
-    assert label_from_score(0.9) == "strong_buy"
-    assert clamp_score(2.0) == 1.0 and clamp_score(-2.0) == -1.0

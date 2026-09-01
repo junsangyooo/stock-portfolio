@@ -30,6 +30,7 @@ _HORIZONS = ("immediate", "near", "mid", "long")
 _LEANS = ("bullish", "neutral", "bearish")
 _CASES = ("bull", "base", "bear")
 _STRENGTH = ("weak", "medium", "strong")
+_STANCE = ("exit", "trim", "hold", "watch", "add")
 
 
 def _enum(v, allowed: tuple, default=None):
@@ -47,8 +48,61 @@ def _num(v) -> Optional[float]:
     return f if f == f and abs(f) != float("inf") else None
 
 
-def _levels(raw) -> dict:
+def anchors_from(envelope: dict) -> list:
+    """Price levels the chart pipeline actually detected — swing S/R (with
+    their test counts), fibonacci retracements, classic pivots.
+
+    Every price the model quotes is checked against these. It is the one field
+    a planner turns straight into an order, so a number that came from nowhere
+    has to be labelled as such rather than passed along looking like the rest.
+    """
+    facts = next((d["data"] for d in envelope.get("domains", [])
+                  if d["id"] == "chart" and d.get("data")), None) or {}
+    st = facts.get("structure") or {}
+    out: list = []
+    for lv in ((st.get("support_resistance") or {}).get("levels") or []):
+        px = _num(lv.get("price")) if isinstance(lv, dict) else None
+        if px is not None:
+            try:
+                out.append((px, int(lv.get("tests") or 1)))
+            except (TypeError, ValueError):
+                out.append((px, 1))
+    for v in ((st.get("fibonacci") or {}).get("levels") or {}).values():
+        px = _num(v)
+        if px is not None:
+            out.append((px, 1))
+    for k, v in (st.get("pivots") or {}).items():
+        if k in ("PP", "R1", "R2", "R3", "S1", "S2", "S3"):
+            px = _num(v)
+            if px is not None:
+                out.append((px, 1))
+    return out
+
+
+def _anchor(price: Optional[float], anchors: list, tol: float = 0.015) -> dict:
+    """Snap a quoted price to the nearest detected level within 1.5%.
+
+    Nothing is dropped — a number outside every anchor is kept and flagged
+    `llm_only`, because the reader wants to see it and the planner needs to
+    know it is not grounded.
+    """
+    if price is None:
+        return {"price": None, "anchored": False}
+    if not anchors:
+        return {"price": price, "anchored": False}
+    best = min(anchors, key=lambda a: abs(a[0] - price))
+    if best[0] and abs(best[0] - price) / abs(best[0]) <= tol:
+        out = {"price": round(best[0], 4), "anchored": True,
+               "anchor_tests": best[1]}
+        if abs(best[0] - price) > 1e-9:
+            out["quoted"] = round(price, 4)     # what the model said
+        return out
+    return {"price": price, "anchored": False, "llm_only": True}
+
+
+def _levels(raw, anchors: Optional[list] = None) -> dict:
     raw = raw if isinstance(raw, dict) else {}
+    anchors = anchors or []
 
     def band(items, with_strength: bool) -> list:
         out = []
@@ -58,7 +112,8 @@ def _levels(raw) -> dict:
             px = _num(it.get("price"))
             if px is None:
                 continue
-            row = {"price": px, "basis_ko": str(it.get("basis_ko") or "")[:200]}
+            row = {**_anchor(px, anchors),
+                   "basis_ko": str(it.get("basis_ko") or "")[:200]}
             if with_strength:
                 row["strength"] = _enum(it.get("strength"), _STRENGTH, "medium")
             out.append(row)
@@ -70,10 +125,16 @@ def _levels(raw) -> dict:
         vals = {k: _num(d.get(k)) for k in keys}
         if any(v is None for v in vals.values()):
             return None
-        return {**vals, "rationale_ko": str(d.get("rationale_ko") or "")[:300]}
+        out = {k: _anchor(v, anchors) for k, v in vals.items()}
+        # keep the flat number too: a planner reads `price`, the UI reads the
+        # anchoring, and neither should have to know about the other
+        return {**{k: out[k]["price"] for k in keys},
+                "anchoring": out,
+                "rationale_ko": str(d.get("rationale_ko") or "")[:300]}
 
     return {
         "current": _num(raw.get("current")),
+        "anchored_from": len(anchors),
         "support": band(raw.get("support"), True),
         "resistance": band(raw.get("resistance"), True),
         "entry_zone": point(raw.get("entry_zone"), "low", "high"),
@@ -158,13 +219,14 @@ def normalize(data: dict, envelope: dict) -> dict:
         "label": label,
         "confidence": clamp_confidence(v.get("confidence", 0.5)),
         "summary_ko": str(v.get("summary_ko") or "")[:800],
+        "stance": _enum(v.get("stance"), _STANCE, "watch"),
         "drivers": _strs(v.get("drivers"), 8),
         "risks": _strs(v.get("risks"), 8),
         "domain_view": domain_view,
         "disagreement_ko": (str(v["disagreement_ko"])[:400]
                             if v.get("disagreement_ko") else None),
         "outlook": _outlook(data.get("outlook")),
-        "levels": _levels(data.get("levels")),
+        "levels": _levels(data.get("levels"), anchors_from(envelope)),
         "reassess_when": _strs(data.get("reassess_when"), 8),
         "limitations": _strs(data.get("limitations"), 8),
     }
@@ -185,6 +247,7 @@ def _facts_only(envelope: dict, reason: str) -> dict:
         "score": 0.0, "label": "neutral", "confidence": 0.0,
         "summary_ko": ("AI 종합 판단을 만들지 못했습니다. 아래 지표는 계산된 "
                        "사실이며, 판단은 붙어 있지 않습니다."),
+        "stance": None,
         "observations": [], "readings": [],
         "counter": {"case_ko": "", "what_would_show_it": []},
         "drivers": [], "risks": [], "domain_view": {},

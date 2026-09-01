@@ -1499,22 +1499,22 @@ a { color: inherit; text-decoration: none; }
   white-space: nowrap;
 }
 
-/* ── Level 0 judge 배지: 종목당 판단 1개 (action_ko 5단어 + 신선도) ── */
-.sc-judge-badge {
+/* ── Level 0 종합 배지: 종목당 판단 1개 (stance 5단어 + 신선도) ── */
+.sc-stance-badge {
   display: inline-block; padding: 1px 6px; border: 1px solid var(--dim);
   border-radius: 3px; color: var(--dim); font-size: 9px; letter-spacing: 1px;
   font-weight: 700; margin-top: 2px; align-self: flex-start; white-space: nowrap;
 }
-.sc-judge-badge.act-add   { color: var(--green);  border-color: var(--green); }
-.sc-judge-badge.act-hold  { color: var(--cyan);   border-color: var(--cyan); }
-.sc-judge-badge.act-watch { color: var(--yellow); border-color: var(--yellow); }
-.sc-judge-badge.act-trim  { color: var(--orange); border-color: var(--orange); }
-.sc-judge-badge.act-exit  { color: var(--red);    border-color: var(--red); }
-.sc-judge-badge.stale { opacity: 0.45; }   /* 30일+ → 흐리게 = "믿지 말라" 신호 */
-.sc-judge-badge.running { color: var(--cyan); border-color: var(--cyan); opacity: 0.8; }
+.sc-stance-badge.act-add   { color: var(--green);  border-color: var(--green); }
+.sc-stance-badge.act-hold  { color: var(--cyan);   border-color: var(--cyan); }
+.sc-stance-badge.act-watch { color: var(--yellow); border-color: var(--yellow); }
+.sc-stance-badge.act-trim  { color: var(--orange); border-color: var(--orange); }
+.sc-stance-badge.act-exit  { color: var(--red);    border-color: var(--red); }
+.sc-stance-badge.stale { opacity: 0.45; }   /* 30일+ → 흐리게 = "믿지 말라" 신호 */
+.sc-stance-badge.running { color: var(--cyan); border-color: var(--cyan); opacity: 0.8; }
 /* The `display` above outranks the UA sheet's [hidden]{display:none}, so the
    placeholder badge rendered as an empty 1px box until a verdict loaded. */
-.sc-judge-badge[hidden] { display: none; }
+.sc-stance-badge[hidden] { display: none; }
 
 .sc-body {
   display: grid;
@@ -1948,7 +1948,7 @@ body.chat-open { padding-right: 388px; }
 
       <!-- MIDDLE: vertical analysis nav (between chart and panel) -->
       <div class="ex-nav" id="ex-nav">
-        <button data-tab="judge"><span class="ico"><svg class="lci"><use href="#i-brain"/></svg></span><span class="name">종합</span></button>
+        <button data-tab="analysis"><span class="ico"><svg class="lci"><use href="#i-brain"/></svg></span><span class="name">종합</span></button>
         <button data-tab="chart"><span class="ico"><svg class="lci"><use href="#i-trending-up"/></svg></span><span class="name">그래프</span></button>
         <button data-tab="fin"><span class="ico"><svg class="lci"><use href="#i-chart-column"/></svg></span><span class="name">재무</span></button>
         <button data-tab="news"><span class="ico"><svg class="lci"><use href="#i-newspaper"/></svg></span><span class="name">뉴스</span></button>
@@ -1957,7 +1957,7 @@ body.chat-open { padding-right: 388px; }
       <!-- RIGHT: analysis panels (default tab = 🧠 종합, opened by openExpand) -->
       <div class="ex-panel-side">
         <!-- 🧠 종합 의견 (claude -p judgment — chart×fundamental×news cross-read) -->
-        <div class="ex-pane ex-analysis" id="ex-pane-judge" hidden></div>
+        <div class="ex-pane ex-analysis" id="ex-pane-analysis" hidden></div>
 
         <!-- 📈 그래프 분석 (정량 facts — /api/analysis/chart) -->
         <div class="ex-pane ex-analysis" id="ex-pane-chart" hidden></div>
@@ -2276,15 +2276,15 @@ const API = {
     '/api/analysis/news/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/signals',
   fundamentalFacts: (market, code) =>
     '/api/analysis/fundamental/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/facts',
-  judgeVerdict: (market, code) =>
-    '/api/analysis/judge/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/verdict',
-  runJudgeAnalysis: (market, code) =>
-    '/api/analysis/judge/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/run',
+  analysisResult: (market, code) =>
+    '/api/analysis/analysis/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/verdict',
+  runAnalysis: (market, code) =>
+    '/api/analysis/analysis/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/run',
   // async job status (all kinds): POST .../run starts → poll this → load verdict
   analysisStatus: (kind, market, code) =>
     '/api/analysis/' + kind + '/' + encodeURIComponent(market) + '/' +
     encodeURIComponent(code) + '/status',
-  // Level 0 배지: 계좌 전 종목의 최신 judge 판단을 GET 1번으로
+  // Level 0 배지: 계좌 전 종목의 최신 종합 판단을 GET 1번으로
   analysisSummary: (ids) =>
     '/api/analysis/summary?symbols=' + encodeURIComponent(ids),
 };
@@ -2339,11 +2339,11 @@ function svgIco(name) {
 // ANALYSIS UX HELPERS — 위계/신선도/내부어 제거 공통 사전·헬퍼.
 // 원칙: UI에 룰 ID·raw score·영문 enum 0 노출, 신선도는 1급 시민.
 // ─────────────────────────────────────────────────────────────
-// judge action_ko → 한글 1단어 + 색 (Level 0 배지와 Level 1 요약 카드 공용)
-const JUDGE_ACTION_KO = {
+// stance → 한글 1단어 + 색 (Level 0 배지와 Level 1 요약 카드 공용)
+const STANCE_KO = {
   add: '추가매수', hold: '보유유지', watch: '관망', trim: '비중축소', exit: '정리검토',
 };
-const JUDGE_ACTION_COLOR = {
+const STANCE_COLOR = {
   add: 'var(--green)', hold: 'var(--cyan)', watch: 'var(--yellow)',
   trim: 'var(--orange)', exit: 'var(--red)',
 };
@@ -2404,30 +2404,30 @@ function accordion(title, children) {
   ]);
 }
 
-// ── Level 0 judge 배지: in-place 갱신만 (DOM rebuild 금지 컨벤션) ──
-window._judgeBadgeEls = window._judgeBadgeEls || {};   // symbolId → span (renderCard가 등록)
-function _judgeBadgeApply(span, entry) {
+// ── Level 0 종합 배지: in-place 갱신만 (DOM rebuild 금지 컨벤션) ──
+window._analysisBadgeEls = window._analysisBadgeEls || {};   // symbolId → span (renderCard가 등록)
+function _analysisBadgeApply(span, entry) {
   if (!span) return;
   if (entry && entry.running) {
     span.hidden = false;
-    span.className = 'sc-judge-badge running';
+    span.className = 'sc-stance-badge running';
     span.textContent = '⏳ 분석중';
     span.title = '종합 분석 실행 중 (약 5~7분)';
     return;
   }
-  const ko = JUDGE_ACTION_KO[entry && entry.action_ko];
+  const ko = STANCE_KO[entry && entry.stance];
   if (!ko) { span.hidden = true; return; }   // 미분석 → 배지 생략 (합성 배지 금지)
   const f = freshInfo(entry.date);
   span.hidden = false;
-  span.className = 'sc-judge-badge act-' + entry.action_ko +
+  span.className = 'sc-stance-badge act-' + entry.stance +
     (f && f.cls === 'old' ? ' stale' : '');
   span.textContent = ko + (f ? ' · ' + f.text : '') +
     (f && f.cls === 'old' ? ' ⚠' : '');
   span.title = '종합 판단 (' + (entry.date || '?') + ')' +
     (f && f.cls === 'old' ? ' — 오래된 분석입니다. 다시 분석을 권장합니다.' : '');
 }
-window._setJudgeBadge = function (symbolId, entry) {
-  _judgeBadgeApply(window._judgeBadgeEls[symbolId], entry);
+window._setAnalysisBadge = function (symbolId, entry) {
+  _analysisBadgeApply(window._analysisBadgeEls[symbolId], entry);
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -2949,14 +2949,14 @@ function renderCard(stock) {
   // tiny sparkline (SVG) drawn from last 30 daily closes
   const sparkSvg = drawSparklineSvg(stock.spark, stock.price);
 
-  // Level 0 judge 배지 — 숨김으로 만들고 loadJudgeBadges()가 in-place로 채움
-  const judgeBadge = el('span', { className: 'sc-judge-badge', hidden: '' }, []);
-  window._judgeBadgeEls[stock.symbolId] = judgeBadge;
+  // Level 0 종합 배지 — 숨김으로 만들고 loadAnalysisBadges()가 in-place로 채움
+  const analysisBadge = el('span', { className: 'sc-stance-badge', hidden: '' }, []);
+  window._analysisBadgeEls[stock.symbolId] = analysisBadge;
 
   const nameBlockChildren = [
     el('span', { className: 'sc-name' }, [stock.name]),
     el('span', { className: 'sc-code' }, [stock.market + ' · ' + stock.code]),
-    judgeBadge,
+    analysisBadge,
   ];
   if (isWatchlist) {
     nameBlockChildren.push(
@@ -3039,7 +3039,7 @@ function renderCard(stock) {
   // ── ANALYSIS BUTTON (통합 1개 — 모달 기본 탭 = 🧠 종합) ──
   const actions = el('div', { className: 'sc-actions' }, [
     el('button', { className: 'sc-action sc-action-analysis',
-                   dataset: { tab: 'judge' }, title: '종합·그래프·재무·뉴스 분석' }, [
+                   dataset: { tab: 'analysis' }, title: '종합·그래프·재무·뉴스 분석' }, [
       el('span', { className: 'ico' }, [svgIco('brain')]),
       el('span', { className: 'name' }, ['분석']),
     ]),
@@ -3249,12 +3249,12 @@ async function renderAll() {
   if (window._applyFilters) window._applyFilters();
   if (window._applyCardMode) window._applyCardMode();
 
-  // Level 0 judge 배지 채우기 — 부가 정보라 렌더를 막지 않음 (fire-and-forget)
-  loadJudgeBadges();
+  // Level 0 종합 배지 채우기 — 부가 정보라 렌더를 막지 않음 (fire-and-forget)
+  loadAnalysisBadges();
 }
 
 // GET /api/analysis/summary 1번으로 전 종목 배지 채움 (카드 25개가 각각 fan-out 금지)
-async function loadJudgeBadges() {
+async function loadAnalysisBadges() {
   if (!STOCKS.length) return;
   try {
     const ids = STOCKS.map(s => s.symbolId).join(',');
@@ -3262,7 +3262,7 @@ async function loadJudgeBadges() {
     const map = (d && d.symbols) || {};
     STOCKS.forEach(s => {
       const entry = map[s.symbolId] || map[s.symbolId.toUpperCase()];
-      window._setJudgeBadge(s.symbolId, entry || null);
+      window._setAnalysisBadge(s.symbolId, entry || null);
     });
   } catch (_) { /* 배지는 부가 정보 — 실패는 조용히 */ }
 }
@@ -4075,7 +4075,7 @@ renderAll();
   const metaRow = document.getElementById('ex-meta-row');
   const navBar = document.getElementById('ex-nav');
   const panes = {
-    judge: document.getElementById('ex-pane-judge'),
+    analysis: document.getElementById('ex-pane-analysis'),
     chart: document.getElementById('ex-pane-chart'),
     fin:   document.getElementById('ex-pane-fin'),
     news:  document.getElementById('ex-pane-news'),
@@ -4110,7 +4110,7 @@ renderAll();
     return ix > 0 ? s.slice(0, ix) : s;
   }
 
-  // ── analysis nav: judge(🧠) / chart(📈) / fin(📊) / news(📰) ──
+  // ── analysis nav: 종합(🧠) / chart(📈) / fin(📊) / news(📰) ──
   // Analysis is NOT auto-run. A nav button must be pressed to start it.
   let _chartLoadedSym = null;
 
@@ -4121,7 +4121,7 @@ renderAll();
     if (tab === 'chart') loadChartAnalysis();
     if (tab === 'fin') loadFundamentalAnalysis();
     if (tab === 'news') loadNewsAnalysis();
-    if (tab === 'judge') loadJudgeAnalysis();
+    if (tab === 'analysis') loadAnalysis();
   }
   navBar.querySelectorAll('button').forEach(b => {
     b.addEventListener('click', () => setTab(b.dataset.tab));
@@ -4217,37 +4217,32 @@ renderAll();
   }
 
   // pane별 watcher 세대 카운터 — 새 watcher가 붙으면 이전 poller는 isStale()로 소멸
-  const _watchSeq = { judge: 0, chart: 0 };
+  const _watchSeq = { analysis: 0, chart: 0 };
 
   // 🧠 종합 분석 — 단일 claude -p 호출. chart × fundamental × news + cached
-  //    domain verdicts → unified verdict (judge_rules.md).
-  let _judgeLoadedSym = null;
-  async function loadJudgeAnalysis() {
+  //    domain verdicts → unified verdict (analyze.md).
+  let _analysisLoadedSym = null;
+  async function loadAnalysis() {
     if (!currentStock) return;
-    const pane = panes.judge;
-    if (_judgeLoadedSym === currentStock.symbolId && pane.childNodes.length) return;
+    const pane = panes.analysis;
+    if (_analysisLoadedSym === currentStock.symbolId && pane.childNodes.length) return;
     const sym = currentStock.symbolId, mkt = _amkt(), code = currentStock.code;
     clear(pane);
     pane.appendChild(el('div', { className: 'ca-empty' }, ['종합 분석 불러오는 중…']));
     // 탭 재진입 복구: 이미 실행 중이면 실행 버튼 대신 진행 표시 + 폴링 재개.
     // (예전엔 빈 화면 + 실행 버튼이 다시 떠서 중복 실행을 유발했다.)
-    const sec = await runningElapsed('judge', mkt, code);
+    const sec = await runningElapsed('analysis', mkt, code);
     if (!currentStock || currentStock.symbolId !== sym) return;
-    if (sec != null) return watchJudgeJob(pane, sym, mkt, code, { resumeSec: sec });
-    // 전체 분석 1단계(chart)가 도는 중일 수도 있다 — judge 잡만 보면 이 구간
-    // (첫 5~7분)에 진행 표시가 사라진다. chart 잡에 이어 붙어 judge까지 체인.
-    const csec = await runningElapsed('chart', mkt, code);
-    if (!currentStock || currentStock.symbolId !== sym) return;
-    if (csec != null) return watchFullAnalysis(pane, sym, mkt, code, csec);
+    if (sec != null) return watchAnalysisJob(pane, sym, mkt, code, { resumeSec: sec });
     try {
-      const vd = await (await fetch(API.judgeVerdict(mkt, code))).json();
+      const vd = await (await fetch(API.analysisResult(mkt, code))).json();
       if (!currentStock || currentStock.symbolId !== sym) return;
-      _judgeLoadedSym = sym;
+      _analysisLoadedSym = sym;
       clear(pane);
       if (vd.exists && vd.result && vd.result.body && vd.result.body.status === 'ok') {
-        renderJudgeVerdict(pane, vd.result.body, vd.result.date);
+        renderAnalysis(pane, vd.result.body, vd.result.date);
       } else {
-        renderJudgeEmpty(pane);
+        renderAnalysisEmpty(pane);
       }
     } catch (e) {
       clear(pane);
@@ -4255,8 +4250,8 @@ renderAll();
     }
   }
 
-  // judge verdict 없음 — 폴백도 "적은 양" 유지 (facts 신호판 전체를 쏟지 않는다)
-  function renderJudgeEmpty(pane) {
+  // 저장된 분석 없음 — 폴백도 "적은 양" 유지 (facts 신호판 전체를 쏟지 않는다)
+  function renderAnalysisEmpty(pane) {
     pane.appendChild(el('div', { className: 'ca-section' }, [
       el('div', { className: 'ca-h' }, [svgIco('brain'), ' 종합 판단']),
       el('div', { className: 'ca-empty' },
@@ -4307,94 +4302,47 @@ renderAll();
     })();
   }
 
-  function runJudgeAnalysis() {
+  function runAnalysis() {
     if (!currentStock) return;
-    watchJudgeJob(panes.judge, currentStock.symbolId, _amkt(), currentStock.code, {});
+    watchAnalysisJob(panes.analysis, currentStock.symbolId, _amkt(), currentStock.code, {});
   }
 
-  // ── 통합 재분석 (헤더 「🔄 다시 분석」) — 야간 배치와 동일 경로: chart → judge 순차. ──
-  // 도메인별 실행 버튼 4개를 이것 하나로 대체했다. 재무/뉴스는 별도 verdict가
-  // 필요 없다 — judge가 live facts / theme state를 직접 읽는다 (verdict_job.py 참고).
+  // ── 통합 재분석 (헤더 「🔄 다시 분석」) — 야간 배치와 동일 경로. ──
+  // 2026-09-01 이전에는 chart 잡을 돌리고 완료되면 judge 잡을 이어 붙였다.
+  // 이제 잡이 하나다: 종합 분석이 차트 지표를 안에서 계산하고(거래일당 1회,
+  // 그 뒤로는 저장된 행 재사용) 세 도메인을 한 콜에서 본다.
   function runFullAnalysis() {
     if (!currentStock) return;
-    setTab('judge');   // 결과가 도착할 곳에서 진행 상황을 보여준다
-    watchFullAnalysis(panes.judge, currentStock.symbolId, _amkt(), currentStock.code, null);
-  }
-
-  // 1단계(chart) 진행 UI + 완료 시 judge 체인. resumeSec != null 이면 이미 도는
-  // chart 잡에 이어 붙는 복구 경로 (loadJudgeAnalysis가 탭 재진입 시 호출).
-  function watchFullAnalysis(pane, sym, mkt, code, resumeSec) {
-    const my = ++_watchSeq.judge;
-    clear(pane);
-    const prog = makeJobProgress('전체 분석 1/2 · 차트');
-    pane.appendChild(prog.root);
-    window._setJudgeBadge(sym, { running: true });
-    // detached 완료(다른 종목 보는 중) 시 pane은 건드리지 않고 배지만 갱신
-    const badgeDone = (body, date) =>
-      window._setJudgeBadge(sym, { action_ko: body.action_ko, date: date || body.date });
-    const common = {
-      sym,
-      statusUrl: API.analysisStatus('chart', mkt, code),
-      verdictUrl: API.chartVerdict(mkt, code),
-      isStale: () => _watchSeq.judge !== my,
-      onProgress: prog.update,
-      onError: (m) => {
-        clear(pane);
-        loadJudgeBadges();   // 실행 전 배지 상태로 복원
-        pane.appendChild(el('div', { className: 'ca-empty' }, ['차트 분석 실패: ' + m]));
-        pane.appendChild(el('button', { className: 'ex-news-run', onClick: runFullAnalysis }, ['다시 시도']));
-      },
-      onDone: () => {
-        _chartLoadedSym = null;   // 그래프 탭 재진입 시 새 verdict 로드
-        watchJudgeJob(pane, sym, mkt, code, {});
-      },
-      // 차트 단계가 detached로 끝남 → judge를 detached로 이어 실행 (완성된 판단을 버리지 않는다)
-      onBackgroundDone: () => {
-        _chartLoadedSym = null;
-        driveAnalysisJob({
-          sym,
-          runUrl: API.runJudgeAnalysis(mkt, code),
-          statusUrl: API.analysisStatus('judge', mkt, code),
-          verdictUrl: API.judgeVerdict(mkt, code),
-          onError: () => loadJudgeBadges(),
-          onDone: badgeDone,            // 사용자가 이 종목으로 돌아와 있어도 pane은
-          onBackgroundDone: badgeDone,  // loadJudgeAnalysis 복구 경로가 그린다
-        });
-      },
-    };
-    if (resumeSec != null) {
-      prog.update(resumeSec);
-      return pollAnalysisJob(common, resumeSec);
-    }
-    return driveAnalysisJob(Object.assign({ runUrl: API.runChartAnalysis(mkt, code) }, common));
+    setTab('analysis');   // 결과가 도착할 곳에서 진행 상황을 보여준다
+    watchAnalysisJob(panes.analysis, currentStock.symbolId, _amkt(), currentStock.code, {});
   }
 
   // 진행 UI + 폴링 (신규 start 또는 running resume).
   // 완료 시 pane 렌더 + Level 0 배지 in-place 갱신.
-  function watchJudgeJob(pane, sym, mkt, code, opts) {
-    const my = ++_watchSeq.judge;
+  function watchAnalysisJob(pane, sym, mkt, code, opts) {
+    const my = ++_watchSeq.analysis;
     clear(pane);
     const prog = makeJobProgress('종합 분석');
     pane.appendChild(prog.root);
-    window._setJudgeBadge(sym, { running: true });
+    window._setAnalysisBadge(sym, { running: true });
     const finish = (body, date) => {
-      window._setJudgeBadge(sym, { action_ko: body.action_ko, date: date || body.date });
+      window._setAnalysisBadge(sym, { stance: body.stance, date: date || body.date });
     };
     const common = {
       sym,
-      statusUrl: API.analysisStatus('judge', mkt, code),
-      verdictUrl: API.judgeVerdict(mkt, code),
-      isStale: () => _watchSeq.judge !== my,
+      statusUrl: API.analysisStatus('analysis', mkt, code),
+      verdictUrl: API.analysisResult(mkt, code),
+      isStale: () => _watchSeq.analysis !== my,
       onProgress: prog.update,
       onError: (m) => {
         clear(pane);
-        loadJudgeBadges();   // 실행 전 배지 상태로 복원
+        loadAnalysisBadges();   // 실행 전 배지 상태로 복원
         pane.appendChild(el('div', { className: 'ca-empty' }, ['종합 분석 실패: ' + m]));
-        pane.appendChild(el('button', { className: 'ex-news-run', onClick: runJudgeAnalysis }, ['다시 시도']));
+        pane.appendChild(el('button', { className: 'ex-news-run', onClick: runAnalysis }, ['다시 시도']));
       },
       onDone: (body, date) => {
-        clear(pane); _judgeLoadedSym = sym;
-        renderJudgeVerdict(pane, body, date);
+        clear(pane); _analysisLoadedSym = sym;
+        renderAnalysis(pane, body, date);
         finish(body, date);
       },
       // 다른 종목을 보는 중에 완료 → pane은 건드리지 않고 배지만 갱신
@@ -4404,16 +4352,16 @@ renderAll();
       prog.update(opts.resumeSec);
       return pollAnalysisJob(common, opts.resumeSec);
     }
-    return driveAnalysisJob(Object.assign({ runUrl: API.runJudgeAnalysis(mkt, code) }, common));
+    return driveAnalysisJob(Object.assign({ runUrl: API.runAnalysis(mkt, code) }, common));
   }
 
   // ── Level 1 통합 요약 카드: 판단 1 + 근거 3 + 리스크 1 + 신선도. 그 외 접힘. ──
   // 화면 순서 = 비전문가의 질문 순서: 사·팔·들고가? → 왜 → 뭘 조심 → 언제 분석?
-  function renderJudgeVerdict(pane, body, date) {
+  function renderAnalysis(pane, body, date) {
     const held = !!(currentStock && currentStock.qty != null && currentStock.qty > 0);
-    const actKo = JUDGE_ACTION_KO[body.action_ko];
-    const actColor = JUDGE_ACTION_COLOR[body.action_ko] || 'var(--fg)';
-    // 보유 여부 문맥 문장 (judge가 미보유 기준으로 판단한 경우의 오해 방지)
+    const actKo = STANCE_KO[body.stance];
+    const actColor = STANCE_COLOR[body.stance] || 'var(--fg)';
+    // 보유 여부 문맥 문장 (미보유 기준으로 판단한 경우의 오해 방지)
     const HINT_HELD = {
       add: '들고 가면서 비중을 늘려볼 만한 구간입니다',
       hold: '지금 포지션을 그대로 유지합니다',
@@ -4428,10 +4376,10 @@ renderAll();
       trim: '진입 후보에서 한발 물러섭니다',
       exit: '지금은 들어가지 않습니다',
     };
-    const hint = (held ? HINT_HELD : HINT_FLAT)[body.action_ko];
+    const hint = (held ? HINT_HELD : HINT_FLAT)[body.stance];
 
     const domRow = (key, ico, name) => {
-      const d = (body.domain_summary || {})[key];
+      const d = (body.domain_view || {})[key];
       if (!d) return null;
       return el('div', { className: 'jd-dom' }, [
         el('span', {}, [svgIco(ico)]),
@@ -4473,12 +4421,8 @@ renderAll();
 
     // ── 자세히 보기 (기본 접힘): 반영도/시점·교차 분석·동인·추가 리스크·관찰·한계 ──
     const chips = [];
-    if (body.priced_in && PRICED_IN_KO[body.priced_in])
-      chips.push(el('span', { className: 'na-tag' }, ['반영도: ' + PRICED_IN_KO[body.priced_in]]));
-    if (body.time_horizon && HORIZON_KO[body.time_horizon])
-      chips.push(el('span', { className: 'na-tag' }, ['시점: ' + HORIZON_KO[body.time_horizon]]));
-    const crossItems = (body.cross_reads || [])
-      .map(cr => cr && cr.implication_ko).filter(Boolean);
+    if ((body.outlook||{}).horizon && HORIZON_KO[(body.outlook||{}).horizon])
+      chips.push(el('span', { className: 'na-tag' }, ['시점: ' + HORIZON_KO[(body.outlook||{}).horizon]]));
     const detail = accordion('자세히 보기', [
       chips.length ? el('div', { className: 'na-meta' }, chips) : null,
       crossItems.length ? el('div', { className: 'ca-section' }, [
@@ -4493,9 +4437,9 @@ renderAll();
         el('div', { className: 'ca-h' }, [svgIco('triangle-alert'), ' 추가 리스크']),
         cappedList(body.risks.slice(1), 3, 'na-list na-neg'),
       ]) : null,
-      (body.watch && body.watch.length) ? el('div', { className: 'ca-section' }, [
+      (body.reassess_when && body.reassess_when.length) ? el('div', { className: 'ca-section' }, [
         el('div', { className: 'ca-h' }, [svgIco('eye'), ' 관찰 포인트']),
-        cappedList(body.watch, 3, 'na-list'),
+        cappedList(body.reassess_when, 3, 'na-list'),
       ]) : null,
       body.disagreement_note_ko ? el('div', { className: 'ca-section' }, [
         el('div', { className: 'ca-h' }, ['도메인 충돌 메모']),
@@ -4594,7 +4538,7 @@ renderAll();
   }
 
   // 📰 뉴스 탭 — 연결 뉴스·이슈 (LLM 없이 테마 state에서, 라이브). 뉴스 verdict는
-  // 별도로 만들지 않는다 — judge가 theme state를 직접 읽는다 (통합 「다시 분석」 참고).
+  // 별도로 만들지 않는다 — 종합 분석이 theme state를 직접 읽는다.
   let _newsLoadedSym = null;
   async function loadNewsAnalysis() {
     if (!currentStock) return;
@@ -4675,7 +4619,7 @@ renderAll();
   const LEAD_LAG_KO = { leading: '선행', coincident: '동행', lagging: '후행' };
 
   // 📊 재무 탭 — 재무제표·지표·추세 (LLM 없이, 수집은 06:00 배치). 재무 verdict는
-  // 별도로 만들지 않는다 — judge가 live facts를 직접 읽는다 (통합 「다시 분석」 참고).
+  // 별도로 만들지 않는다 — 종합 분석이 live facts를 직접 읽는다.
   let _finLoadedSym = null;
   async function loadFundamentalAnalysis() {
     if (!currentStock) return;
@@ -5069,9 +5013,9 @@ renderAll();
         el('div', { className: 'fa-flags' }, rps.map(r =>
           el('div', { className: 'fl' }, [svgIco('flag'), (r.plain || r.pattern)]))),
       ]) : null,
-      (body.watch && body.watch.length) ? el('div', { className: 'ca-section' }, [
+      (body.reassess_when && body.reassess_when.length) ? el('div', { className: 'ca-section' }, [
         el('div', { className: 'ca-h' }, [svgIco('eye'), ' 지켜볼 트리거']),
-        cappedList(body.watch, 3, 'na-list'),
+        cappedList(body.reassess_when, 3, 'na-list'),
       ]) : null,
     ]);
     if (evAcc) pane.appendChild(evAcc);
@@ -5370,7 +5314,7 @@ renderAll();
   window.openExpand = function (stock, tab) {
     currentStock = stock;
     _chartLoadedSym = null;   // force 📈 chart-analysis reload for the new stock
-    _judgeLoadedSym = null;   // same for 🧠 judge pane
+    _analysisLoadedSym = null;   // same for the 🧠 pane
 
     // header
     const hasQuote = stock.price != null && stock.prevClose != null;
@@ -5398,7 +5342,7 @@ renderAll();
     // show modal. Analysis is NOT auto-run (verdict GET은 캐시 읽기라 저비용);
     // 기본 탭은 🧠 종합 — 열자마자 저장된 판단이 보이는 것이 원칙 (idle 화면 폐지).
     modal.hidden = false;
-    setTab(tab || 'judge');
+    setTab(tab || 'analysis');
   };
 
   // resize → redraw big chart

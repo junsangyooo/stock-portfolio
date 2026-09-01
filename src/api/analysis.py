@@ -1,19 +1,20 @@
-"""/api/analysis — chart / fundamental / news / judge analysis (live).
+"""/api/analysis — comprehensive analysis + per-domain facts (live).
 
-Agents under src/agents/ populate data/analysis/{kind}/{symbol}/{date}.json;
-GET endpoints serve the latest persisted file (verdicts, facts, feed,
-summary), POST .../run triggers an async agent run (analysis_jobs).
-The nightly verdict batch (src.agents.verdict_job) pre-bakes chart + judge
-for all holdings, so morning GETs are same-day cache hits.
+Two kinds are readable here:
+  analysis  the stored comprehensive result (src/agents/analyze) — one call
+            over chart + fundamental + news, warmed nightly by verdict_job
+  chart     deterministic facts, computed live, no LLM
 
-This module is a thin read/dispatch layer — the analysis itself lives in
-src/agents/, and the landing feed in src/agents/news/feed.py.
+The other two domains have their own dedicated routes because they are facts,
+not verdicts: GET /fundamental/{m}/{c}/facts and GET /news/{m}/{c}/signals.
+Per-domain verdicts were removed on 2026-09-01 — judging a domain alone
+hardens a one-dimensional conclusion the later merge cannot undo, so the
+domains now meet inside a single call.
 """
 from __future__ import annotations
 
 import json
 import logging
-from importlib import import_module
 from typing import Optional
 
 from fastapi import APIRouter
@@ -26,11 +27,11 @@ router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
 log = logging.getLogger(__name__)
 
-_VALID_KINDS = ("chart", "fundamental", "news", "judge")
+_VALID_KINDS = ("analysis", "chart")
 
 # Only the two rulebook-heavy agents need the widened ceiling; the others run
 # well inside evaluate_symbol's own default.
-_RUN_TIMEOUT_S = {"chart": 1800, "judge": 1800}  # hang guard only — see verdict_job._TIMEOUT_S
+_RUN_TIMEOUT_S = {"analysis": 1800}  # hang guard only — see verdict_job._TIMEOUT_S
 
 
 def _stamp() -> str:
@@ -92,14 +93,14 @@ def analysis_summary(symbols: str) -> dict:
         kinds = {k: _latest_date(k, sid) for k in _VALID_KINDS}
         entry: dict = {"action_ko": None, "label": None, "status": None,
                        "date": None, "kinds": kinds}
-        if kinds["judge"]:
-            body = (_latest_file("judge", sid) or {}).get("body") or {}
+        if kinds["analysis"]:
+            body = (_latest_file("analysis", sid) or {}).get("body") or {}
             entry.update({
                 "action_ko": body.get("action_ko"),
                 "label": body.get("label"),
                 "status": body.get("status"),
                 "confidence": body.get("confidence"),
-                "date": body.get("date") or kinds["judge"],
+                "date": body.get("date") or kinds["analysis"],
             })
         out[sid] = entry
     return {"symbols": out, "queried_at": _stamp()}
@@ -195,7 +196,7 @@ def get_analysis(kind: str, market: str, code: str) -> dict:
             return {"kind": "chart", "symbol_id": symbol_id,
                     "error": str(e)[:300], "queried_at": _stamp()}
 
-    # fundamental / news: read the latest written file (populated by their agents).
+    # analysis: the stored comprehensive result
     result = _latest_file(kind, symbol_id)
     return {"kind": kind, "symbol_id": symbol_id,
             "exists": result is not None, "result": result,
@@ -204,8 +205,8 @@ def get_analysis(kind: str, market: str, code: str) -> dict:
 
 @router.get("/{kind}/{market}/{code}/verdict")
 def get_verdict(kind: str, market: str, code: str) -> dict:
-    """Latest persisted rulebook verdict for any kind (no LLM call). For chart
-    this is distinct from GET /chart/{m}/{c}, which returns the live facts."""
+    """Latest stored analysis (no LLM call). For chart this is distinct from
+    GET /chart/{m}/{c}, which returns the live facts."""
     if kind not in _VALID_KINDS:
         return _bad_kind(kind)
     symbol_id = f"{market.upper()}:{code}"
@@ -219,7 +220,7 @@ def get_verdict(kind: str, market: str, code: str) -> dict:
 def get_job_status(kind: str, market: str, code: str) -> dict:
     """Poll the state of an async analysis job started by POST .../run.
     state: idle | running | done | error | stale. The UI polls this, then loads
-    GET .../verdict (chart/judge) or GET .../{m}/{c} (news/fundamental) on done.
+    GET .../verdict on done.
     """
     if kind not in _VALID_KINDS:
         return _bad_kind(kind)
@@ -232,27 +233,25 @@ def get_job_status(kind: str, market: str, code: str) -> dict:
 
 @router.post("/{kind}/{market}/{code}/run")
 def run_analysis(kind: str, market: str, code: str) -> dict:
-    """Start an on-demand agent run ASYNCHRONOUSLY (the UI's analysis buttons).
+    """Start the comprehensive analysis ASYNCHRONOUSLY (the 🔄 다시 분석 button).
 
-    A verdict takes ~300s (claude -p + a rich rulebook) — far longer than the
-    nginx/Cloudflare proxy timeouts — so it runs on a background thread and
-    this returns immediately. The UI polls GET .../status, then loads the
-    result once done. Every agent persists to data/analysis/{kind}/{symbol}/.
+    It takes minutes — three domains and their dictionaries in one claude call
+    — far longer than the nginx/Cloudflare proxy timeouts, so it runs on a
+    background thread and this returns immediately. The UI polls
+    GET .../status, then loads the result. The chart facts it needs are
+    computed inside, once per trading day.
     """
-    if kind not in _VALID_KINDS:
-        return _bad_kind(kind)
+    if kind != "analysis":
+        return {"error": f"'{kind}' is not runnable — only 'analysis' is. "
+                         "Per-domain verdicts were removed on 2026-09-01."}
     symbol_id = f"{market.upper()}:{code}"
     name = _display_name(symbol_id)
-    timeout_s = _RUN_TIMEOUT_S.get(kind)
 
     def _fn():
-        # Imported here, on the worker thread: evaluate pulls pandas-ta and
-        # spawns claude, neither of which belongs on the request path.
-        evaluate = import_module(f"..agents.{kind}.evaluate", __package__)
-        kwargs = {"name": name}
-        if timeout_s:
-            kwargs["timeout_s"] = timeout_s
-        return evaluate.evaluate_symbol(symbol_id, **kwargs)
+        # Imported on the worker thread: it pulls pandas-ta and spawns claude,
+        # neither of which belongs on the request path.
+        from ..agents.analyze.run import analyze
+        return analyze(symbol_id, name, timeout_s=_RUN_TIMEOUT_S["analysis"])
 
     from . import analysis_jobs
     job = analysis_jobs.start(kind, symbol_id, _fn)
