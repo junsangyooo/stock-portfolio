@@ -38,11 +38,22 @@ class TestAnalysisAPI(unittest.TestCase):
         body = self.c.get("/api/analysis/bogus/KR/005930").json()
         self.assertIn("error", body)
 
-    def test_fundamental_falls_back_to_file(self):
-        # no file -> exists False, but well-formed (does not call chart_agent)
+    def test_a_removed_kind_is_rejected_rather_than_served_empty(self):
+        """Per-domain verdicts went away on 2026-09-01. The generic route must
+        say so instead of returning a well-formed 'nothing here', which reads
+        as 'not analyzed yet' and sends the UI polling forever."""
         body = self.c.get("/api/analysis/fundamental/KR/005930").json()
-        self.assertEqual(body["kind"], "fundamental")
-        self.assertIn("exists", body)
+        self.assertIn("error", body)
+        self.assertIn("analysis", str(body["error"]))
+
+    def test_the_fundamental_tab_reads_its_own_facts_route(self):
+        body = self.c.get("/api/analysis/fundamental/KR/005930/facts").json()
+        self.assertNotIn("error", body)
+        self.assertEqual(body.get("symbol_id"), "KR:005930")
+
+    def test_running_a_removed_kind_is_refused(self):
+        body = self.c.post("/api/analysis/chart/KR/005930/run").json()
+        self.assertIn("error", body)
 
 
 if __name__ == "__main__":
