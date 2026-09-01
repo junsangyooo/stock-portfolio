@@ -44,12 +44,12 @@ _SCHEMA = """{
     {"domain": "chart|fundamental|news|peer|holding",
      "fact_ko": "데이터가 말하는 것 하나. 해석 금지, 수치 포함",
      "cite": "어느 필드에서 왔는지"}
-  ],
+  ],                                    // 10~14개. 도메인마다 최소 2개
   "readings": [
     {"claim_ko": "관찰에서 읽어낸 것",
      "from": [0, 3],
      "confidence": 0.0}
-  ],
+  ],                                    // 4~7개
   "counter": {
     "case_ko": "내 결론이 틀렸다면 그 이유. 가장 강한 반대 논거를 성실히",
     "what_would_show_it": ["반증이 사실로 드러나는 신호"]
@@ -80,11 +80,11 @@ _SCHEMA = """{
   },
   "levels": {
     "current": 0,
-    "support":    [{"price": 0, "basis_ko": "근거", "strength": "weak|medium|strong"}],
-    "resistance": [{"price": 0, "basis_ko": "", "strength": ""}],
+    "support":    [{"price": 0, "basis_ko": "근거", "strength": "weak|medium|strong"}],  // 최대 3
+    "resistance": [{"price": 0, "basis_ko": "", "strength": ""}],                        // 최대 3
     "entry_zone":   {"low": 0, "high": 0, "rationale_ko": ""},
     "invalidation": {"price": 0, "rationale_ko": "이 아래로 내려가면 논지가 깨진다"},
-    "targets":    [{"price": 0, "basis_ko": ""}]
+    "targets":    [{"price": 0, "basis_ko": ""}]        // 최대 2
   },
   "reassess_when": ["이런 일이 생기면 이 분석은 다시 해야 한다"],
   "limitations": ["못 본 것·근사한 것을 솔직하게"]
@@ -94,9 +94,10 @@ _GUIDE_KO = """
 각 칸에 대해:
 
 - **observations** — 데이터가 말하는 것만. "RSI 71" 은 관찰, "과열이다" 는 해석.
-  도메인마다 최소 하나씩, 눈에 띄는 것은 빠짐없이. peer·holding 도 도메인이다.
-- **readings** — 관찰에서 읽어낸 것. `from` 에 근거가 된 observations 인덱스를
-  적는다. 근거를 못 가리키면 그건 관찰한 게 아니라 떠올린 것이다.
+  **10~14개**로 추린다. 도메인마다 최소 2개(peer·holding 도 도메인이다).
+  전부 나열하는 자리가 아니라 **결론에 실제로 쓰인 것**만 남기는 자리다.
+- **readings** — 관찰에서 읽어낸 것 **4~7개**. `from` 에 근거가 된 observations
+  인덱스를 적는다. 근거를 못 가리키면 그건 관찰한 게 아니라 떠올린 것이다.
 - **counter** — 성의껏 써라. "약간의 위험은 있다" 같은 형식적 반박은 반박이 아니다.
   네 결론을 진짜로 무너뜨릴 논거를 찾아라.
 - **verdict.score** — -1(강한 약세) ~ +1(강한 강세). 라벨과 어긋나지 않게.
@@ -111,8 +112,8 @@ _GUIDE_KO = """
   `invalidation` 은 손절의 근거가 되는 선이다 — 여기가 비면 계획을 세울 수 없다.
 - **reassess_when** — 이 분석의 유통기한. "실적 발표", "60,000원 이탈" 처럼.
 
-정보는 풀어서 많이 주는 편이 낫다. 무엇을 취할지는 사람이 정한다.
-단, 확신은 근거만큼만.
+문장은 짧게. 같은 말을 두 칸에 나눠 쓰지 마라 — observations 에 쓴 수치를
+readings 에서 반복하지 말고 인덱스로 가리켜라. 확신은 근거만큼만.
 """
 
 

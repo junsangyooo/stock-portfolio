@@ -52,7 +52,7 @@ def _levels(raw) -> dict:
 
     def band(items, with_strength: bool) -> list:
         out = []
-        for it in (items or [])[:6]:
+        for it in (items or [])[:4]:
             if not isinstance(it, dict):
                 continue
             px = _num(it.get("price"))
@@ -125,13 +125,13 @@ def normalize(data: dict, envelope: dict) -> dict:
         }
 
     obs = []
-    for o in (data.get("observations") or [])[:40]:
+    for o in (data.get("observations") or [])[:16]:
         if isinstance(o, dict) and str(o.get("fact_ko") or "").strip():
             obs.append({"domain": str(o.get("domain") or "")[:20],
                         "fact_ko": str(o["fact_ko"])[:400],
                         "cite": str(o.get("cite") or "")[:120]})
     readings = []
-    for r in (data.get("readings") or [])[:20]:
+    for r in (data.get("readings") or [])[:8]:
         if isinstance(r, dict) and str(r.get("claim_ko") or "").strip():
             readings.append({
                 "claim_ko": str(r["claim_ko"])[:400],
@@ -197,7 +197,7 @@ def _facts_only(envelope: dict, reason: str) -> dict:
 
 def analyze(symbol_id: str, name: Optional[str] = None, *,
             force_chart: bool = False, backend=None,
-            timeout_s: float = 600, store: bool = True) -> dict:
+            timeout_s: float = 900, store: bool = True) -> dict:
     """The whole thing. One deterministic pass, one call, one stored result."""
     t0 = time.monotonic()
     envelope = inputs.build(symbol_id, name, force_chart=force_chart)
