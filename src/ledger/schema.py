@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA = """
+TABLES = """
 -- One row per account. quant has exactly one; portfolio has several.
 CREATE TABLE IF NOT EXISTS accounts (
   account_id     TEXT PRIMARY KEY,
@@ -65,7 +65,6 @@ CREATE TABLE IF NOT EXISTS holdings (
   updated_at       INTEGER NOT NULL,
   PRIMARY KEY (account_id, symbol_id)
 );
-CREATE INDEX IF NOT EXISTS idx_holdings_symbol ON holdings(symbol_id);
 
 -- What actually happened. A fill, not a submission: a person trades in their
 -- broker's app and records the result, so the columns an order needs (idem
@@ -88,8 +87,6 @@ CREATE TABLE IF NOT EXISTS trades (
   note        TEXT,
   created_at  INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_trades_account ON trades(account_id, traded_at DESC);
-CREATE INDEX IF NOT EXISTS idx_trades_symbol  ON trades(account_id, symbol_id, traded_at DESC);
 
 CREATE TABLE IF NOT EXISTS cash (
   account_id  TEXT NOT NULL REFERENCES accounts(account_id) ON DELETE CASCADE,
@@ -110,8 +107,6 @@ CREATE TABLE IF NOT EXISTS snapshots (
   total_assets  REAL NOT NULL DEFAULT 0,
   PRIMARY KEY (date, account_id, currency)
 );
-CREATE INDEX IF NOT EXISTS idx_snapshots_date    ON snapshots(date);
-CREATE INDEX IF NOT EXISTS idx_snapshots_account ON snapshots(account_id);
 
 -- A plan is an order ticket whoever reads it. The person's note and the
 -- machine's standing order are the same row; only the executor differs.
@@ -144,8 +139,6 @@ CREATE TABLE IF NOT EXISTS plans (
   created_at            INTEGER NOT NULL,
   updated_at            INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_plans_account ON plans(account_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_plans_status  ON plans(account_id, status);
 
 -- Symbols the account is interested in but does not own.
 CREATE TABLE IF NOT EXISTS watch (
@@ -159,6 +152,8 @@ CREATE TABLE IF NOT EXISTS watch (
   PRIMARY KEY (account_id, symbol_id)
 );
 """
+
+INDEXES = """\nCREATE INDEX IF NOT EXISTS idx_holdings_symbol ON holdings(symbol_id);\nCREATE INDEX IF NOT EXISTS idx_trades_account ON trades(account_id, traded_at DESC);\nCREATE INDEX IF NOT EXISTS idx_trades_symbol  ON trades(account_id, symbol_id, traded_at DESC);\nCREATE INDEX IF NOT EXISTS idx_snapshots_date    ON snapshots(date);\nCREATE INDEX IF NOT EXISTS idx_snapshots_account ON snapshots(account_id);\nCREATE INDEX IF NOT EXISTS idx_plans_account ON plans(account_id, created_at DESC);\nCREATE INDEX IF NOT EXISTS idx_plans_status  ON plans(account_id, status);\n"""
 
 # Columns added after a book was first created. Applied to both books, since
 # the ledger is one definition — a book-specific column belongs in that book's
@@ -178,12 +173,22 @@ _ADDED = {
 }
 
 
+# Kept for callers that want the whole thing as one string.
+SCHEMA = TABLES + INDEXES
+
+
 def apply(conn: sqlite3.Connection) -> None:
-    """Create the ledger tables and add any columns a live book predates."""
-    conn.executescript(SCHEMA)
+    """Create the ledger tables, widen any a live book predates, then index.
+
+    The three steps are ordered, not cosmetic: an index on a column an older
+    book has not grown yet fails the whole script, and CREATE TABLE IF NOT
+    EXISTS will not add the column for us.
+    """
+    conn.executescript(TABLES)
     for table, cols in _ADDED.items():
         have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
         for name, decl in cols:
             if name not in have:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+    conn.executescript(INDEXES)
     conn.commit()

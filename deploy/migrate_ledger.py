@@ -80,10 +80,16 @@ def migrate_portfolio() -> dict:
 
 
 def migrate_quant() -> dict:
-    out = {}
+    """quant.db predates account_id, and four of its tables are keyed without
+    it — cash(currency), snapshots(date,currency), watch(symbol_id),
+    plans(plan_id). A column cannot be added to a primary key, so those are
+    moved aside and the ledger's versions built fresh beside them.
+    """
+    out: dict = {}
     conn = sqlite3.connect(paths.QUANT_DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
+        conn.execute("PRAGMA foreign_keys=OFF")   # we fill the parent below
         # Whatever the live row calls itself wins — the constant is only a
         # fallback for an empty book.
         quant_id = DEFAULT_ACCOUNT_ID
@@ -92,34 +98,40 @@ def migrate_quant() -> dict:
             if row:
                 quant_id = row[0]
         out["account_id"] = quant_id
+
+        # Step the old shapes aside so the ledger can create the real ones.
+        moved = {}
+        for t in ("cash", "snapshots", "plans", "watch"):
+            if t in _tables(conn) and "account_id" not in _cols(conn, t):
+                conn.execute(f"ALTER TABLE {t} RENAME TO {t}_pre_ledger")
+                moved[t] = f"{t}_pre_ledger"
+        conn.commit()
+
         apply_ledger(conn)
-        # the book's own column on a ledger table
         if "entry_cycle_id" not in _cols(conn, "holdings"):
             conn.execute("ALTER TABLE holdings ADD COLUMN entry_cycle_id INTEGER")
-        have = _tables(conn)
 
-        if "account" in have:
+        # accounts first: everything else references it.
+        if "account" in _tables(conn):
             src = _count(conn, "account")
             _copy(conn, "account", "accounts", const={"kind": "auto"})
-            conn.execute("UPDATE accounts SET kind = 'auto' WHERE kind IS NULL "
-                         "OR kind = 'human'")
+            conn.execute("UPDATE accounts SET kind = 'auto' "
+                         "WHERE kind IS NULL OR kind = 'human'")
             out["account→accounts"] = (src, _count(conn, "accounts"))
 
-        if "positions" in have:
+        if "positions" in _tables(conn):
             src = _count(conn, "positions")
             now = int(time.time())
             _copy(conn, "positions", "holdings",
-                  const={"account_id": quant_id, "added_at": now})
+                  const={"account_id": quant_id, "added_at": now,
+                         "updated_at": now})
             out["positions→holdings"] = (src, _count(conn, "holdings"))
 
-        # cash / snapshots / plans / watch already existed here but without an
-        # account_id; the ledger's version of each is a new table only when the
-        # old one lacked the column, so fill it in place.
-        for t in ("cash", "snapshots", "plans", "watch"):
-            if "account_id" in _cols(conn, t):
-                conn.execute(
-                    f"UPDATE {t} SET account_id = ? WHERE account_id IS NULL",
-                    (quant_id,))
+        for t, old in moved.items():
+            src = _count(conn, old)
+            _copy(conn, old, t, const={"account_id": quant_id})
+            out[f"{old}→{t}"] = (src, _count(conn, t))
+
         conn.commit()
         for t in ("accounts", "holdings", "cash", "snapshots", "plans",
                   "watch", "trades", "orders", "cycles", "journal"):
