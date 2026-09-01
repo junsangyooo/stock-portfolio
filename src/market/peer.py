@@ -9,7 +9,9 @@ and a US software company end up judged by the same yardstick.
 Peers = same `sector` (from the sector table), same market. Falls back to the
 whole market when the sector is unknown or too thin to mean anything — and
 says so, because a percentile computed against 4 companies is noise wearing a
-number.
+number. Each peer contributes its own most recent valuation, not a shared
+date: two writers fill this table with different coverage and pinning one
+instant leaves only whichever of them wrote last.
 """
 from __future__ import annotations
 
@@ -29,17 +31,41 @@ _METRICS = ("per", "pbr", "psr", "div_yield", "market_cap")
 _LOWER_IS_CHEAPER = {"per", "pbr", "psr"}
 
 
-def _latest_ts(c, market: str) -> Optional[int]:
-    """Newest valuation date *for this market*.
+_STALE_DAYS = 45          # a peer whose last valuation is older than this is out
 
-    Not a global MAX: KR and US trade on different calendars, so the global
-    newest timestamp belongs to one of them and every symbol in the other has
-    no row at it — which silently produced empty percentiles and peer groups
-    of five.
-    """
+
+def _newest_ts(c, market: str) -> Optional[int]:
     row = c.execute("SELECT MAX(ts) FROM valuation WHERE symbol_id LIKE ?",
                     (f"{market}:%",)).fetchone()
     return int(row[0]) if row and row[0] else None
+
+
+def _peer_rows(c, market: str, sector: Optional[str], floor_ts: int) -> tuple:
+    """(basis, [{symbol_id, per, pbr, …}]) — each peer at ITS OWN latest date.
+
+    Not "everyone on the newest date": two writers fill this table with
+    different coverage — the nightly job refreshes the dozen symbols somebody
+    holds, the bulk backfill did the whole market up to the day it ran. Pinning
+    one instant leaves whichever set wrote last, which is how a market-wide
+    comparison came back with fourteen companies in it.
+    """
+    cols = ", ".join(f"v.{m}" for m in _METRICS)
+    if sector:
+        scope = ("JOIN sector s ON s.symbol_id = v.symbol_id "
+                 "WHERE s.sector = ? AND v.symbol_id LIKE ?")
+        args = [sector, f"{market}:%"]
+        basis = f"{market} · {sector}"
+    else:
+        scope = "WHERE v.symbol_id LIKE ?"
+        args = [f"{market}:%"]
+        basis = f"{market} 전체"
+    rows = c.execute(
+        f"SELECT v.symbol_id, {cols} FROM valuation v "
+        f"JOIN (SELECT symbol_id, MAX(ts) mts FROM valuation "
+        f"      WHERE ts >= ? GROUP BY symbol_id) m "
+        f"  ON m.symbol_id = v.symbol_id AND m.mts = v.ts "
+        f"{scope}", [floor_ts, *args]).fetchall()
+    return basis, [dict(r) for r in rows]
 
 
 def percentiles(symbol_id: str) -> dict:
@@ -51,12 +77,13 @@ def percentiles(symbol_id: str) -> dict:
     """
     market, _ = split_symbol(symbol_id)
     with connect() as c:
-        ts = _latest_ts(c, market)
-        if ts is None:
+        newest = _newest_ts(c, market)
+        if newest is None:
             return {"error": f"no valuation stored for {market}"}
+        floor_ts = newest - _STALE_DAYS * 86400
 
         row = c.execute(
-            f"SELECT {', '.join(_METRICS)} FROM valuation "
+            f"SELECT ts, {', '.join(_METRICS)} FROM valuation "
             "WHERE symbol_id = ? ORDER BY ts DESC LIMIT 1",
             (symbol_id,)).fetchone()
         if row is None:
@@ -66,27 +93,23 @@ def percentiles(symbol_id: str) -> dict:
         sector = (c.execute("SELECT sector FROM sector WHERE symbol_id = ?",
                             (symbol_id,)).fetchone() or {"sector": None})["sector"]
 
-        basis, peers = _peer_ids(c, market, sector)
-        if len(peers) < _MIN_PEERS:
-            basis, peers = _peer_ids(c, market, None)
+        basis, peers = _peer_rows(c, market, sector, floor_ts)
+        if len(peers) < _MIN_PEERS and sector:
+            basis, peers = _peer_rows(c, market, None, floor_ts)
         if len(peers) < _MIN_PEERS:
             return {"error": f"only {len(peers)} peers", "basis": basis}
 
         out: dict = {}
-        marks = ",".join("?" * len(peers))
         for m in _METRICS:
             if mine[m] is None:
                 continue
-            # Ratios are meaningless when negative (a loss-making PER) — those
-            # rows are excluded rather than ranked at the cheap end.
-            floor = " AND v.{0} > 0".format(m) if m in _LOWER_IS_CHEAPER else ""
-            vals = [r[0] for r in c.execute(
-                f"SELECT v.{m} FROM valuation v WHERE v.ts = ? "
-                f"AND v.symbol_id IN ({marks}) AND v.{m} IS NOT NULL{floor}",
-                [ts, *peers]).fetchall()]
+            # A negative ratio (a loss-making PER) is not "cheap" — those are
+            # dropped rather than ranked at the bottom.
+            vals = sorted(p[m] for p in peers
+                          if p[m] is not None
+                          and not (m in _LOWER_IS_CHEAPER and p[m] <= 0))
             if len(vals) < _MIN_PEERS:
                 continue
-            vals.sort()
             below = sum(1 for v in vals if v < mine[m])
             out[m] = {
                 "value": round(float(mine[m]), 4),
@@ -98,21 +121,11 @@ def percentiles(symbol_id: str) -> dict:
     return {
         "symbol_id": symbol_id,
         "basis": basis,
-        "asof_ts": ts,
+        "asof_ts": int(row["ts"]),
         "metrics": out,
         "note_ko": ("percentile 은 낮을수록 동종 대비 값이 작다는 뜻. "
                     "per·pbr·psr 은 낮은 쪽이 저평가, div_yield·market_cap 은 "
-                    "높은 쪽이 크다. 적자(음수 비율) 종목은 순위에서 제외했다."),
+                    "높은 쪽이 크다. 적자(음수 비율) 종목은 순위에서 제외했다. "
+                    "비교 대상은 각자의 최신 밸류에이션이며 45일 넘게 갱신이 "
+                    "없는 종목은 제외했다."),
     }
-
-
-def _peer_ids(c, market: str, sector: Optional[str]) -> tuple[str, list[str]]:
-    if sector:
-        rows = c.execute(
-            "SELECT symbol_id FROM sector WHERE sector = ? AND symbol_id LIKE ?",
-            (sector, f"{market}:%")).fetchall()
-        return f"{market} · {sector}", [r[0] for r in rows]
-    rows = c.execute(
-        "SELECT DISTINCT symbol_id FROM valuation WHERE symbol_id LIKE ?",
-        (f"{market}:%",)).fetchall()
-    return f"{market} 전체", [r[0] for r in rows]
