@@ -17,13 +17,15 @@ def upsert(account_id: str, symbol_id: str, *,
         c.execute(
             """
             INSERT INTO holdings
-              (account_id, symbol_id, avg_cost, qty, note, name, added_at, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              (account_id, symbol_id, avg_cost, qty, note, name,
+               added_at, sort_order, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(account_id, symbol_id) DO UPDATE SET
               avg_cost=excluded.avg_cost, qty=excluded.qty, note=excluded.note,
-              name=COALESCE(excluded.name, holdings.name)
+              name=COALESCE(excluded.name, holdings.name),
+              updated_at=excluded.updated_at
             """,
-            (account_id, symbol_id, avg_cost, qty, note, name, now, now),
+            (account_id, symbol_id, avg_cost, qty, note, name, now, now, now),
         )
         c.commit()
 
