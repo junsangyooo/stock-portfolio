@@ -4,10 +4,10 @@
 > 정량(chart)·펀더멘털(fundamental)과 분리된 **정성 전용** 룰. 검증된 시장 프레임워크(EMH·PEAD·buy-rumor-sell-news·2차 사고·리플렉시비티·hard/soft 카탈리스트·정보확산·내러티브 이코노믹스)를 우리가 실제 수집하는 정성 필드에 1:1 매핑.
 >
 > **에이전트 사용법**:
-> 1. 종목의 테마 매핑(`holding_themes`) + 각 테마의 rolling `state`(L4)를 입력으로 받는다. **가격 데이터는 받지 않는다**(§I).
+> 1. 종목의 테마 매핑(`symbol_themes`) + 각 테마의 상태(일간 7일 창·주간·월간)를 입력으로 받는다.
 > 2. 아래 4개 렌즈를 **순서대로** 적용한다 — §B 반영도 → §C 방향·강도 → §D 시점·지속성 → §E 2차 파급 → §F 종목 귀속.
-> 3. 단일 시그널로 단독 결론 금지 — **반드시 §A 분류 + §B~§E 4렌즈를 결합**하고 **§G 함정**을 교차 점검한다.
-> 4. 산출물: `data/analysis/news/{MKT}_{CODE}/{YYYYMMDD}.json` (§J 스키마).
+> 3. 단일 시그널로 단독 결론 금지 — **§A 분류 + §B~§E 4렌즈를 결합**하고 **§G 함정**을 교차 점검한다.
+> 4. 이 문서는 종합 분석 1콜에 **뉴스 도메인의 사전**으로 주입된다. 도메인 단독 산출물은 없다.
 
 ---
 
@@ -84,11 +84,6 @@
 | **미반영 (선행)** | `leading`, 또는 watchlist에 **새로 등장**한 미발생 이벤트 (novelty 있으면 true) | 거의 0% | **알파 잠재 최대** (단 불확실·장기) |
 | **반영 진행 (동행)** | `coincident` 담론 급증, 내러티브 형성기 | 0~60% | 모멘텀 구간. 과열 주의(§G2) |
 | **선반영/소멸 (후행)** | `lagging` + **오래 watchlist에 머문 사안의 "확정"** (novelty 있으면 false) | 60~100% | 추가 상승동력 약함. §B2 적용 |
-
-### B2. Buy the Rumor, Sell the News (선반영 소진)
-오래 **기대돼 온**(watchlist 장기 체류·`coincident` 담론 선행) 이벤트가 **확정 발표**(`lagging`, novelty 있으면 false)되면, 호재라도 **추가 카탈리스트 소멸**로 정성 점수를 **중립~소폭**으로 본다.
-- 신호: 같은 테마에서 동일 사안이 `coincident`(기대) → 이후 `lagging`(확정)으로 이어짐.
-- 판정: 방향은 +라도 `priced_in` ≥ "대부분", 점수 기여는 깎는다. ("호재인데 안 오른다"의 1번 메커니즘 — §H1.)
 
 ### B3. PEAD — 과소반응 드리프트 (미반영 잔여)
 반대 케이스: **놀라움이 큰**(`weight` 高 + novelty 있으면 true, watchlist에 없던) `lagging` 이벤트는 시장이 즉시 다 반영하지 못하고 **수일~수주에 걸쳐 드리프트**(과소반응). → 확정 뉴스라도 **신규성·서프라이즈가 크면** 잔여 미반영분을 인정(점수 유지).
@@ -218,60 +213,6 @@
 
 ---
 
-## §H. 케이스북 (Dense Worked Cases — 패턴 인식용)
-
-> 사용자 핵심 요구: "호재인데 안 오른다 / 악재인데 버틴다" 같은 비직관 케이스를 빽빽이. 각 케이스 = [신호 패턴] → [판정].
-
-**H1. 호재 확정인데 정성 점수 약함 (Sell the News)**
-오래 watchlist에 있던 호재가 `lagging`·`novelty:false`로 확정. → `priced_in:mostly_priced`, 방향+이나 강도 깎아 **중립~소폭 +**. (§B2)
-
-**H2. 확정 호재인데 강하게 + (PEAD)**
-서프라이즈 큰(`novelty:true`·`importance5`) `lagging` 이벤트, 기대 밖. → 잔여 미반영 드리프트 인정, **+ 유지**. 단 대형주면 약하게(§B3).
-
-**H3. 조용한 선행신호가 큰 장기 시그널 (Unpriced Leading)**
-`leading`+`novelty:true`, watchlist에도 없던 패러다임 연구. → `priced_in:unpriced`, time_to_impact=`long`, 점수 소폭이나 **watchlist·second_order에 크게**. 알파 잠재 표시. (§D2·§E2)
-
-**H4. 악재 확정인데 + (불확실성 해소)**
-알려진 리스크(소송·제재)가 예상 수준에서 종결. → 불확실성 프리미엄 해소, **소폭 +** 가능. (§C5)
-
-**H5. 테마 호재인데 종목엔 악재 (경쟁 역방향)**
-테마 전반 수요↑이나 development가 **경쟁사**의 수주·증설. → 제로섬 read-through로 이 종목 (−) 또는 중립. (§E3)
-
-**H6. 1차 호재가 2차에서 악재로 (과당경쟁)**
-"대규모 보조금/증설"이 공급과잉·치킨게임 유발. → 1차+, 종합은 마진압박으로 **중립~−**, second_order에 메커니즘 명시. (§E5)
-
-**H7. 대체기술 진전 (장기 잠식)**
-`leading` 신소재(전고체·Mg이온)가 현재 강자 제품을 대체. → 단기 중립, **장기 risks**. 에코프로비엠×Mg이온 실케이스. (§E2)
-
-**H8. 내러티브 과열 정점 (Hype Peak)**
-`coincident` 담론 폭증 + 신규성 소진 + sentiment 펀더멘털 괴리. → 추격 경계, 반전위험 경고, 강도 하향. (§D4·§E4)
-
-**H9. 공급망 전파 (Read-through +)**
-고객사(downstream) 대형 호재 → upstream인 이 종목에 시차 수혜. → related weight·홉 감쇠 반영해 **약~중 +**, time_to_impact=`near~mid`. (§E1)
-
-**H10. 신호 공백 (No News)**
-해당 테마 최근 development 없음. → **중립(0)**, confidence 하향, data gap 명시. 악재로 처리 금지. (§F4)
-
-**H11. 거시 역풍 + 종목 개별 호재 충돌**
-macro 악화(금리↑)인데 primary 테마 개별 호재. → macro는 톤만, 방향은 primary로. 종합 + 유지하되 risks에 거시 명시. (§F3)
-
-**H12. 정책 양면성 (수혜 vs 피해)**
-규제·정책이 한 종목엔 수혜·다른 종목엔 피해. → 이 종목 밸류체인 위치로 부호 확정. 같은 뉴스라도 종목별 부호 다름. (§A·§C1)
-
-**H13. 수출주 + 환율 (macro → related 승격)**
-macro 테마지만 종목 수익구조에 직결(수출주는 원화약세=+, 원자재 수입주는 −). → §F3 단서대로 macro를 related급으로 승격해 **방향을 부여**하되, risks에 환율 변동성을 명시. 가장 흔한 KR 케이스.
-
-**H14. state 텅 빔 + 미래 카탈리스트 대기 (empty ≠ no catalyst)**
-`recent_developments`는 비었으나 `watchlist`에 큰 예정 이벤트(임상결과·정책발표·수주). → H10(완전 공백)과 **구분**. 현재 점수는 중립이되 `watch[]`에 크게, `priced_in:unpriced` 후보로 표시. "지금 조용하다 ≠ 재료 없다."
-
-**H15. 동일 leading 신호의 종목 간 부호 분기**
-같은 선행신호가 한쪽엔 호재·다른 쪽엔 악재. 예: 전고체 진전 → 차세대 셀 선점 기업(+) / 기존 NCM 양극재 전문(−, 잠식). → §C1 종목입장으로 **같은 신호에 반대 부호**. H7(잠식측)의 수혜측 대칭.
-
-**H16. shadow 테마 read-through**
-보유종목이 없는 shadow 테마(catalog.shadow=true)의 신호가 related 엣지로 보유종목에 전파. → weight·홉 감쇠 반영, evidence에 shadow 출처임을 명시. 단 그 shadow 테마 state가 입력에 주입된 경우에만(§E1).
-
----
-
 ## §I. 한계 & confidence 가이드 (정직성 — 추측 금지)
 
 | 한계 | 영향 | 대응 |
@@ -287,35 +228,9 @@ macro 테마지만 종목 수익구조에 직결(수출주는 원화약세=+, �
 
 ---
 
-## §J. 종합 산출 가이드 (출력 스키마 매핑)
+## §J. 출력
 
-4개 렌즈를 통과시킨 뒤 산출:
-
-| 출력 필드 | 매핑 렌즈 | 내용 |
-|---|---|---|
-| `score` (-1~1) | §C×§B×§F | 방향 × (1−반영도) × 종목귀속, primary 중심 |
-| `label` | score | strong_sell / sell / neutral / buy / strong_buy (chart·fundamental과 동일 5단계) |
-| `summary_ko` | 전체 | **비전문가용 한두 문장 결론** (전문용어 없이) |
-| `priced_in` | §B | unpriced / partially_priced / mostly_priced |
-| `time_horizon` | §D | 핵심 동인의 대표 시점 immediate/near/mid/long |
-| `drivers[]` | §C+ | 긍정 동인 (각 lead_lag·time_to_impact 태그) |
-| `risks[]` | §C−·§G | 위험·함정 |
-| `second_order[]` | §E | 2차·3차 파급 (cause→effect 형태) |
-| `event_tags[]` | §A | 적용 카테고리 |
-| `evidence[]` | 근거 | {theme, point, lead_lag} |
-| `watch[]` | §D·§B1 | 미반영·전개중 모니터 대상 (state.watchlist에서) |
-| `confidence` (0~1) | §I | 데이터 충분성·반영도 추정 신뢰 |
-| `methodology[]` | — | 적용 룰 ID (예: B2, C2, E2) |
-
-**산출 원칙**:
-- 단일 시그널 단독 결론 금지 → §A 분류 + 4렌즈 결합.
-- §B 반영도와 §C 서프라이즈를 **반드시 교차** — "호재"여도 선반영이면 점수 깎는다.
-- §G 함정을 교차 점검. drivers·risks **둘 다** 채운다(확증편향 방지).
-- primary 중심, related는 weight, macro는 배경(§F).
-- 모든 점수에 근거 + 사용 룰 ID. 데이터 부족은 confidence 하향 + 명시(§I).
-- **비전문가 우선**: summary_ko·drivers·risks는 쉬운 한국어로(사용자는 비전문 개인투자자).
-- **단일 계상 (이중 페널티 방지)**: 각 신호는 점수에 **한 번만** 반영한다. `sentiment.trend`는 §C2 한계효용에서만 쓰고, §G2 하이프·§E4 리플렉시비티 경고는 **점수 직접 감산이 아니라 `confidence` 하향**으로만 반영한다. 같은 "이미 올랐음"을 §C2·§G2에서 두 번 깎지 말 것.
-- **Judge 정합**: `score`는 -1~1 연속값이 1차 신호이고 `label`은 보조 표시다. chart(fact)·fundamental(0~100 5축)과 스케일이 다르므로, **3종을 융합·정규화하는 책임은 🧠 Judge에 있다**(정성 에이전트는 -1~1 score만 일관되게 산출).
+이 문서는 **사전**이다. 무엇을 어떤 모양으로 내보낼지는 종합 분석 한 곳(`src/agents/analyze/`)이 정한다 — 콜이 하나이므로 출력 계약도 하나여야 하고, 룰북마다 스키마를 두면 세 벌이 서로 어긋난다.
 
 ---
 
