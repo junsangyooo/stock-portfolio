@@ -530,3 +530,21 @@ def test_active_themes_are_the_ones_with_recent_news():
                   "built_at) VALUES ('space','2026-01-01','[]',1,'t')")
         c.commit()
     assert read.active_themes(now=NOW) == ["semiconductor"]
+
+
+def test_a_busy_news_day_does_not_starve_the_social_column(monkeypatch):
+    """A shared LIMIT handed the whole budget to news and left social empty."""
+    monkeypatch.setattr(collect_all, "enrich_images", lambda its, **kw: 0)
+    monkeypatch.setattr(
+        collect_all, "fetch_rss",
+        lambda url, sid, timeout=15.0: [_item(f"N{i}", f"http://n{i}")
+                                        for i in range(30)])
+    collect_all.collect_one(_feed(), [], None, now=NOW)
+    monkeypatch.setattr(
+        collect_all, "fetch_rss",
+        lambda url, sid, timeout=15.0: [_item("S", "http://s")])
+    collect_all.collect_one(_feed(source_id="soc", group="social"), [], None,
+                            now=NOW)
+    out = read.feed(limit=5, now=NOW)
+    assert len(out["news"]) == 5
+    assert [c["title"] for c in out["social"]] == ["S"]

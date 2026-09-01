@@ -212,15 +212,19 @@ def feed(limit: int = 60, days: int = 3,
     name_kr = {t.theme_id: t.name_kr for t in cat.themes.values()}
     since = _days_back(days, now)[-1]
 
+    # One query per lane, not one query split afterwards: news outnumbers
+    # social most days, so a shared LIMIT hands the whole budget to news and
+    # the social column comes back empty even though items exist.
+    lanes: dict[str, list] = {}
     with connect() as c:
-        rows = c.execute(
-            "SELECT signal_id, url, title, source_id, lead_lag, published_at, "
-            "       fetched_at, image, summary, importance "
-            "FROM signals WHERE collected_on >= ? "
-            "  AND lead_lag IN ('lagging','coincident') "
-            "ORDER BY COALESCE(published_at, fetched_at) DESC LIMIT ?",
-            (since, limit * 4)).fetchall()
-        ids = [r["signal_id"] for r in rows]
+        for lane in ("lagging", "coincident"):
+            lanes[lane] = c.execute(
+                "SELECT signal_id, url, title, source_id, lead_lag, "
+                "       published_at, fetched_at, image, summary, importance "
+                "FROM signals WHERE collected_on >= ? AND lead_lag = ? "
+                "ORDER BY COALESCE(published_at, fetched_at) DESC LIMIT ?",
+                (since, lane, limit)).fetchall()
+        ids = [r["signal_id"] for rows in lanes.values() for r in rows]
         themes: dict[int, list[dict]] = {}
         for i in range(0, len(ids), 500):
             part = ids[i:i + 500]
@@ -233,7 +237,7 @@ def feed(limit: int = 60, days: int = 3,
                      "kr": name_kr.get(t["theme_id"], t["theme_id"])})
 
     news, social = [], []
-    for r in rows:
+    for r in lanes["lagging"] + lanes["coincident"]:
         th = themes.get(r["signal_id"], [])
         card = {
             "theme": th[0]["id"] if th else None,
