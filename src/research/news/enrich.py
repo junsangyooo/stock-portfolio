@@ -183,7 +183,7 @@ def run(*, catalog: Optional[Catalog] = None, date: Optional[str] = None,
             "failed": failed, "backlog": max(backlog - enriched, 0)}
 
 
-if __name__ == "__main__":   # manual: python -m src.agents.news.enrich
+if __name__ == "__main__":   # manual: python -m src.research.news.enrich
     import sys
     logging.basicConfig(level=logging.INFO)
     print(json.dumps(run(), ensure_ascii=False, indent=2))

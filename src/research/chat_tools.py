@@ -3,7 +3,7 @@
 The chat backend (`src/api/chat.py`) runs `claude -p` with exactly one
 allowed command family:
 
-    .venv/bin/python -m src.agents.chat_tools <command> [arg ...]
+    .venv/bin/python -m src.research.chat_tools <command> [arg ...]
 
 Commands call the same internal read functions the API routers use — no
 HTTP, no session, and by construction no writes. One JSON object goes to

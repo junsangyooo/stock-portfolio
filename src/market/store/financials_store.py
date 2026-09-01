@@ -98,10 +98,3 @@ def rows_as_dicts(symbol_id: str, n: int = 0) -> List[dict]:
     return [_row_to_dict(df.iloc[i]) for i in range(len(df))]
 
 
-def latest_filed_at(symbol_id: str) -> Optional[str]:
-    """Newest filing date we hold for this symbol — the event-driven refresh
-    compares it against the regulator's feed to skip an unchanged company."""
-    with connect() as c:
-        row = c.execute("SELECT MAX(filed_at) FROM financials "
-                        "WHERE symbol_id = ?", (symbol_id,)).fetchone()
-    return row[0] if row and row[0] else None

@@ -28,7 +28,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..agents.llm_backend import SLOW_MODEL, ClaudeCliBackend
+from ..research.llm_backend import SLOW_MODEL, ClaudeCliBackend
 from ..portfolio import service
 from ..portfolio.store import chat_store
 from . import analysis
@@ -50,17 +50,17 @@ SYSTEM = """당신은 개인 투자자의 포트폴리오 대시보드에 내장
 추가 조회 도구 (읽기 전용):
 스냅샷에 없는 데이터가 필요하면 Bash로 아래 명령을 실행해 JSON으로 조회할 수 있다.
 반드시 이 명령만 사용한다 (다른 명령·파일 접근 금지):
-  .venv/bin/python -m src.agents.chat_tools search <검색어>        # 종목 검색 (이름/코드)
-  .venv/bin/python -m src.agents.chat_tools quote KR:005930        # 현재가
-  .venv/bin/python -m src.agents.chat_tools chart US:AAPL          # 차트 지표 요약
-  .venv/bin/python -m src.agents.chat_tools fundamental KR:005930  # 재무·밸류에이션
-  .venv/bin/python -m src.agents.chat_tools verdict KR:005930      # 최신 AI 종합 판단
-  .venv/bin/python -m src.agents.chat_tools news KR:005930         # 연결 뉴스·이슈
-  .venv/bin/python -m src.agents.chat_tools screen per_max=8 pbr_max=1 div_min=3 mcap_min=5000
+  .venv/bin/python -m src.research.chat_tools search <검색어>        # 종목 검색 (이름/코드)
+  .venv/bin/python -m src.research.chat_tools quote KR:005930        # 현재가
+  .venv/bin/python -m src.research.chat_tools chart US:AAPL          # 차트 지표 요약
+  .venv/bin/python -m src.research.chat_tools fundamental KR:005930  # 재무·밸류에이션
+  .venv/bin/python -m src.research.chat_tools verdict KR:005930      # 최신 AI 종합 판단
+  .venv/bin/python -m src.research.chat_tools news KR:005930         # 연결 뉴스·이슈
+  .venv/bin/python -m src.research.chat_tools screen per_max=8 pbr_max=1 div_min=3 mcap_min=5000
       # 한국 전 종목 조건 스크리닝 (종목 발굴). 키: per_min/per_max, pbr_min/pbr_max,
       # div_min(배당%), eps_min, mcap_min/mcap_max(억원), value_min(거래대금 억원),
       # market=KOSPI|KOSDAQ, sort=per|pbr|div|mcap|value, limit(최대 20)
-  .venv/bin/python -m src.agents.chat_tools theme_symbols semiconductor days=7
+  .venv/bin/python -m src.research.chat_tools theme_symbols semiconductor days=7
       # 테마에 걸린 종목 (테마 id: battery ai_sw bio semiconductor robotics space
       # fintech shipbuilding adv_manufacturing macro 등). tagged=보유 기반 태깅,
       # mentioned=최근 뉴스 본문에 이름이 나온 종목(발굴용, 오탐 가능)
@@ -100,7 +100,7 @@ SYSTEM = SYSTEM + "\n\n" + PLAN_CONTRACT
 # claude -p 도구 허용: 위 조회 CLI 한 가지만. 그 외 Bash·파일·네트워크는
 # 헤드리스 모드에서 자동 거부된다. 턴 수 제한 없음 (모듈 docstring 참고).
 TOOL_ARGS = [
-    "--allowedTools", "Bash(.venv/bin/python -m src.agents.chat_tools:*)",
+    "--allowedTools", "Bash(.venv/bin/python -m src.research.chat_tools:*)",
 ]
 
 
@@ -192,7 +192,7 @@ def _account_context(account_id: str) -> str:
 
 
 def _news_context() -> str:
-    from ..agents.news import feed as news_feed
+    from ..research.news import feed as news_feed
     try:
         items = (news_feed.build(limit=NEWS_N).get("news") or [])[:NEWS_N]
     except Exception:  # noqa: BLE001 — news is optional context

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from src.agents.chart.structure import recent_move
+from src.research.chart.structure import recent_move
 
 
 def _series(closes, vols):

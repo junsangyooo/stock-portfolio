@@ -12,10 +12,10 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from src.agents.news import collect_all, daily, enrich, read, rollup
-from src.agents.news.catalog import Feed, load_catalog, load_sources
-from src.agents.news.db import connect
-from src.agents.news.sources.base import RawItem
+from src.research.news import collect_all, daily, enrich, read, rollup
+from src.research.news.catalog import Feed, load_catalog, load_sources
+from src.research.news.db import connect
+from src.research.news.sources.base import RawItem
 from src.core.kst import KST
 
 NOW = datetime(2026, 8, 27, 6, 0, tzinfo=KST)

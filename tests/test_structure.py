@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from src.agents.chart import structure
-from src.agents.chart.structure import levels, trendline, patterns
+from src.research.chart import structure
+from src.research.chart.structure import levels, trendline, patterns
 
 
 def _df(rows: list[dict]) -> pd.DataFrame:

@@ -1,7 +1,7 @@
 """C0 — extrema engine: swing detection + level clustering."""
 import unittest
 
-from src.agents.chart.structure import extrema
+from src.research.chart.structure import extrema
 
 
 class TestFindSwings(unittest.TestCase):

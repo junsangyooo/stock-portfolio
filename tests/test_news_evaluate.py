@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import pytest
 
-from src.agents.news import evaluate as ev
-from src.agents.news.evaluate import get_symbol_themes, assemble_inputs
-from src.agents.news.catalog import load_catalog
+from src.research.news import evaluate as ev
+from src.research.news.evaluate import get_symbol_themes, assemble_inputs
+from src.research.news.catalog import load_catalog
 
 
 @pytest.fixture

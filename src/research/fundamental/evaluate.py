@@ -5,7 +5,7 @@ fundamental/{market}/{code}/run). Reads the symbol's ALREADY-COLLECTED
 valuation + financials (the daily 06:00 KST batch does the collecting — see
 src/market/pipeline/fundamental_job.py), assembles the L1/L2/L3 snapshot, and
 produces a 5-axis verdict (value / profitability / growth / stability /
-shareholder_return) per src/agents/fundamental/fundamental_rules.md.
+shareholder_return) per src/research/fundamental/fundamental_rules.md.
 
 Output uses the SAME 5-level label vocabulary as the chart / news agents so the
 Judge can fuse all three. Written to data/analysis/fundamental/{symbol}/
@@ -25,17 +25,10 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
-from ...core.kst import KST as _KST
-from ..verdict import clamp_confidence, clamp_score, label_from_score, persist
 from ...market.store import valuation_store, financials_store, sector_store, etf_store
 from ...market import fundamental_metrics
-from ..llm_backend import ClaudeCliBackend, SLOW_MODEL, _parse_json
-
-_RULES = (Path(__file__).parent / "fundamental_rules.md").read_text(encoding="utf-8")
 
 
 def _valuation_band(symbol_id: str, valuation: dict) -> dict:
@@ -156,20 +149,9 @@ _AXES = ("value", "profitability", "growth", "stability", "shareholder_return")
 # The per-domain judgment (_judge / evaluate_symbol) lived here until
 # 2026-09-01. It is gone: judging a domain in isolation hardens a
 # one-dimensional conclusion, and the merge that followed could no longer undo
-# it. src/agents/analyze/ now sees all three domains in one call, with this
+# it. src/research/analyze/ now sees all three domains in one call, with this
 # module's assembly as its input and fundamental_rules.md injected as that domain's
 # dictionary.
-
-
-def _coerce_axes(raw: dict) -> dict:
-    out = {}
-    for a in _AXES:
-        v = (raw or {}).get(a)
-        try:
-            out[a] = None if v is None else max(0, min(100, int(round(float(v)))))
-        except (TypeError, ValueError):
-            out[a] = None
-    return out
 
 
 def assemble_display(symbol_id: str, name: Optional[str] = None,

@@ -89,10 +89,6 @@ def creds() -> dict:
     return c
 
 
-def is_real() -> bool:
-    return (_env("KIS_IS_REAL") or "").lower() in ("1", "true", "y", "yes")
-
-
 # ── token ────────────────────────────────────────────────────────────────
 
 _tok_lock = threading.Lock()

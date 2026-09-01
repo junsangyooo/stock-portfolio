@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from src.agents.fundamental import evaluate as ev
+from src.research.fundamental import evaluate as ev
 
 
 class _StubBackend:

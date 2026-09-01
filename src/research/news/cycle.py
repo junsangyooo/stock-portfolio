@@ -6,10 +6,10 @@ roll-up follows that: the long-memory cycles read the layer the run just
 finished writing, so chaining them here is what stops a month from missing its
 own last week.
 
-    python -m src.agents.news.cycle                    # collect + enrich + daily
-    python -m src.agents.news.cycle --no-collect       # re-enrich / rebuild only
-    python -m src.agents.news.cycle --rollup weekly    # force a roll-up
-    python -m src.agents.news.cycle --date 2026-08-27
+    python -m src.research.news.cycle                    # collect + enrich + daily
+    python -m src.research.news.cycle --no-collect       # re-enrich / rebuild only
+    python -m src.research.news.cycle --rollup weekly    # force a roll-up
+    python -m src.research.news.cycle --date 2026-08-27
 
 Exit code is non-zero only when the run produced nothing at all — a dead feed
 or a failed theme is reported, not fatal.

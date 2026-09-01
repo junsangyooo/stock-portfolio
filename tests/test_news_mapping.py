@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.agents.news.catalog import load_catalog
-from src.agents.news.mapping import map_etf_by_name, tag_stock_by_llm
+from src.research.news.catalog import load_catalog
+from src.research.news.mapping import map_etf_by_name, tag_stock_by_llm
 
 
 @pytest.fixture(scope="module")

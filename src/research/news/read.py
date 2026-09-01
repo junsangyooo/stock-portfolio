@@ -20,7 +20,7 @@ is visible in the stored trend history, so it is computed.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -47,18 +47,6 @@ def published_iso(published) -> Optional[str]:
         return datetime.fromisoformat(published.replace("Z", "+00:00")).isoformat()
     except ValueError:
         return None
-
-
-def _iso_epoch(iso) -> Optional[float]:
-    if not iso:
-        return None
-    try:
-        dt = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.timestamp()
 
 
 def _favicon(u: str) -> Optional[str]:

@@ -23,7 +23,7 @@ import pytest
 _SRC = Path(__file__).resolve().parents[1] / "src"
 
 # Layers that know nothing about who owns anything.
-SHARED = ("core", "universe", "market", "agents")
+SHARED = ("core", "universe", "market", "research")
 
 # The books they must not reach into.
 BOOKS = ("portfolio", "quant")
@@ -96,8 +96,8 @@ def test_shared_layers_never_import_an_account_book():
 def test_the_analysis_envelope_carries_no_position():
     """The analysis is about the symbol. One stored result serves both books
     only while it says nothing about who holds what."""
-    from src.agents.analyze import prompt
-    src = (_SRC / "agents" / "analyze" / "inputs.py").read_text(encoding="utf-8")
+    from src.research.analyze import prompt
+    src = (_SRC / "research" / "analyze" / "inputs.py").read_text(encoding="utf-8")
     assert "holdings" not in src and "avg_cost" not in src
     assert '"stance"' not in prompt._SCHEMA   # not "resistance"
     assert "보유" not in prompt.SYSTEM.replace("보유 여부를 짐작해", "")
@@ -106,7 +106,7 @@ def test_the_analysis_envelope_carries_no_position():
 @pytest.mark.parametrize("module,flag", [
     ("src/market/pipeline/fundamental_job.py", "--symbols"),
     ("src/market/pipeline/etf_job.py", "--symbols"),
-    ("src/agents/verdict_job.py", "--symbols"),
+    ("src/research/verdict_job.py", "--symbols"),
 ])
 def test_shared_batch_jobs_require_an_explicit_symbol_list(module, flag):
     """No default that quietly means 'whatever portfolio.db holds'."""

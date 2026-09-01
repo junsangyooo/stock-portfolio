@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from src.agents.chart.indicators import trend, momentum, volatility, volume, ALL_INDICATORS
-from src.agents.chart.schema import STATE_NO_DATA
+from src.research.chart.indicators import trend, momentum, volatility, volume, ALL_INDICATORS
+from src.research.chart.schema import STATE_NO_DATA
 
 
 def _df(close: np.ndarray) -> pd.DataFrame:

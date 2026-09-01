@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from src.agents.analyze import prompt, run
+from src.research.analyze import prompt, run
 
 
 def _envelope(structure=None, domains=("chart", "fundamental", "news")):

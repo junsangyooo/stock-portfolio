@@ -6,7 +6,7 @@ parent company it was never told about.
 """
 from __future__ import annotations
 
-from src.agents.news.reverse import _count_masked, _strip_html
+from src.research.news.reverse import _count_masked, _strip_html
 
 
 def test_longer_name_wins_and_shorter_one_inside_it_is_not_counted():
@@ -66,7 +66,7 @@ def test_name_preceded_by_hangul_is_rejected():
 def test_short_latin_name_in_the_korean_field_is_floored_as_latin():
     # KR:160550's name_kr is "NEW". Picking the floor by field gave it the
     # 3-char Hangul floor, and it scored on every "NEW" in English prose.
-    from src.agents.news.reverse import _name_entries
+    from src.research.news.reverse import _name_entries
     import src.universe.search as uni
 
     uni._items = [
@@ -85,7 +85,7 @@ def test_short_latin_name_in_the_korean_field_is_floored_as_latin():
 def test_us_names_match_without_legal_suffix_and_by_ticker():
     # Cycle #1: universe says "Broadcom Inc" / "NVIDIA Corporation" but prose
     # says "Broadcom" and "AVGO" — literal match found zero US companies.
-    from src.agents.news.reverse import _name_entries, _strip_en_suffix
+    from src.research.news.reverse import _name_entries, _strip_en_suffix
     import src.universe.search as uni
 
     assert _strip_en_suffix("Broadcom Inc") == "Broadcom"

@@ -3,7 +3,7 @@
 Triggered on-demand by the UI 📰 button (POST /api/analysis/news/{m}/{c}/run).
 Reads the symbol's theme mapping (market.db symbol_themes) + each theme's rolling state
 (refreshed by the collection cycle: collect→enrich→daily) and applies
-src/agents/news/news_rules.md via claude -p to produce a qualitative verdict.
+src/research/news/news_rules.md via claude -p to produce a qualitative verdict.
 
 The rulebook drives a 4-lens read (per news_rules.md):
   §B priced-in → §C direction/magnitude → §D timing → §E second-order,
@@ -30,24 +30,15 @@ Pipeline:
 from __future__ import annotations
 
 import json
-from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
-from ...core.kst import KST as _KST
-from ..llm_backend import ClaudeCliBackend, SLOW_MODEL, _parse_json
-from ..verdict import clamp_confidence, clamp_score, label_from_score, persist
 from .catalog import Catalog, load_catalog
 from .read import theme_state
 
 _RECENT_PRIMARY = 8   # recent developments injected for the primary theme
 _RECENT_RELATED = 3   # ... for each related/macro theme (kept brief)
 
-# 5-level label vocabulary, identical to the chart / fundamental agents.
-_PRICED_IN = ("unpriced", "partially_priced", "mostly_priced")
 _HORIZONS = ("immediate", "near", "mid", "long")
-
-_RULES = (Path(__file__).parent / "news_rules.md").read_text(encoding="utf-8")
 
 
 def get_symbol_themes(symbol_id: str) -> list[dict]:
@@ -165,6 +156,6 @@ def assemble_inputs(symbol_id: str, *, catalog: Optional[Catalog] = None) -> dic
 # The per-domain judgment (_judge / evaluate_symbol) lived here until
 # 2026-09-01. It is gone: judging a domain in isolation hardens a
 # one-dimensional conclusion, and the merge that followed could no longer undo
-# it. src/agents/analyze/ now sees all three domains in one call, with this
+# it. src/research/analyze/ now sees all three domains in one call, with this
 # module's assembly as its input and news_rules.md injected as that domain's
 # dictionary.

@@ -33,16 +33,3 @@ class RawItem:
             return self.url.strip()
         return "t:" + hashlib.sha1(self.title.strip().encode("utf-8")).hexdigest()
 
-    def to_record(self, theme: str, lead_lag: str, fetched_at: str) -> dict:
-        return {
-            "theme": theme,
-            "source_id": self.source_id,
-            "kind": self.kind,
-            "title": self.title,
-            "url": self.url,
-            "published": self.published,
-            "summary": self.summary,
-            "image": self.image,        # preview thumbnail (may be None)
-            "lead_lag": lead_lag,        # leading | coincident | lagging | backbone
-            "fetched_at": fetched_at,
-        }

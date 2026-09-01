@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from src.agents.chart import chart_agent
+from src.research.chart import chart_agent
 
 
 def _daily(close: np.ndarray) -> pd.DataFrame:

@@ -1,6 +1,6 @@
 """Run the analysis: assemble → one call → validate → store.
 
-    python -m src.agents.analyze.run KR:005930 [--force-chart] [--dry]
+    python -m src.research.analyze.run KR:005930 [--force-chart] [--dry]
 
 Validation is deliberately shallow. Enums are coerced, numbers are clamped,
 and prices that are not numbers are dropped — but nothing is invented to fill

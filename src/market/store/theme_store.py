@@ -5,13 +5,13 @@ hold the same stock and it is in the same themes for both. It used to live in
 portfolio.db as `holding_themes`, which meant quant.db's symbols had to be
 read out of the other file and spliced into an IN clause to be seen at all.
 
-Written by src/agents/news/mapping.py (ETF name rule / one LLM tagging call),
+Written by src/research/news/mapping.py (ETF name rule / one LLM tagging call),
 read by the news agents, the account page and the quant brief.
 """
 from __future__ import annotations
 
 import time
-from typing import Iterable, Optional
+from typing import Optional
 
 from .db import connect
 
@@ -36,20 +36,6 @@ def symbols_for(theme_id: str) -> list[dict]:
             (theme_id,)).fetchall()
     return [{"symbol_id": r["symbol_id"], "relation": r["relation"],
              "weight": float(r["weight"])} for r in rows]
-
-
-def primary_themes_of(symbol_ids: Iterable[str]) -> set[str]:
-    """theme_ids these symbols name as their core business."""
-    ids = list(symbol_ids)
-    if not ids:
-        return set()
-    marks = ",".join("?" * len(ids))
-    with connect() as c:
-        rows = c.execute(
-            f"SELECT DISTINCT theme_id FROM symbol_themes "
-            f"WHERE relation = 'primary' AND symbol_id IN ({marks})",
-            ids).fetchall()
-    return {r[0] for r in rows}
 
 
 def has(symbol_id: str) -> bool:

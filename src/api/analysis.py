@@ -1,7 +1,7 @@
 """/api/analysis — comprehensive analysis + per-domain facts (live).
 
 Two kinds are readable here:
-  analysis  the stored comprehensive result (src/agents/analyze) — one call
+  analysis  the stored comprehensive result (src/research/analyze) — one call
             over chart + fundamental + news, warmed nightly by verdict_job
   chart     deterministic facts, computed live, no LLM
 
@@ -109,7 +109,7 @@ def analysis_summary(symbols: str) -> dict:
 @router.get("/news/feed")
 def news_feed(limit: int = 60) -> dict:
     """Landing-page qualitative feed (see agents/news/feed.py)."""
-    from ..agents.news import feed
+    from ..research.news import feed
     return {**feed.build(limit=limit), "queried_at": _stamp()}
 
 
@@ -121,8 +121,8 @@ def news_signals(market: str, code: str) -> dict:
     (claude) evaluate, mirroring how the chart tab shows facts on open.
     """
     symbol_id = f"{market.upper()}:{code}"
-    from ..agents.news.catalog import load_catalog
-    from ..agents.news.read import theme_state
+    from ..research.news.catalog import load_catalog
+    from ..research.news.read import theme_state
     from ..market.store import theme_store
 
     cat = load_catalog()
@@ -168,7 +168,7 @@ def get_fundamental_facts(market: str, code: str) -> dict:
     """
     symbol_id = f"{market.upper()}:{code}"
     try:
-        from ..agents.fundamental.evaluate import assemble_display
+        from ..research.fundamental.evaluate import assemble_display
         facts = assemble_display(symbol_id, name=_display_name(symbol_id))
         facts["queried_at"] = _stamp()
         return facts
@@ -186,7 +186,7 @@ def get_analysis(kind: str, market: str, code: str) -> dict:
 
     # chart = deterministic fact extraction, computed live (no claude -p here).
     if kind == "chart":
-        from ..agents.chart import chart_agent  # lazy: pulls pandas-ta
+        from ..research.chart import chart_agent  # lazy: pulls pandas-ta
         try:
             facts = chart_agent.collect_facts(symbol_id, persist=False)
             facts["queried_at"] = _stamp()
@@ -250,7 +250,7 @@ def run_analysis(kind: str, market: str, code: str) -> dict:
     def _fn():
         # Imported on the worker thread: it pulls pandas-ta and spawns claude,
         # neither of which belongs on the request path.
-        from ..agents.analyze.run import analyze
+        from ..research.analyze.run import analyze
         return analyze(symbol_id, name, timeout_s=_RUN_TIMEOUT_S["analysis"])
 
     from . import analysis_jobs

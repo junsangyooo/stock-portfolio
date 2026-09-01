@@ -61,7 +61,7 @@ def main() -> int:
     jobs = {
         "fundamental": ("src.market.pipeline.fundamental_job", []),
         "etf": ("src.market.pipeline.etf_job", []),
-        "analysis": ("src.agents.verdict_job", extra),
+        "analysis": ("src.research.verdict_job", extra),
     }
     todo = list(jobs) if args.job == "all" else [args.job]
     rc = 0

@@ -1,4 +1,4 @@
-"""Shared verdict vocabulary + persistence for the four analysis agents.
+"""The shared score/label vocabulary and the write path.
 
 chart / fundamental / news / judge all score a symbol on [-1, 1], map that to
 the same 5-level label, and write to data/analysis/{kind}/{symbol}/{date}.json.
@@ -11,8 +11,6 @@ from __future__ import annotations
 import json
 
 from ..core.paths import analysis_path
-
-LABELS = ("strong_sell", "sell", "neutral", "buy", "strong_buy")
 
 
 def clamp_score(score: float) -> float:

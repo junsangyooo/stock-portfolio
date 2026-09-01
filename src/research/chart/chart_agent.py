@@ -11,13 +11,11 @@ No aggregate score, no buy/sell label, no LLM here — 100% deterministic facts.
 """
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 
 from ...core.kst import KST
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 
 from ...market.store import chart_store, ohlcv_store
@@ -26,12 +24,6 @@ from .indicators import ALL_INDICATORS
 from .indicators.volume import volume_spike
 
 ENGINE_VERSION = "chart-facts-v1"
-
-
-def _json_default(o):
-    if isinstance(o, np.generic):
-        return o.item()
-    return str(o)
 
 
 def _facts_for_tf(frame: pd.DataFrame, tf: str) -> dict:

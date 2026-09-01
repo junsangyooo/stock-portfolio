@@ -1,7 +1,7 @@
 """IndicatorFact schema — objective fact, no judgment."""
 import unittest
 
-from src.agents.chart.schema import IndicatorFact, STATE_NO_DATA
+from src.research.chart.schema import IndicatorFact, STATE_NO_DATA
 
 
 class TestIndicatorFact(unittest.TestCase):

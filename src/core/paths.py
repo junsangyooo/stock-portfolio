@@ -31,7 +31,7 @@ MARKET_DB_PATH = DATA / "market.db"
 
 # The outside world: collected articles, their theme membership, and the
 # daily/weekly/monthly summaries built on top of them. The only book that is
-# not about what we own. See src/agents/news/db.py.
+# not about what we own. See src/research/news/db.py.
 NEWS_DB_PATH = DATA / "news.db"
 
 UNIVERSE_DIR = DATA / "universe"

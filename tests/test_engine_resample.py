@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from src.agents.chart import engine
+from src.research.chart import engine
 
 
 def _ts(y, m, d) -> int:

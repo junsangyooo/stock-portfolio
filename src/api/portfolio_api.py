@@ -22,15 +22,13 @@ from fastapi import (
 from pydantic import BaseModel
 
 from ..core import security
-from ..core.notify import discord
-from ..agents.news.mapping import ensure_theme_mapping
+from ..research.news.mapping import ensure_theme_mapping
 from ..market.pipeline import gap_filler
 from ..portfolio import service
 from ..portfolio.store import (
     account_store, balance_store, holding_store, plan_store, snapshot_store,
 )
 from ..core.paths import split_symbol
-from ..portfolio.store.db import connect
 from ..universe import search as uni_search
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])

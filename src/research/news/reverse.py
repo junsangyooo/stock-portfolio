@@ -23,12 +23,9 @@ often than they identify the company. The cost is that a handful of small caps
 """
 from __future__ import annotations
 
-import json
 import re
-from datetime import datetime, timedelta
 from typing import Iterable, Optional
 
-from ...core.kst import KST
 
 _MIN_LEN_KR = 3
 _MIN_LEN_EN = 4

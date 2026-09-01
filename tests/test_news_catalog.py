@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.agents.news.catalog import load_catalog
+from src.research.news.catalog import load_catalog
 
 
 @pytest.fixture(scope="module")

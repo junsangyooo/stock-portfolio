@@ -30,7 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.agents.news.db import connect                       # noqa: E402
+from src.research.news.db import connect                       # noqa: E402
 from src.core import paths                                   # noqa: E402
 from src.core.kst import KST                                 # noqa: E402
 

@@ -10,13 +10,13 @@ does not ask an account book what it holds — the account side schedules it
 
 Was chart → judge per symbol. There is one call now: judging a domain alone
 hardens a one-dimensional conclusion that the later merge cannot undo, so the
-domains meet inside a single call instead (src/agents/analyze/).
+domains meet inside a single call instead (src/research/analyze/).
 
 Same-day results are skipped, so a re-run is cheap and a crash mid-batch is
 resumed rather than repeated. Failures are collected and reported to Discord
 at the end; one symbol never stops the batch.
 
-  python -m src.agents.verdict_job --symbols KR:005930,US:NVDA [--workers 2]
+  python -m src.research.verdict_job --symbols KR:005930,US:NVDA [--workers 2]
 """
 from __future__ import annotations
 
