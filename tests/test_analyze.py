@@ -25,7 +25,7 @@ def _envelope(structure=None, domains=("chart", "fundamental", "news")):
              "status": "ok", "note_ko": ""}
             for d in domains
         ],
-        "context": {"peer": {"metrics": {}}, "holding": None},
+        "context": {"peer": {"metrics": {}}},
         "available": list(domains),
     }
 
@@ -113,7 +113,7 @@ _OK = {
     "counter": {"case_ko": "추세장에서는 과매수가 지속된다",
                 "what_would_show_it": ["ADX 상승 지속"]},
     "verdict": {"score": 0.4, "label": "buy", "confidence": 0.55,
-                "summary_ko": "요약", "stance": "hold",
+                "summary_ko": "요약",
                 "drivers": ["a"], "risks": ["b"],
                 "domain_view": {"chart": {"one_line_ko": "x", "lean": "bullish"}}},
     "outlook": {"horizon": "near", "base_ko": "기본",
@@ -134,7 +134,6 @@ def test_an_empty_envelope_never_reaches_the_model():
 def test_a_good_response_passes_through_with_its_shape_intact():
     out = run.normalize(_OK, _envelope(_STRUCT))
     assert out["score"] == 0.4 and out["label"] == "buy"
-    assert out["stance"] == "hold"
     assert out["readings"][0]["from"] == [0]
     assert out["outlook"]["scenarios"][0]["case"] == "bull"
     assert out["domain_view"]["news"]["lean"] == "neutral"   # absent → filled flat
@@ -171,7 +170,6 @@ def test_a_failed_call_returns_facts_only_and_invents_nothing(assembled):
     out = run.analyze("KR:005930", "삼성전자", backend=_Boom(), store=False)
     assert out["status"] == "facts_only"
     assert out["score"] == 0.0 and out["confidence"] == 0.0
-    assert out["stance"] is None
     assert out["levels"]["invalidation"] is None
     assert any("timeout" in x for x in out["limitations"])
 

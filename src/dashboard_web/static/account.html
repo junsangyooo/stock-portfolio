@@ -1499,22 +1499,22 @@ a { color: inherit; text-decoration: none; }
   white-space: nowrap;
 }
 
-/* ── Level 0 종합 배지: 종목당 판단 1개 (stance 5단어 + 신선도) ── */
-.sc-stance-badge {
+/* ── Level 0 종합 배지: 종목당 판단 1개 (label 5단계 + 신선도) ── */
+.sc-verdict-badge {
   display: inline-block; padding: 1px 6px; border: 1px solid var(--dim);
   border-radius: 3px; color: var(--dim); font-size: 9px; letter-spacing: 1px;
   font-weight: 700; margin-top: 2px; align-self: flex-start; white-space: nowrap;
 }
-.sc-stance-badge.act-add   { color: var(--green);  border-color: var(--green); }
-.sc-stance-badge.act-hold  { color: var(--cyan);   border-color: var(--cyan); }
-.sc-stance-badge.act-watch { color: var(--yellow); border-color: var(--yellow); }
-.sc-stance-badge.act-trim  { color: var(--orange); border-color: var(--orange); }
-.sc-stance-badge.act-exit  { color: var(--red);    border-color: var(--red); }
-.sc-stance-badge.stale { opacity: 0.45; }   /* 30일+ → 흐리게 = "믿지 말라" 신호 */
-.sc-stance-badge.running { color: var(--cyan); border-color: var(--cyan); opacity: 0.8; }
+.sc-verdict-badge.act-strong_buy  { color: var(--green);  border-color: var(--green); }
+.sc-verdict-badge.act-buy         { color: var(--cyan);   border-color: var(--cyan); }
+.sc-verdict-badge.act-neutral     { color: var(--yellow); border-color: var(--yellow); }
+.sc-verdict-badge.act-sell        { color: var(--orange); border-color: var(--orange); }
+.sc-verdict-badge.act-strong_sell { color: var(--red);    border-color: var(--red); }
+.sc-verdict-badge.stale { opacity: 0.45; }   /* 30일+ → 흐리게 = "믿지 말라" 신호 */
+.sc-verdict-badge.running { color: var(--cyan); border-color: var(--cyan); opacity: 0.8; }
 /* The `display` above outranks the UA sheet's [hidden]{display:none}, so the
    placeholder badge rendered as an empty 1px box until a verdict loaded. */
-.sc-stance-badge[hidden] { display: none; }
+.sc-verdict-badge[hidden] { display: none; }
 
 .sc-body {
   display: grid;
@@ -2340,20 +2340,19 @@ function svgIco(name) {
 // 원칙: UI에 룰 ID·raw score·영문 enum 0 노출, 신선도는 1급 시민.
 // ─────────────────────────────────────────────────────────────
 // stance → 한글 1단어 + 색 (Level 0 배지와 Level 1 요약 카드 공용)
-const STANCE_KO = {
-  add: '추가매수', hold: '보유유지', watch: '관망', trim: '비중축소', exit: '정리검토',
+// 종합 분석은 종목만 판정한다(label). "그래서 내가 뭘 해야 하나"는 보유 여부를
+// 아는 이 화면이 붙인다 — 분석 결과는 두 책이 공유하므로 계좌 사정을 담지 않는다.
+const LABEL_KO = {
+  strong_buy: '적극 긍정', buy: '긍정', neutral: '중립',
+  sell: '부정', strong_sell: '적극 부정',
 };
-const STANCE_COLOR = {
-  add: 'var(--green)', hold: 'var(--cyan)', watch: 'var(--yellow)',
-  trim: 'var(--orange)', exit: 'var(--red)',
+const LABEL_COLOR = {
+  strong_buy: 'var(--green)', buy: 'var(--cyan)', neutral: 'var(--yellow)',
+  sell: 'var(--orange)', strong_sell: 'var(--red)',
 };
-// 5단 label → 3단 축약 (근거 행에서 strong_* 구분은 과함)
-const LABEL3_KO = {
-  strong_buy: '긍정', buy: '긍정', neutral: '중립', sell: '부정', strong_sell: '부정',
-};
-const LABEL3_CLS = {
-  strong_buy: 'bull', buy: 'bull', neutral: '', sell: 'bear', strong_sell: 'bear',
-};
+// 도메인 한 줄은 방향만 말한다 (bullish/neutral/bearish)
+const LEAN_KO = { bullish: '긍정', neutral: '중립', bearish: '부정' };
+const LEAN_CLS = { bullish: 'bull', neutral: '', bearish: 'bear' };
 
 // 'YYYY-MM-DD' (또는 verdict 파일 stem 'YYYYMMDD') → {days, cls(ok|warn|old), text}
 function freshInfo(dateStr) {
@@ -2410,16 +2409,16 @@ function _analysisBadgeApply(span, entry) {
   if (!span) return;
   if (entry && entry.running) {
     span.hidden = false;
-    span.className = 'sc-stance-badge running';
+    span.className = 'sc-verdict-badge running';
     span.textContent = '⏳ 분석중';
     span.title = '종합 분석 실행 중 (약 5~7분)';
     return;
   }
-  const ko = STANCE_KO[entry && entry.stance];
+  const ko = LABEL_KO[entry && entry.label];
   if (!ko) { span.hidden = true; return; }   // 미분석 → 배지 생략 (합성 배지 금지)
   const f = freshInfo(entry.date);
   span.hidden = false;
-  span.className = 'sc-stance-badge act-' + entry.stance +
+  span.className = 'sc-verdict-badge act-' + entry.label +
     (f && f.cls === 'old' ? ' stale' : '');
   span.textContent = ko + (f ? ' · ' + f.text : '') +
     (f && f.cls === 'old' ? ' ⚠' : '');
@@ -2950,7 +2949,7 @@ function renderCard(stock) {
   const sparkSvg = drawSparklineSvg(stock.spark, stock.price);
 
   // Level 0 종합 배지 — 숨김으로 만들고 loadAnalysisBadges()가 in-place로 채움
-  const analysisBadge = el('span', { className: 'sc-stance-badge', hidden: '' }, []);
+  const analysisBadge = el('span', { className: 'sc-verdict-badge', hidden: '' }, []);
   window._analysisBadgeEls[stock.symbolId] = analysisBadge;
 
   const nameBlockChildren = [
@@ -4326,7 +4325,7 @@ renderAll();
     pane.appendChild(prog.root);
     window._setAnalysisBadge(sym, { running: true });
     const finish = (body, date) => {
-      window._setAnalysisBadge(sym, { stance: body.stance, date: date || body.date });
+      window._setAnalysisBadge(sym, { label: body.label, date: date || body.date });
     };
     const common = {
       sym,
@@ -4359,24 +4358,25 @@ renderAll();
   // 화면 순서 = 비전문가의 질문 순서: 사·팔·들고가? → 왜 → 뭘 조심 → 언제 분석?
   function renderAnalysis(pane, body, date) {
     const held = !!(currentStock && currentStock.qty != null && currentStock.qty > 0);
-    const actKo = STANCE_KO[body.stance];
-    const actColor = STANCE_COLOR[body.stance] || 'var(--fg)';
-    // 보유 여부 문맥 문장 (미보유 기준으로 판단한 경우의 오해 방지)
+    const actKo = LABEL_KO[body.label];
+    const actColor = LABEL_COLOR[body.label] || 'var(--fg)';
+    // 여기가 계좌 쪽 해석이다. 분석은 종목만 말하고, 그 판정이 보유 중인 나에게
+    // 무슨 뜻인지는 qty 를 아는 이 화면이 붙인다.
     const HINT_HELD = {
-      add: '들고 가면서 비중을 늘려볼 만한 구간입니다',
-      hold: '지금 포지션을 그대로 유지합니다',
-      watch: '들고 가되 추가 매수는 기다립니다',
-      trim: '일부 익절·비중 축소를 고려할 구간입니다',
-      exit: '정리(매도)를 검토할 구간입니다',
+      strong_buy: '들고 가면서 비중을 늘려볼 만한 구간입니다',
+      buy: '지금 포지션을 유지할 만합니다',
+      neutral: '서두를 이유가 없어 보입니다',
+      sell: '일부 익절·비중 축소를 고려할 구간입니다',
+      strong_sell: '정리(매도)를 검토할 구간입니다',
     };
     const HINT_FLAT = {
-      add: '신규 진입을 고려할 만한 구간입니다',
-      hold: '서두르지 않고 지켜봅니다',
-      watch: '진입하지 말고 관찰만 합니다',
-      trim: '진입 후보에서 한발 물러섭니다',
-      exit: '지금은 들어가지 않습니다',
+      strong_buy: '신규 진입을 고려할 만한 구간입니다',
+      buy: '진입 후보로 지켜볼 만합니다',
+      neutral: '진입하지 말고 관찰만 합니다',
+      sell: '진입 후보에서 한발 물러섭니다',
+      strong_sell: '지금은 들어가지 않습니다',
     };
-    const hint = (held ? HINT_HELD : HINT_FLAT)[body.stance];
+    const hint = (held ? HINT_HELD : HINT_FLAT)[body.label];
 
     const domRow = (key, ico, name) => {
       const d = (body.domain_view || {})[key];
@@ -4384,10 +4384,10 @@ renderAll();
       return el('div', { className: 'jd-dom' }, [
         el('span', {}, [svgIco(ico)]),
         el('span', { style: 'color:var(--dim); font-size:10px;' }, [name]),
-        el('span', { className: 'ca-chip ' + (LABEL3_CLS[d.label] || '') },
-          [LABEL3_KO[d.label] || '중립']),
+        el('span', { className: 'ca-chip ' + (LEAN_CLS[d.lean] || '') },
+          [LEAN_KO[d.lean] || '중립']),
         el('span', { style: 'color:var(--fg); line-height:1.5;' },
-          [d.one_line_ko || d.key_signal || '']),
+          [d.one_line_ko || '']),
       ]);
     };
     const domRows = [
@@ -4400,7 +4400,7 @@ renderAll();
       el('div', { className: 'jd-top' }, [
         el('div', {}, [
           el('div', { className: 'jd-verdict', style: 'color:' + actColor },
-            [actKo ? '지금은 「 ' + actKo + ' 」' : (LABEL3_KO[body.label] || '판단 대기')]),
+            [actKo ? '지금은 「 ' + actKo + ' 」' : '판단 대기']),
           hint ? el('div', { className: 'jd-hint' }, [hint]) : null,
         ].filter(Boolean)),
         el('div', { className: 'jd-when' }, [

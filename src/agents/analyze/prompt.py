@@ -23,8 +23,9 @@ SYSTEM = (
     "너는 한 종목을 다각도로 뜯어보는 분석가다. 차트·재무·뉴스를 동시에 보고 "
     "지금 이 종목이 어떤 상태인지, 앞으로 어떻게 전개될 수 있는지 판단한다.\n"
     "\n"
-    "매매 계획은 네 일이 아니다 — 수량·비중·언제 주문을 넣을지는 다른 단계가 "
-    "정한다. 너는 그 판단의 재료를 만든다.\n"
+    "매매 판단은 네 일이 아니다. 무엇을 사고 팔지, 얼마나, 언제는 다른 단계가 "
+    "정하고 그쪽만이 누가 무엇을 얼마에 들고 있는지 안다. 너는 종목 자체를 "
+    "본다 — 보유 여부를 짐작해 조언을 끼워 넣지 마라.\n"
     "\n"
     "지켜야 할 것:\n"
     "1) 인풋에 없는 숫자를 쓰지 마라. 모든 수치는 주어진 데이터에서 인용한다.\n"
@@ -41,7 +42,7 @@ SYSTEM = (
 
 _SCHEMA = """{
   "observations": [
-    {"domain": "chart|fundamental|news|peer|holding",
+    {"domain": "chart|fundamental|news|peer",
      "fact_ko": "데이터가 말하는 것 하나. 해석 금지, 수치 포함",
      "cite": "어느 필드에서 왔는지"}
   ],                                    // 10~14개. 도메인마다 최소 2개
@@ -59,7 +60,6 @@ _SCHEMA = """{
     "label": "strong_sell|sell|neutral|buy|strong_buy",
     "confidence": 0.0,
     "summary_ko": "비전문가용 2~3문장 결론",
-    "stance": "exit|trim|hold|watch|add",
     "drivers": ["긍정 동인"],
     "risks": ["위험"],
     "domain_view": {
@@ -95,15 +95,12 @@ _GUIDE_KO = """
 각 칸에 대해:
 
 - **observations** — 데이터가 말하는 것만. "RSI 71" 은 관찰, "과열이다" 는 해석.
-  **10~14개**로 추린다. 도메인마다 최소 2개(peer·holding 도 도메인이다).
+  **10~14개**로 추린다. 도메인마다 최소 2개(peer 도 도메인이다).
   전부 나열하는 자리가 아니라 **결론에 실제로 쓰인 것**만 남기는 자리다.
 - **readings** — 관찰에서 읽어낸 것 **4~7개**. `from` 에 근거가 된 observations
   인덱스를 적는다. 근거를 못 가리키면 그건 관찰한 게 아니라 떠올린 것이다.
 - **counter** — 성의껏 써라. "약간의 위험은 있다" 같은 형식적 반박은 반박이 아니다.
   네 결론을 진짜로 무너뜨릴 논거를 찾아라.
-- **verdict.stance** — 지금 이 종목을 대하는 태도 한 단어. 주문이 아니다 —
-  수량도 시점도 여기서 정하지 않는다. 보유 중이면 exit/trim/hold, 보유하지
-  않으면 watch/add 가 자연스럽다(`context.holding` 참고).
 - **verdict.score** — -1(강한 약세) ~ +1(강한 강세). 라벨과 어긋나지 않게.
   confidence 는 확신이 아니라 **근거가 서로 얼마나 맞물리는지**다. 도메인이
   엇갈리거나 데이터가 비면 낮춘다.
@@ -148,12 +145,9 @@ def build(envelope: dict) -> str:
     ctx = envelope.get("context") or {}
     parts += [
         "━━━━━ 도메인 밖 맥락 ━━━━━",
-        "어느 사전에도 속하지 않는다. 동종 대비 위치와 현재 보유 상태다.",
+        "어느 사전에도 속하지 않는다 — 동종 대비 위치다.",
         "",
         f"[동종 백분위]\n{json.dumps(ctx.get('peer'), ensure_ascii=False, default=str)}",
-        "",
-        f"[보유]\n{json.dumps(ctx.get('holding'), ensure_ascii=False, default=str)}"
-        if ctx.get("holding") else "[보유] 보유하고 있지 않다",
         "",
         "━━━━━ 작성 순서 ━━━━━",
         "① 관찰 → ② 해석 → ③ 반증 → ④ 결론 → ⑤ 전망 → ⑥ 좌표.",

@@ -30,7 +30,6 @@ _HORIZONS = ("immediate", "near", "mid", "long")
 _LEANS = ("bullish", "neutral", "bearish")
 _CASES = ("bull", "base", "bear")
 _STRENGTH = ("weak", "medium", "strong")
-_STANCE = ("exit", "trim", "hold", "watch", "add")
 
 
 def _enum(v, allowed: tuple, default=None):
@@ -219,7 +218,6 @@ def normalize(data: dict, envelope: dict) -> dict:
         "label": label,
         "confidence": clamp_confidence(v.get("confidence", 0.5)),
         "summary_ko": str(v.get("summary_ko") or "")[:800],
-        "stance": _enum(v.get("stance"), _STANCE, "watch"),
         "drivers": _strs(v.get("drivers"), 8),
         "risks": _strs(v.get("risks"), 8),
         "domain_view": domain_view,
@@ -247,7 +245,6 @@ def _facts_only(envelope: dict, reason: str) -> dict:
         "score": 0.0, "label": "neutral", "confidence": 0.0,
         "summary_ko": ("AI 종합 판단을 만들지 못했습니다. 아래 지표는 계산된 "
                        "사실이며, 판단은 붙어 있지 않습니다."),
-        "stance": None,
         "observations": [], "readings": [],
         "counter": {"case_ko": "", "what_would_show_it": []},
         "drivers": [], "risks": [], "domain_view": {},

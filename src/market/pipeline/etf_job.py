@@ -27,23 +27,19 @@ from ...core.kst import KST as _KST
 
 from ..source import naver_etf_source
 from ..store import etf_store
-from ...portfolio.store.holding_store import all_symbol_ids
 from ...universe import search as uni_search
 
 
 
-def _holding_etfs() -> list[str]:
-    """ETF subset of current holdings (resolved via universe is_etf flag)."""
-    out: list[str] = []
-    for sid in all_symbol_ids():
-        rec = uni_search.get(sid) or {}
-        if rec.get("is_etf"):
-            out.append(sid)
-    return out
+def run(symbols) -> dict:
+    """Snapshot the ETFs among `symbols`.
 
-
-def run(symbols=None) -> dict:
-    symbols = symbols or _holding_etfs()
+    `symbols` is required — this is the shared market layer and it does not ask
+    an account book what it holds. Non-ETFs in the list are skipped, so the
+    caller can hand over its whole book without filtering first.
+    """
+    symbols = [s for s in symbols
+               if (uni_search.get(s) or {}).get("is_etf")]
     if not symbols:
         return {"date": datetime.now(_KST).strftime("%Y-%m-%d"),
                 "total": 0, "ok": 0, "results": []}
@@ -78,11 +74,11 @@ def run(symbols=None) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--symbol", default=None,
-                    help="single symbol_id (default: all ETF holdings)")
+    ap.add_argument("--symbols", required=True,
+                    help="comma-separated symbol_ids (non-ETFs are skipped)")
     args = ap.parse_args()
-    symbols = [args.symbol] if args.symbol else None
-    summary = run(symbols=symbols)
+    symbols = [x.strip().upper() for x in args.symbols.split(",") if x.strip()]
+    summary = run(symbols)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0 if (summary["total"] == 0 or summary["ok"] > 0) else 1
 

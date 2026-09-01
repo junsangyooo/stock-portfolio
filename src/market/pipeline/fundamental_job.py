@@ -1,6 +1,6 @@
-"""CLI entry-point for the daily fundamental data collection (cron 06:00 KST).
+"""Fundamental data collection for a given set of symbols.
 
-Backfills valuation (L1) + financials (L2) for every held symbol. Financials
+Backfills valuation (L1) + financials (L2). Financials
 change only on quarterly disclosure, so once-daily is plenty; this runs
 alongside the qualitative news batch at 06:00 KST.
 
@@ -25,7 +25,6 @@ from ...core.kst import KST as _KST
 from typing import Optional
 
 from . import fundamental_backfill
-from ...portfolio.store.holding_store import all_symbol_ids
 
 
 
@@ -45,9 +44,14 @@ def _refresh_sector(sid: str) -> Optional[str]:
         return None
 
 
-def run(symbols=None, years: int = 4) -> dict:
-    """Backfill financials + valuation (+ sector tag) for each symbol."""
-    symbols = symbols or all_symbol_ids()
+def run(symbols, years: int = 4) -> dict:
+    """Backfill financials + valuation (+ sector tag) for each symbol.
+
+    `symbols` is required. This module belongs to the shared market layer and
+    does not get to ask an account book what it holds — whoever schedules the
+    job supplies the list (src/portfolio/jobs.py for the human accounts).
+    """
+    symbols = list(symbols)
     results, ok = [], 0
     for sid in symbols:
         try:
@@ -63,12 +67,13 @@ def run(symbols=None, years: int = 4) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--symbol", default=None, help="single symbol_id (default: all holdings)")
+    ap.add_argument("--symbols", required=True,
+                    help="comma-separated symbol_ids")
     ap.add_argument("--years", type=int, default=4, help="years of financials to fetch")
     args = ap.parse_args()
 
-    symbols = [args.symbol] if args.symbol else None
-    summary = run(symbols=symbols, years=args.years)
+    symbols = [x.strip().upper() for x in args.symbols.split(",") if x.strip()]
+    summary = run(symbols, years=args.years)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     # non-zero only if there were symbols and none succeeded
     return 0 if (summary["total"] == 0 or summary["ok"] > 0) else 1

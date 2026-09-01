@@ -11,9 +11,14 @@ indicator lies about, which formula we use, what we could not compute).
 with status="missing" and a reason — a silently absent domain reads as
 "nothing to say here", which is not the same thing.
 
-`context` sits outside the domains on purpose: holdings and peer percentiles
-belong to no single dictionary, and pretending they do would tell the agent to
-interpret a percentile through, say, the chart reference.
+`context` sits outside the domains on purpose: a peer percentile belongs to no
+single dictionary, and pretending it does would tell the agent to read it
+through, say, the chart reference.
+
+Nothing here knows about an account. The analysis is about the symbol — what
+it is worth doing about it depends on what you hold and at what price, and
+that is a question for whichever book is asking. Keeping positions out is what
+lets one stored result serve both books instead of forking per account.
 """
 from __future__ import annotations
 
@@ -92,32 +97,6 @@ def _news(symbol_id: str) -> tuple[Optional[dict], str, str]:
     return data, "ok", ""
 
 
-def _holding(symbol_id: str) -> Optional[dict]:
-    """Total exposure across every human account — the analysis cares about
-    the position, not which account it sits in. Quant positions are a separate
-    book and are not folded in here."""
-    from ...market.store import quote_store
-    from ...portfolio.store.db import connect
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT avg_cost, qty FROM holdings WHERE symbol_id = ?",
-            (symbol_id,)).fetchall()
-    qty = sum(float(r["qty"] or 0) for r in rows)
-    if qty <= 0:
-        return None
-    cost = sum(float(r["avg_cost"] or 0) * float(r["qty"] or 0) for r in rows)
-    avg = cost / qty
-    q = quote_store.get(symbol_id)
-    px = float(getattr(q, "price", 0) or 0) if q else 0.0
-    return {
-        "qty": qty,
-        "avg_cost": round(avg, 2),
-        "current_price": px or None,
-        "eval": round(px * qty) if px else None,
-        "pnl_pct": round((px - avg) / avg * 100, 2) if (px and avg) else None,
-    }
-
-
 def _context(symbol_id: str) -> dict:
     from ...market import peer
     out: dict = {}
@@ -125,16 +104,15 @@ def _context(symbol_id: str) -> dict:
         out["peer"] = peer.percentiles(symbol_id)
     except Exception as e:  # noqa: BLE001 — comparison is enrichment, not core
         out["peer"] = {"error": str(e)[:200]}
-    try:
-        out["holding"] = _holding(symbol_id)
-    except Exception as e:  # noqa: BLE001
-        out["holding"] = {"error": str(e)[:200]}
     return out
 
 
 def build(symbol_id: str, name: Optional[str] = None, *,
           force_chart: bool = False) -> dict:
-    """The full envelope. Never raises — a broken domain is reported, not fatal."""
+    """The full envelope. Never raises — a broken domain is reported, not fatal.
+
+    Account-free by construction: no book is read here, so the result is the
+    same whoever asked."""
     name = name or symbol_id
     market, _ = split_symbol(symbol_id)
     domains = []

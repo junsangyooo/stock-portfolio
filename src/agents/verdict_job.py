@@ -1,8 +1,12 @@
 """Nightly analysis warm batch — pre-bake the comprehensive analysis.
 
-The account list shows a badge per holding; computing it on page load would
-mean a multi-minute claude call per symbol. This walks every held symbol (all
-accounts, qty > 0) and runs `analyze` once, so the UI reads a stored result.
+The account list shows a badge per symbol; computing it on page load would
+mean a multi-minute claude call each time. This runs `analyze` once per given
+symbol so the UI reads a stored result.
+
+`--symbols` is required. This module is part of the shared research layer and
+does not ask an account book what it holds — the account side schedules it
+(src/portfolio/jobs.py).
 
 Was chart → judge per symbol. There is one call now: judging a domain alone
 hardens a one-dimensional conclusion that the later merge cannot undo, so the
@@ -12,7 +16,7 @@ Same-day results are skipped, so a re-run is cheap and a crash mid-batch is
 resumed rather than repeated. Failures are collected and reported to Discord
 at the end; one symbol never stops the batch.
 
-  python -m src.agents.verdict_job [--limit N] [--workers 2] [--force]
+  python -m src.agents.verdict_job --symbols KR:005930,US:NVDA [--workers 2]
 """
 from __future__ import annotations
 
@@ -34,17 +38,6 @@ from ..core.paths import analysis_path, ensure_dirs
 # never returns and would otherwise stall the batch forever.
 _TIMEOUT_S = 1800.0
 
-
-
-def _held_symbols() -> list[str]:
-    """Every symbol held in ANY account (qty>0) — verdicts are per-symbol,
-    account-agnostic, so duplicates across accounts collapse."""
-    from ..portfolio.store.db import connect
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT symbol_id FROM holdings WHERE qty > 0 "
-            "ORDER BY symbol_id").fetchall()
-    return [r[0] for r in rows]
 
 
 def _name(symbol_id: str) -> str:
@@ -102,8 +95,8 @@ def _notify_failures(date: str, results: list[dict], n_total: int) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--symbols", default=None,
-                    help="comma-separated symbol_ids (default: all holdings)")
+    ap.add_argument("--symbols", required=True,
+                    help="comma-separated symbol_ids")
     ap.add_argument("--limit", type=int, default=None, help="cap symbol count")
     ap.add_argument("--workers", type=int, default=2,
                     help="parallel symbols")
@@ -113,14 +106,11 @@ def main() -> int:
 
     ensure_dirs()
 
-    if args.symbols:
-        symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
-    else:
-        symbols = _held_symbols()
+    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
     if args.limit:
         symbols = symbols[: args.limit]
     if not symbols:
-        print("no held symbols — nothing to do")
+        print("no symbols given — nothing to do")
         return 0
 
     date = datetime.now(_KST).strftime("%Y-%m-%d")

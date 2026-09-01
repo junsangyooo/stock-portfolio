@@ -7,7 +7,7 @@ theme that is moving, which listed companies are in it?
 Two sources, because neither alone is enough:
 
   tagged     symbol_themes reversed. Precise, but only ever contains symbols
-             somebody already holds — useless for finding something new.
+             somebody already mapped — useless for finding something new.
   mentioned  company names recovered from the theme's own news corpus
              (news.db, via read.read_items). This is the mechanical form of
              "read today's news, notice a company, go look it up".
@@ -180,19 +180,17 @@ def _tagged(theme_id: str) -> list[dict]:
     return theme_store.symbols_for(theme_id)
 
 
-def _held_symbols() -> set[str]:
-    from ...portfolio.store.db import connect
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT symbol_id FROM holdings WHERE qty > 0").fetchall()
-    return {r[0] for r in rows}
 
-
-def symbols_for_theme(theme_id: str, days: int = 7, limit: int = 30) -> dict:
+def symbols_for_theme(theme_id: str, days: int = 7, limit: int = 30,
+                      held: Optional[Iterable[str]] = None) -> dict:
     """Companies attached to a theme, from tagging and from its news corpus.
 
-    Returns tagged[] (precise, holdings-derived) and mentioned[] (discovery,
+    Returns tagged[] (precise, mapping-derived) and mentioned[] (discovery,
     ranked by mention count) — the caller decides which to trust.
+
+    `held` is passed in, never looked up. This module knows nothing about
+    accounts; whichever book is asking marks its own positions, and two books
+    asking the same question get the same corpus with their own flags.
     """
     from ...universe import search as uni_search
     from .catalog import load_catalog
@@ -209,7 +207,7 @@ def symbols_for_theme(theme_id: str, days: int = 7, limit: int = 30) -> dict:
         for it in items)
 
     counts = _count_masked(corpus, _name_entries()) if corpus else {}
-    held = _held_symbols()
+    held = set(held or ())
 
     mentioned = []
     for sid, cnt in sorted(counts.items(), key=lambda kv: -kv[1])[:limit]:
