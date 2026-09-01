@@ -29,8 +29,16 @@ _METRICS = ("per", "pbr", "psr", "div_yield", "market_cap")
 _LOWER_IS_CHEAPER = {"per", "pbr", "psr"}
 
 
-def _latest_ts(c) -> Optional[int]:
-    row = c.execute("SELECT MAX(ts) FROM valuation").fetchone()
+def _latest_ts(c, market: str) -> Optional[int]:
+    """Newest valuation date *for this market*.
+
+    Not a global MAX: KR and US trade on different calendars, so the global
+    newest timestamp belongs to one of them and every symbol in the other has
+    no row at it — which silently produced empty percentiles and peer groups
+    of five.
+    """
+    row = c.execute("SELECT MAX(ts) FROM valuation WHERE symbol_id LIKE ?",
+                    (f"{market}:%",)).fetchone()
     return int(row[0]) if row and row[0] else None
 
 
@@ -43,9 +51,9 @@ def percentiles(symbol_id: str) -> dict:
     """
     market, _ = split_symbol(symbol_id)
     with connect() as c:
-        ts = _latest_ts(c)
+        ts = _latest_ts(c, market)
         if ts is None:
-            return {"error": "valuation table is empty"}
+            return {"error": f"no valuation stored for {market}"}
 
         row = c.execute(
             f"SELECT {', '.join(_METRICS)} FROM valuation "
