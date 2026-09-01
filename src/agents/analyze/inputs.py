@@ -56,10 +56,13 @@ def _chart(symbol_id: str, force: bool) -> tuple[Optional[dict], str, str]:
 def _fundamental(symbol_id: str, name: str) -> tuple[Optional[dict], str, str]:
     from ..fundamental.evaluate import assemble_display
     data = assemble_display(symbol_id, name=name)
-    if data.get("is_etf"):
+    avail = data.get("data_available") or {}
+    if data.get("is_etf") or avail.get("is_etf"):
         return data, "ok", "ETF — 재무제표 대신 NAV·보유구성 기준"
-    if not (data.get("series") or data.get("latest")):
+    if not data.get("n_periods"):
         return None, "missing", "재무제표가 수집되지 않았다"
+    if not (data.get("valuation") or {}):
+        return data, "partial", "밸류에이션(PER·PBR)이 없어 재무제표만"
     return data, "ok", ""
 
 
