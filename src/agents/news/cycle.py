@@ -41,7 +41,8 @@ def _notify(date: str, out: dict) -> None:
             f"(stale {c.get('stale', 0)} / dup {c.get('dup', 0)} / "
             f"filtered {c.get('filtered', 0)})",
             f"- enrich: **{e.get('enriched', 0)}**/{e.get('pending', 0)} "
-            f"in {e.get('batches', 0)} batches, failed {e.get('failed', 0)}",
+            f"in {e.get('batches', 0)} batches, failed {e.get('failed', 0)}"
+            + (f", backlog {e['backlog']:,}" if e.get("backlog") else ""),
             f"- daily: **{d.get('built', 0)}** themes "
             f"(empty {d.get('empty', 0)})",
         ]
@@ -66,6 +67,8 @@ def main() -> int:
     ap.add_argument("--no-collect", action="store_true",
                     help="skip crawling; enrich and rebuild what is stored")
     ap.add_argument("--no-enrich", action="store_true")
+    ap.add_argument("--enrich-limit", type=int, default=None,
+                    help="articles per run (0 = no cap; default enrich._RUN_CAP)")
     ap.add_argument("--theme", default=None, help="daily overview for one theme")
     ap.add_argument("--rollup", choices=["none", "auto", "weekly", "monthly"],
                     default="auto",
@@ -84,7 +87,9 @@ def main() -> int:
 
     if not args.no_enrich:
         _log("enrich …")
-        out["enrich"] = enrich.run(catalog=catalog)
+        out["enrich"] = enrich.run(
+            catalog=catalog,
+            **({"limit": args.enrich_limit} if args.enrich_limit is not None else {}))
         _log(f"  {json.dumps(out['enrich'], ensure_ascii=False)}")
 
     _log("daily overview …")

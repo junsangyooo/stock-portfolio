@@ -548,3 +548,23 @@ def test_a_busy_news_day_does_not_starve_the_social_column(monkeypatch):
     out = read.feed(limit=5, now=NOW)
     assert len(out["news"]) == 5
     assert [c["title"] for c in out["social"]] == ["S"]
+
+
+def test_an_enrich_run_is_capped_and_takes_the_newest_first(monkeypatch):
+    """The migration left tens of thousands behind; an uncapped pass would
+    spend hours on old news before touching today's."""
+    monkeypatch.setattr(collect_all, "enrich_images", lambda its, **kw: 0)
+    monkeypatch.setattr(
+        collect_all, "fetch_rss",
+        lambda url, sid, timeout=15.0: [_item(f"T{i}", f"http://{i}")
+                                        for i in range(5)])
+    collect_all.collect_one(_feed(), [], None, now=NOW)
+    be = _Backend({"r": [{"i": i, "s": f"s{i}", "imp": 3, "t": []}
+                         for i in range(2)]})
+    out = enrich.run(limit=2, batch=2, backend=be)
+    assert out["enriched"] == 2 and out["backlog"] == 3
+    with connect() as c:
+        done = [r[0] for r in c.execute(
+            "SELECT title FROM signals WHERE enriched_at IS NOT NULL "
+            "ORDER BY signal_id")]
+    assert done == ["T3", "T4"], "newest first"

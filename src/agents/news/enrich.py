@@ -15,6 +15,12 @@ the weekly and monthly summaries, which are one call per theme.
 
 Batches are the unit of failure: a batch that fails or comes back unparseable
 leaves its articles unenriched, and the next run picks them up.
+
+A run is capped. The migration left ~29k unenriched articles behind and an
+uncapped pass would spend 18 hours on two-month-old news before touching
+today's. The queue is newest-first, so the cap protects today's articles and
+lets whatever backlog is worth having drain over the following cycles —
+without ever making a cycle unbounded.
 """
 from __future__ import annotations
 
@@ -31,6 +37,7 @@ from .db import connect
 log = logging.getLogger(__name__)
 
 _BATCH = 80          # measured flat from 20 to 80; larger is untested
+_RUN_CAP = 800       # ~10 batches, ~20 min — a cycle's share of Haiku
 _BODY_TRUNC = 400    # chars of the source's own summary fed to the model
 
 _SYSTEM = ("너는 투자 정보 큐레이터다. 주어진 기사 목록을 빠짐없이 평가한다. "
@@ -70,6 +77,18 @@ def pending(limit: int = 0, date: Optional[str] = None) -> list[dict]:
         return [dict(r) for r in c.execute(sql, args).fetchall()]
 
 
+def _backlog(date: Optional[str] = None) -> int:
+    """How many articles are still waiting — reported so a cap that never
+    drains is visible instead of merely quiet."""
+    sql = "SELECT COUNT(*) FROM signals WHERE enriched_at IS NULL"
+    args: list = []
+    if date:
+        sql += " AND collected_on = ?"
+        args.append(date)
+    with connect() as c:
+        return c.execute(sql, args).fetchone()[0]
+
+
 def _apply(items: list[dict], parsed: list[dict], valid: set[str],
            now_iso: str) -> int:
     """Write one batch's results. Returns how many articles were enriched."""
@@ -103,15 +122,17 @@ def _apply(items: list[dict], parsed: list[dict], valid: set[str],
 
 
 def run(*, catalog: Optional[Catalog] = None, date: Optional[str] = None,
-        limit: int = 0, batch: int = _BATCH, backend=None,
+        limit: int = _RUN_CAP, batch: int = _BATCH, backend=None,
         timeout_s: float = 600) -> dict:
-    """Enrich everything outstanding (optionally just one collection date)."""
+    """Enrich outstanding articles, newest first, up to `limit` (0 = no cap)."""
     catalog = catalog or load_catalog()
     theme_ids = sorted(catalog.themes)
     valid = set(theme_ids)
     todo = pending(limit=limit, date=date)
     if not todo:
-        return {"pending": 0, "enriched": 0, "batches": 0, "failed": 0}
+        return {"pending": 0, "enriched": 0, "batches": 0, "failed": 0,
+                "backlog": 0}
+    backlog = _backlog(date)
 
     backend = backend or ClaudeCliBackend(model=FAST_MODEL)
     now_iso = datetime.now(KST).isoformat()
@@ -135,7 +156,7 @@ def run(*, catalog: Optional[Catalog] = None, date: Optional[str] = None,
         enriched += got
         batches += 1
     return {"pending": len(todo), "enriched": enriched, "batches": batches,
-            "failed": failed}
+            "failed": failed, "backlog": max(backlog - enriched, 0)}
 
 
 if __name__ == "__main__":   # manual: python -m src.agents.news.enrich
