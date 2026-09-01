@@ -1,6 +1,6 @@
 """Run the analysis: assemble → one call → validate → store.
 
-    python -m src.research.analyze.run KR:005930 [--force-chart] [--dry]
+    python -m src.research.analyze KR:005930 [--force-chart] [--dry]
 
 Validation is deliberately shallow. Enums are coerced, numbers are clamped,
 and prices that are not numbers are dropped — but nothing is invented to fill
@@ -9,10 +9,8 @@ receives a made-up stop is worse off than one that receives none.
 """
 from __future__ import annotations
 
-import argparse
 import json
 import logging
-import sys
 import time
 from datetime import datetime
 from typing import Optional
@@ -282,34 +280,3 @@ def analyze(symbol_id: str, name: Optional[str] = None, *,
     out["elapsed_s"] = round(time.monotonic() - t0, 1)
     out["generated_at"] = datetime.now(KST).isoformat()
     return persist(KIND, symbol_id, out["date"], out) if store else out
-
-
-def main() -> int:
-    logging.basicConfig(level=logging.INFO,
-                        format="%(levelname)s %(name)s: %(message)s")
-    ap = argparse.ArgumentParser()
-    ap.add_argument("symbol_id")
-    ap.add_argument("--name", default=None)
-    ap.add_argument("--force-chart", action="store_true",
-                    help="recompute chart facts even if today's row exists")
-    ap.add_argument("--dry", action="store_true",
-                    help="print the assembled prompt, make no call")
-    args = ap.parse_args()
-
-    if args.dry:
-        env = inputs.build(args.symbol_id, args.name,
-                           force_chart=args.force_chart)
-        text = prompt.build(env)
-        print(f"# domains: {[(d['id'], d['status']) for d in env['domains']]}",
-              file=sys.stderr)
-        print(f"# prompt chars: {len(text):,}", file=sys.stderr)
-        print(text)
-        return 0
-
-    out = analyze(args.symbol_id, args.name, force_chart=args.force_chart)
-    print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
-    return 0 if out.get("status") == "ok" else 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

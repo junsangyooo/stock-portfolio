@@ -20,7 +20,6 @@ from typing import Optional
 from fastapi import APIRouter
 
 from ..core.kst import now as kst_now
-from ..core.paths import ANALYSIS_DIR
 from ..universe import search as uni_search
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
@@ -48,62 +47,13 @@ def _bad_kind(kind: str) -> dict:
     return {"error": f"unknown kind '{kind}' (valid: {list(_VALID_KINDS)})"}
 
 
-def _latest_file(kind: str, symbol_id: str) -> Optional[dict]:
-    safe = symbol_id.replace(":", "_")
-    d = ANALYSIS_DIR / kind / safe
-    if not d.exists():
-        return None
-    files = sorted(d.glob("*.json"))
-    if not files:
-        return None
-    try:
-        return {"path": str(files[-1].name),
-                "date": files[-1].stem,
-                "body": json.loads(files[-1].read_text())}
-    except (json.JSONDecodeError, OSError) as e:
-        # A truncated write would otherwise read as "no verdict yet" and blank
-        # the symbol's badge with no trace of why.
-        log.error("analysis %s/%s unreadable: %s", kind, symbol_id, e)
-        return None
-
-
-def _latest_date(kind: str, symbol_id: str) -> Optional[str]:
-    """Newest verdict date for (kind, symbol) WITHOUT parsing the body —
-    chart files embed full facts (~100KB) so the summary path must not
-    json.loads them. File stems are YYYYMMDD; normalized to YYYY-MM-DD."""
-    safe = symbol_id.replace(":", "_")
-    d = ANALYSIS_DIR / kind / safe
-    if not d.exists():
-        return None
-    files = sorted(d.glob("*.json"))
-    if not files:
-        return None
-    s = files[-1].stem
-    return f"{s[:4]}-{s[4:6]}-{s[6:]}" if len(s) == 8 and s.isdigit() else s
-
-
 @router.get("/summary")
 def analysis_summary(symbols: str) -> dict:
-    """Batch badge feed for the account list: ONE GET returns the latest judge
-    action/label/date per symbol plus per-kind latest dates, so 25 cards don't
-    fan out 25×4 requests."""
-    out: dict = {}
+    """Batch badge feed for the account list: ONE GET returns the latest label
+    and date per symbol, so 25 cards don't fan out 25 requests."""
+    from ..research import analyze
     ids = [s.strip().upper() for s in symbols.split(",") if s.strip()][:100]
-    for sid in ids:
-        kinds = {k: _latest_date(k, sid) for k in _VALID_KINDS}
-        entry: dict = {"action_ko": None, "label": None, "status": None,
-                       "date": None, "kinds": kinds}
-        if kinds["analysis"]:
-            body = (_latest_file("analysis", sid) or {}).get("body") or {}
-            entry.update({
-                "action_ko": body.get("action_ko"),
-                "label": body.get("label"),
-                "status": body.get("status"),
-                "confidence": body.get("confidence"),
-                "date": body.get("date") or kinds["analysis"],
-            })
-        out[sid] = entry
-    return {"symbols": out, "queried_at": _stamp()}
+    return {"symbols": analyze.summary(ids), "queried_at": _stamp()}
 
 
 @router.get("/news/feed")
@@ -197,9 +147,10 @@ def get_analysis(kind: str, market: str, code: str) -> dict:
                     "error": str(e)[:300], "queried_at": _stamp()}
 
     # analysis: the stored comprehensive result
-    result = _latest_file(kind, symbol_id)
-    return {"kind": kind, "symbol_id": symbol_id,
-            "exists": result is not None, "result": result,
+    from ..research import analyze
+    body = analyze.latest(symbol_id)
+    return {"kind": kind, "symbol_id": symbol_id, "exists": body is not None,
+            "result": {"date": body["date"], "body": body} if body else None,
             "queried_at": _stamp()}
 
 
@@ -210,9 +161,10 @@ def get_verdict(kind: str, market: str, code: str) -> dict:
     if kind not in _VALID_KINDS:
         return _bad_kind(kind)
     symbol_id = f"{market.upper()}:{code}"
-    result = _latest_file(kind, symbol_id)
-    return {"kind": kind, "symbol_id": symbol_id,
-            "exists": result is not None, "result": result,
+    from ..research import analyze
+    body = analyze.latest(symbol_id)
+    return {"kind": kind, "symbol_id": symbol_id, "exists": body is not None,
+            "result": {"date": body["date"], "body": body} if body else None,
             "queried_at": _stamp()}
 
 
@@ -250,8 +202,9 @@ def run_analysis(kind: str, market: str, code: str) -> dict:
     def _fn():
         # Imported on the worker thread: it pulls pandas-ta and spawns claude,
         # neither of which belongs on the request path.
-        from ..research.analyze.run import analyze
-        return analyze(symbol_id, name, timeout_s=_RUN_TIMEOUT_S["analysis"])
+        from ..research import analyze
+        return analyze.run(symbol_id, name,
+                           timeout_s=_RUN_TIMEOUT_S["analysis"])
 
     from . import analysis_jobs
     job = analysis_jobs.start(kind, symbol_id, _fn)

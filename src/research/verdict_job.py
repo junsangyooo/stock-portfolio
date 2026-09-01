@@ -28,7 +28,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from ..core.kst import KST as _KST
-from ..core.paths import analysis_path, ensure_dirs
+from ..core.paths import ensure_dirs
 
 # Hang guard, NOT error detection. At 480 this ceiling sat inside the body of
 # the real latency distribution (743 chart runs: mean 352s, p90 439s, p95 461s)
@@ -52,16 +52,14 @@ def _name(symbol_id: str) -> str:
 def run_symbol(symbol_id: str, date: str, *, force: bool) -> dict:
     """One symbol's comprehensive analysis, skipped on a same-day hit.
     Never raises — failures land in the returned summary."""
-    from .analyze.run import KIND
+    from . import analyze
     out: dict = {"symbol": symbol_id, "status": None, "errors": []}
-    path = analysis_path(KIND, symbol_id, date.replace("-", ""))
-    if path.exists() and not force:
+    if not force and analyze.on(symbol_id, date) is not None:
         out["status"] = "cached"
         return out
     t0 = time.monotonic()
     try:
-        from .analyze.run import analyze          # lazy: spawns claude
-        res = analyze(symbol_id, _name(symbol_id), timeout_s=_TIMEOUT_S)
+        res = analyze.run(symbol_id, _name(symbol_id), timeout_s=_TIMEOUT_S)
         out["status"] = res.get("status", "ok")
         # A held symbol whose analysis shipped without its position is the
         # 2026-06 삼성전자 incident; the batch proves the context attached.

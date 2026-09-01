@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from src.research.analyze import prompt, run
+from src.research.analyze import engine as run, prompt
 
 
 def _envelope(structure=None, domains=("chart", "fundamental", "news")):
@@ -204,3 +204,90 @@ def test_a_missing_domain_says_so_instead_of_vanishing():
     assert "[missing]" in text and "재무 없음" in text
     assert "# fundamental 사전" not in text      # no dictionary without data
     assert "신뢰도에만 반영" in text
+
+
+# ── the read side: what an orchestrator calls ───────────────────────────────
+
+@pytest.fixture
+def stored(tmp_path, monkeypatch):
+    """Point the analysis store at a temp tree and write two days for one
+    symbol."""
+    import json as _json
+    import src.core.paths as paths
+    monkeypatch.setattr(paths, "ANALYSIS_DIR", tmp_path)
+    from src.research.analyze import read as rd
+    d = tmp_path / "analysis" / "KR_005930"
+    d.mkdir(parents=True)
+    for day, label in (("20260830", "neutral"), ("20260901", "buy")):
+        (d / f"{day}.json").write_text(_json.dumps(
+            {"symbol_id": "KR:005930", "label": label, "score": 0.4,
+             "confidence": 0.6, "status": "ok", "summary_ko": f"{day} 요약"}),
+            encoding="utf-8")
+    return rd
+
+
+def test_latest_takes_the_newest_day(stored):
+    got = stored.latest("KR:005930")
+    assert got["label"] == "buy" and got["date"] == "2026-09-01"
+
+
+def test_a_symbol_never_analyzed_reads_as_none(stored):
+    assert stored.latest("KR:000000") is None
+    assert stored.latest_date("KR:000000") is None
+    assert stored.on("KR:000000", "2026-09-01") is None
+
+
+def test_latest_date_does_not_parse_the_body(stored, monkeypatch):
+    """A result carries the whole chart fact set; a badge row must not pay to
+    load a hundred of them."""
+    monkeypatch.setattr(stored, "_read",
+                        lambda p: pytest.fail("body was parsed"))
+    assert stored.latest_date("KR:005930") == "2026-09-01"
+
+
+def test_on_accepts_either_date_spelling(stored):
+    assert stored.on("KR:005930", "2026-08-30")["label"] == "neutral"
+    assert stored.on("KR:005930", "20260830")["label"] == "neutral"
+
+
+def test_is_fresh_answers_the_question_an_orchestrator_asks(stored):
+    from datetime import datetime
+    from src.core.kst import KST
+    same_day = datetime(2026, 9, 1, 10, tzinfo=KST)
+    assert stored.is_fresh("KR:005930", now=same_day) is True
+    later = datetime(2026, 9, 5, 10, tzinfo=KST)
+    assert stored.is_fresh("KR:005930", now=later) is False
+    assert stored.is_fresh("KR:005930", days=5, now=later) is True
+    assert stored.is_fresh("KR:000000", now=same_day) is False
+
+
+def test_a_truncated_file_reads_as_missing_not_as_a_crash(stored, tmp_path):
+    (tmp_path / "analysis" / "KR_005930" / "20260902.json").write_text(
+        "{not json", encoding="utf-8")
+    assert stored.latest("KR:005930") is None      # newest is unreadable
+
+
+def test_summary_answers_for_every_symbol_asked(stored):
+    got = stored.summary(["KR:005930", "KR:000000"])
+    assert set(got) == {"KR:005930", "KR:000000"}
+    assert got["KR:005930"]["label"] == "buy"
+    # never analyzed is an answer, not a missing key
+    assert got["KR:000000"]["date"] is None
+
+
+def test_stale_among_is_the_shortlist_to_re_run(stored):
+    from datetime import datetime
+    from src.core.kst import KST
+    same_day = datetime(2026, 9, 1, tzinfo=KST)
+    later = datetime(2026, 9, 20, tzinfo=KST)
+    asked = ["KR:005930", "KR:000000"]
+    # fresh one drops out, order of the rest is kept
+    assert stored.stale_among(asked, now=same_day) == ["KR:000000"]
+    assert stored.stale_among(asked, now=later) == asked
+
+
+def test_the_package_exposes_one_entry_point():
+    """A caller should not have to know which file a function lives in."""
+    from src.research import analyze
+    for name in ("run", "assemble", "latest", "on", "is_fresh", "summary"):
+        assert callable(getattr(analyze, name)), name
