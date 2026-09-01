@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.core import paths                                    # noqa: E402
 from src.ledger import apply as apply_ledger                  # noqa: E402
-from src.quant.db import ACCOUNT_ID as QUANT_ID               # noqa: E402
+from src.quant.db import DEFAULT_ACCOUNT_ID                   # noqa: E402
 
 
 def _tables(c) -> set:
@@ -84,6 +84,14 @@ def migrate_quant() -> dict:
     conn = sqlite3.connect(paths.QUANT_DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
+        # Whatever the live row calls itself wins — the constant is only a
+        # fallback for an empty book.
+        quant_id = DEFAULT_ACCOUNT_ID
+        if "account" in _tables(conn):
+            row = conn.execute("SELECT account_id FROM account LIMIT 1").fetchone()
+            if row:
+                quant_id = row[0]
+        out["account_id"] = quant_id
         apply_ledger(conn)
         # the book's own column on a ledger table
         if "entry_cycle_id" not in _cols(conn, "holdings"):
@@ -101,7 +109,7 @@ def migrate_quant() -> dict:
             src = _count(conn, "positions")
             now = int(time.time())
             _copy(conn, "positions", "holdings",
-                  const={"account_id": QUANT_ID, "added_at": now})
+                  const={"account_id": quant_id, "added_at": now})
             out["positions→holdings"] = (src, _count(conn, "holdings"))
 
         # cash / snapshots / plans / watch already existed here but without an
@@ -111,7 +119,7 @@ def migrate_quant() -> dict:
             if "account_id" in _cols(conn, t):
                 conn.execute(
                     f"UPDATE {t} SET account_id = ? WHERE account_id IS NULL",
-                    (QUANT_ID,))
+                    (quant_id,))
         conn.commit()
         for t in ("accounts", "holdings", "cash", "snapshots", "plans",
                   "watch", "trades", "orders", "cycles", "journal"):
