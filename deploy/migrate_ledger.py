@@ -59,10 +59,11 @@ def migrate_portfolio() -> dict:
         apply_ledger(conn)
         have = _tables(conn)
         if "balances" in have:
-            before = conn.total_changes
             _copy(conn, "balances", "cash")
+            # source vs destination totals, not rows copied this run — a
+            # re-run copies nothing and that is success, not loss
             out["balances→cash"] = (_count(conn, "balances"),
-                                    conn.total_changes - before)
+                                    _count(conn, "cash"))
         # holdings/plans gained columns in place; nothing to move.
         now = int(time.time())
         conn.execute("UPDATE holdings SET updated_at = ? WHERE updated_at = 0",
@@ -153,6 +154,8 @@ def main() -> int:
     for k, v in q.items():
         print(f"  {k:<20} {v}")
 
+    # Every (source, destination) pair must have at least as many rows on the
+    # destination side. Re-running is expected to copy nothing.
     bad = []
     for name, pair in list(p.items()) + list(q.items()):
         if isinstance(pair, tuple) and pair[1] < pair[0]:
