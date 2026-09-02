@@ -55,13 +55,19 @@ def fetch_og_image(url: str, timeout: float = 5.0) -> Optional[str]:
         return None
 
 
-def enrich_images(items: list, *, max_fetch: int = 60, workers: int = 8,
+def enrich_images(items: list, *, max_fetch: int = 60, workers: int = 4,
                   timeout: float = 5.0) -> int:
     """Fill ``item.image`` in place for items lacking one. Returns #filled.
 
     Caps at ``max_fetch`` fetches per call so an abnormal burst of new
     items cannot stall the batch. Serial worst case (60 x 5s) is avoided
     with a small thread pool; the 06:00 cron tolerates a few minutes.
+
+    One call is one source, so every fetch here lands on the same host.
+    Eight of them at once read as an attack to a Korean-press WAF:
+    steeldaily and ferrotimes both blocked the Oracle IP the first time a
+    new source brought in a full 40-item batch. Four is the compromise —
+    the burst only happens on a source's first sweep anyway.
     """
     targets = [it for it in items if not it.image and it.url][:max_fetch]
     if not targets:
