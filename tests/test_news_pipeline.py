@@ -69,6 +69,17 @@ def test_every_source_id_is_unique():
     assert len(ids) == len(set(ids))
 
 
+def test_a_title_wrapped_in_markup_survives_parsing():
+    """fiercebiotech wraps every <title> in an <a>; reading only ``.text``
+    left the title empty and the item was dropped as untitled."""
+    from src.research.news.sources.rss import parse_feed
+    xml = ("<rss version='2.0'><channel><item>"
+           "<title><a href='/x'>Alnylam silencer sees silver linings</a></title>"
+           "<link>http://f/x</link></item></channel></rss>")
+    items = parse_feed(xml, "fiercebiotech")
+    assert [i.title for i in items] == ["Alnylam silencer sees silver linings"]
+
+
 # ── collection ──────────────────────────────────────────────────────────────
 
 def test_new_items_are_stored_once(monkeypatch, no_images):

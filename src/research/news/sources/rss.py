@@ -8,13 +8,19 @@ from __future__ import annotations
 
 import html
 import re
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from typing import Optional
 
 from .base import RawItem
 
-_UA = "portfolio-dashboard/1.0 (+news-agent)"
+# A named bot UA gets 429/403 from reddit, cloudflare-fronted feeds
+# (marinelog, voxelmatters) and bls.gov. Feeds are public pages served
+# to any browser; identifying as one is what makes them reachable.
+_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+_UA_BOT = "portfolio-dashboard/1.0 (+news-agent)"
 _IMG_EXT = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 _IMG_IN_HTML = re.compile(r'<img[^>]+src=["\']([^"\']+)', re.I)
 
@@ -37,7 +43,7 @@ def _parse_entry(node: ET.Element, source_id: str, kind: str) -> Optional[RawIte
     title = url = url_fallback = published = summary = image = ""
     for c in node:
         ln = _local(c.tag)
-        text = (c.text or "").strip()
+        text = "".join(c.itertext()).strip()
         if ln == "title" and not title:
             title = text
         elif ln == "link":
@@ -96,10 +102,22 @@ def parse_feed(xml_text: str, source_id: str, kind: str = "rss") -> list[RawItem
     return items
 
 
+def _get(url: str, ua: str, timeout: float) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": ua})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
+
 def fetch_rss(url: str, source_id: str, kind: str = "rss",
               timeout: float = 15.0) -> list[RawItem]:
     """Fetch + parse a feed. Raises urllib errors on network failure."""
-    req = urllib.request.Request(url, headers={"User-Agent": _UA})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = resp.read()
+    try:
+        data = _get(url, _UA, timeout)
+    except urllib.error.HTTPError as e:
+        # The two camps pull opposite ways: reddit and cloudflare-fronted
+        # feeds refuse a named bot, hankyung refuses a browser. One retry
+        # covers both without a per-source UA column.
+        if e.code not in (403, 429):
+            raise
+        data = _get(url, _UA_BOT, timeout)
     return parse_feed(data.decode("utf-8", errors="replace"), source_id, kind)

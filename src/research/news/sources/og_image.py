@@ -13,7 +13,8 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
-_UA = "portfolio-dashboard/1.0 (+news-agent)"
+from .rss import _UA
+
 _MAX_BYTES = 65536  # og tags live in <head>; never read the whole page
 
 # <meta property="og:image" content="..."> with attributes in either order.
