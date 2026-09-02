@@ -1,7 +1,7 @@
 {
   "version": 2,
   "updated": "2026-09-02",
-  "note": "소스 목록. 테마에 묶이지 않는다 — 수집은 이 목록을 한 번씩 훑고, 테마는 기사 단위로 붙는다. group이 lead_lag을 결정한다: research=leading, social=coincident, news=lagging. broad=true는 전체 사이트 피드라 enrich 전에 키워드 사전 필터를 탄다.",
+  "note": "소스 목록. 테마에 묶이지 않는다 — 수집은 이 목록을 한 번씩 훑고, 테마는 기사 단위로 붙는다. group이 lead_lag을 결정한다: research=leading, social=coincident, news=lagging. broad=true는 전체 사이트 피드라 enrich 전에 키워드 사전 필터를 탄다. reddit는 서브레딧을 multireddit 한 URL로 합친다 — IP당 스로틀이 초 단위가 아니라 장시간 예산이라, 세 번 부르면 두 번은 429다.",
   "sources": [
     {
       "id": "3dpi",
@@ -300,22 +300,10 @@
       "url": "https://connect.biorxiv.org/biorxiv_xml.php?subject=all"
     },
     {
-      "id": "reddit_ml",
+      "id": "reddit",
       "kind": "rss",
       "group": "social",
-      "url": "https://www.reddit.com/r/MachineLearning/.rss"
-    },
-    {
-      "id": "reddit_robotics",
-      "kind": "rss",
-      "group": "social",
-      "url": "https://www.reddit.com/r/robotics/.rss"
-    },
-    {
-      "id": "reddit_semi",
-      "kind": "rss",
-      "group": "social",
-      "url": "https://www.reddit.com/r/semiconductors/.rss"
+      "url": "https://www.reddit.com/r/MachineLearning+robotics+semiconductors/.rss"
     }
   ]
 }

@@ -114,10 +114,10 @@ def fetch_rss(url: str, source_id: str, kind: str = "rss",
     try:
         data = _get(url, _UA, timeout)
     except urllib.error.HTTPError as e:
-        # The two camps pull opposite ways: reddit and cloudflare-fronted
-        # feeds refuse a named bot, hankyung refuses a browser. One retry
-        # covers both without a per-source UA column.
-        if e.code not in (403, 429):
+        # The two camps pull opposite ways: cloudflare-fronted feeds refuse
+        # a named bot, hankyung refuses a browser. One retry covers both
+        # without a per-source UA column.
+        if e.code != 403:
             raise
         data = _get(url, _UA_BOT, timeout)
     return parse_feed(data.decode("utf-8", errors="replace"), source_id, kind)
