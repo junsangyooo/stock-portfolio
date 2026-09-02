@@ -80,6 +80,28 @@ def test_a_title_wrapped_in_markup_survives_parsing():
     assert [i.title for i in items] == ["Alnylam silencer sees silver linings"]
 
 
+def test_theme_pairs_normalises_what_the_model_returns():
+    """The tagger may answer with pairs, bare ids, or nonsense in either slot."""
+    from src.research.news.enrich import _theme_pairs
+    valid = {"ai_sw", "macro", "bio"}
+    got = list(_theme_pairs(
+        [["ai_sw", 0.9], "macro", ["nope", 1.0], ["bio", "x"], ["ai_sw", 5]],
+        valid))
+    assert got == [("ai_sw", 0.9), ("macro", 1.0), ("bio", 1.0), ("ai_sw", 1.0)]
+    assert list(_theme_pairs(None, valid)) == []
+
+
+def test_the_tagger_is_shown_definitions_and_told_none_is_allowed():
+    """Bare ids made the model pick the nearest-sounding label and made macro
+    a drain; the definitions and the explicit opt-out are the fix."""
+    from src.research.news.enrich import _prompt
+    cat = load_catalog()
+    p = _prompt([{"title": "t", "body": "b"}], cat)
+    assert cat.themes["semiconductor"].definition in p
+    assert "빈 배열" in p
+    assert "(연관 신호용" not in p   # the dead active/shadow vocabulary
+
+
 # ── collection ──────────────────────────────────────────────────────────────
 
 def test_new_items_are_stored_once(monkeypatch, no_images):

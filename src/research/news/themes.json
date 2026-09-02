@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "updated": "2026-09-01",
+  "version": 3,
+  "updated": "2026-09-02",
   "note": "테마 분류 체계. 소스 목록은 sources.json에 있고 테마에 묶이지 않는다 — 수집은 전 분야를 항상 돌고, 테마는 기사 단위로 붙는다. always_on(macro)만 특별하며, 옛 active/shadow 플래그는 폐기됐다 (모든 테마가 실제로 수집된다).",
   "themes": [
     {
@@ -388,19 +388,26 @@
     {
       "theme_id": "ev",
       "name_kr": "전기차",
-      "definition": "전기차 OEM·수요·정책 (연관 신호용 그림자 테마)",
+      "definition": "전기차 OEM·수요·정책",
       "keywords": {
         "ko": [
           "전기차",
           "EV",
           "테슬라",
-          "BYD"
+          "BYD",
+          "니오",
+          "샤오펑",
+          "리비안"
         ],
         "en": [
           "electric vehicle",
           "EV",
           "Tesla",
-          "BYD"
+          "BYD",
+          "NIO",
+          "XPENG",
+          "Rivian",
+          "Lucid"
         ]
       },
       "related": [
@@ -414,7 +421,7 @@
     {
       "theme_id": "materials_raw",
       "name_kr": "원자재/소재",
-      "definition": "리튬·니켈·코발트 등 배터리 원자재 가격/공급 (연관 신호용)",
+      "definition": "리튬·니켈·코발트 등 배터리 원자재 가격/공급",
       "keywords": {
         "ko": [
           "리튬",
@@ -440,7 +447,7 @@
     {
       "theme_id": "grid_ess",
       "name_kr": "전력망/ESS",
-      "definition": "전력망·에너지저장장치 수요 (연관 신호용)",
+      "definition": "전력망·에너지저장장치 수요",
       "keywords": {
         "ko": [
           "ESS",
@@ -464,7 +471,7 @@
     {
       "theme_id": "equipment",
       "name_kr": "장비",
-      "definition": "반도체/배터리 제조 장비 (연관 신호용)",
+      "definition": "반도체/배터리 제조 장비",
       "keywords": {
         "ko": [
           "장비",
@@ -489,7 +496,7 @@
     {
       "theme_id": "datacenter_power",
       "name_kr": "데이터센터/전력",
-      "definition": "AI 데이터센터 전력·냉각 수요 (연관 신호용)",
+      "definition": "AI 데이터센터 전력·냉각 수요",
       "keywords": {
         "ko": [
           "데이터센터",
@@ -628,6 +635,123 @@
           "theme": "shipbuilding",
           "relation": "downstream",
           "weight": 0.4
+        }
+      ]
+    },
+    {
+      "theme_id": "game_entertainment",
+      "name_kr": "게임/엔터",
+      "definition": "게임 개발·퍼블리싱·플랫폼과 음악·영상·웹툰 등 엔터테인먼트 IP 사업",
+      "keywords": {
+        "ko": [
+          "게임",
+          "게임사",
+          "퍼블리싱",
+          "신작",
+          "지스타",
+          "MMORPG",
+          "엔터테인먼트",
+          "아이돌",
+          "음원",
+          "웹툰",
+          "콘솔"
+        ],
+        "en": [
+          "game",
+          "gaming",
+          "publisher",
+          "console",
+          "esports",
+          "entertainment",
+          "streaming"
+        ]
+      },
+      "related": [
+        {
+          "theme": "ai_sw",
+          "relation": "application",
+          "weight": 0.4
+        }
+      ]
+    },
+    {
+      "theme_id": "consumer_retail",
+      "name_kr": "유통/소비재",
+      "definition": "백화점·대형마트·편의점·이커머스 등 유통 채널과 식음료·화장품·생활용품 소비재",
+      "keywords": {
+        "ko": [
+          "유통",
+          "백화점",
+          "대형마트",
+          "편의점",
+          "이커머스",
+          "소비재",
+          "식품",
+          "음료",
+          "화장품",
+          "리테일",
+          "소비심리"
+        ],
+        "en": [
+          "retail",
+          "e-commerce",
+          "consumer goods",
+          "grocery",
+          "cosmetics",
+          "beverage"
+        ]
+      },
+      "related": [
+        {
+          "theme": "macro",
+          "relation": "demand",
+          "weight": 0.4
+        }
+      ]
+    },
+    {
+      "theme_id": "renewable_nuclear",
+      "name_kr": "재생에너지/원전/수소",
+      "definition": "태양광·풍력·원자력·수소 등 무탄소 발전원과 그 밸류체인",
+      "keywords": {
+        "ko": [
+          "태양광",
+          "풍력",
+          "해상풍력",
+          "원전",
+          "원자력",
+          "SMR",
+          "수소",
+          "연료전지",
+          "재생에너지",
+          "신재생",
+          "무탄소"
+        ],
+        "en": [
+          "solar",
+          "wind power",
+          "nuclear",
+          "SMR",
+          "hydrogen",
+          "fuel cell",
+          "renewable"
+        ]
+      },
+      "related": [
+        {
+          "theme": "grid_ess",
+          "relation": "downstream",
+          "weight": 0.6
+        },
+        {
+          "theme": "energy",
+          "relation": "substitute",
+          "weight": 0.5
+        },
+        {
+          "theme": "datacenter_power",
+          "relation": "demand",
+          "weight": 0.5
         }
       ]
     }

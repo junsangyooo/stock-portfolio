@@ -50,21 +50,63 @@ _SYSTEM = ("너는 투자 정보 큐레이터다. 주어진 기사 목록을 빠
            "JSON만 출력한다.")
 
 
-def _prompt(items: list[dict], theme_ids: list[str]) -> str:
+def _prompt(items: list[dict], catalog: Catalog) -> str:
+    """The batch prompt.
+
+    Themes arrive with their definitions, not as bare ids. A list of names
+    alone is the failure mode §6.2 of ops notes already names for the analysis
+    agent — the model picks the closest-sounding label instead of reading the
+    text, and picks one even when none applies. It showed up here exactly as
+    predicted: a story about a county farming subsidy came back tagged
+    [ai_sw, macro], and macro had become the drain everything unclassifiable
+    ran into. Saying "none" has to be an allowed answer, in words.
+    """
     listing = "\n".join(
         f"[{i}] {r['title']}\n    {(r['body'] or '')[:_BODY_TRUNC]}"
         for i, r in enumerate(items))
+    fields = "\n".join(f"- {t.theme_id}: {t.definition}"
+                        for t in sorted(catalog.themes.values(),
+                                        key=lambda x: x.theme_id))
     return (
         f"기사 {len(items)}건:\n\n{listing}\n\n"
         "각 건마다 다음 넷을 매겨라.\n"
         "1) s: 한국어 한 문장 요약\n"
         "2) imp: 투자 판단 중요도 1~5\n"
         "3) nov: 새로운 사실이면 true, 이미 알려진 것의 반복이면 false\n"
-        "4) t: 해당 분야(복수 가능, 없으면 빈 배열)\n\n"
-        f"분야 목록: {', '.join(theme_ids)}\n\n"
-        '출력(JSON): {"r":[{"i":0,"s":"한문장","imp":3,"nov":true,"t":["ai_sw"]}]}\n'
+        "4) t: 해당 분야와 확신도 [분야id, 0.0~1.0] 목록\n\n"
+        f"분야:\n{fields}\n\n"
+        "분야 판정 규칙:\n"
+        "- 기사가 그 분야를 실제로 다룰 때만 붙인다. 어느 분야에도 해당하지 "
+        "않으면 t는 빈 배열이며, 그것이 정상적인 답이다. 가장 비슷해 보이는 "
+        "것을 억지로 고르지 말 것.\n"
+        "- macro는 금리·환율·통화정책·지정학처럼 전 종목에 걸리는 거시 "
+        "이슈에만 쓴다. 분류가 애매한 기사를 담는 곳이 아니다.\n"
+        "- 확신도는 그 분야가 기사의 실제 주제인 정도다. 곁다리로 한 번 "
+        "언급된 정도면 0.3 이하로 낮춘다.\n\n"
+        '출력(JSON): {"r":[{"i":0,"s":"한문장","imp":3,"nov":true,'
+        '"t":[["ai_sw",0.9],["semiconductor",0.4]]}]}\n'
         "- i는 위 번호. 전 건 빠짐없이. JSON만."
     )
+
+
+def _theme_pairs(raw, valid: set[str]):
+    """Normalise the model's ``t`` into (theme_id, confidence) pairs.
+
+    Accepts the bare string form too: the field used to be a plain id list,
+    and a model that ignores the change should degrade to unscored tags
+    rather than losing its themes. Unscored means 1.0 — the column's own
+    default, and what every row written before this meant.
+    """
+    for e in (raw or []):
+        tid, conf = (e, None) if isinstance(e, str) else (
+            (e[0], e[1]) if isinstance(e, (list, tuple)) and e else (None, None))
+        if tid not in valid:
+            continue
+        try:
+            c = 1.0 if conf is None else max(0.0, min(1.0, float(conf)))
+        except (TypeError, ValueError):
+            c = 1.0
+        yield tid, c
 
 
 def _since(days: int, now: Optional[datetime] = None) -> str:
@@ -128,9 +170,8 @@ def _apply(items: list[dict], parsed: list[dict], valid: set[str],
             imp = 3
         rows.append((str(e.get("s") or "")[:300], imp,
                      1 if e.get("nov") else 0, now_iso, sid))
-        for t in (e.get("t") or []):
-            if t in valid:
-                theme_rows.append((sid, t))
+        theme_rows.extend((sid, tid, conf)
+                          for tid, conf in _theme_pairs(e.get("t"), valid))
     if not rows:
         return 0
     with connect() as c:
@@ -139,8 +180,8 @@ def _apply(items: list[dict], parsed: list[dict], valid: set[str],
             "enriched_at=? WHERE signal_id=?", rows)
         if theme_rows:
             c.executemany(
-                "INSERT OR IGNORE INTO signal_themes (signal_id, theme_id) "
-                "VALUES (?,?)", theme_rows)
+                "INSERT OR IGNORE INTO signal_themes "
+                "(signal_id, theme_id, confidence) VALUES (?,?,?)", theme_rows)
         c.commit()
     return len(rows)
 
@@ -150,8 +191,7 @@ def run(*, catalog: Optional[Catalog] = None, date: Optional[str] = None,
         window_days: int = _WINDOW_DAYS, timeout_s: float = 600) -> dict:
     """Enrich outstanding articles, newest first, up to `limit` (0 = no cap)."""
     catalog = catalog or load_catalog()
-    theme_ids = sorted(catalog.themes)
-    valid = set(theme_ids)
+    valid = set(catalog.themes)
     todo = pending(limit=limit, date=date, window_days=window_days)
     if not todo:
         return {"pending": 0, "enriched": 0, "batches": 0, "failed": 0,
@@ -164,7 +204,7 @@ def run(*, catalog: Optional[Catalog] = None, date: Optional[str] = None,
     for i in range(0, len(todo), batch):
         chunk = todo[i:i + batch]
         try:
-            raw = backend.call(_SYSTEM, _prompt(chunk, theme_ids),
+            raw = backend.call(_SYSTEM, _prompt(chunk, catalog),
                                timeout_s=timeout_s, model=FAST_MODEL)
             parsed = _parse_json(raw).get("r") or []
         except Exception as e:  # noqa: BLE001 — the batch is the unit of failure
@@ -183,8 +223,44 @@ def run(*, catalog: Optional[Catalog] = None, date: Optional[str] = None,
             "failed": failed, "backlog": max(backlog - enriched, 0)}
 
 
+def redo(days: int = _WINDOW_DAYS, date: Optional[str] = None) -> dict:
+    """Clear enrichment over a window so the next run redoes it.
+
+    What this is for is a change to the theme catalog: a new theme is worth
+    nothing until the articles that belong to it carry the tag, and `pending`
+    skips anything already stamped. Clearing the summary along with the themes
+    looks wasteful, but the batch produces all four fields in one call — a
+    themes-only pass would be a second inference over the same input, which
+    §6.1 of ops notes rules out for exactly this reason.
+
+    The window is what matters, not the corpus. Nothing reads enrichment older
+    than `_WINDOW_DAYS`, so re-tagging further back buys nothing and costs an
+    hour of Haiku per fortnight of history.
+    """
+    where, args = "collected_on >= ?", [_since(days)]
+    if date:
+        where, args = "collected_on = ?", [date]
+    with connect() as c:
+        n = c.execute(f"SELECT count(*) FROM signals WHERE {where} "
+                      "AND enriched_at IS NOT NULL", args).fetchone()[0]
+        c.execute("DELETE FROM signal_themes WHERE signal_id IN "
+                  f"(SELECT signal_id FROM signals WHERE {where})", args)
+        c.execute(f"UPDATE signals SET enriched_at = NULL WHERE {where}", args)
+        c.commit()
+    return {"cleared": n, "window": date or f"{days}d"}
+
+
 if __name__ == "__main__":   # manual: python -m src.research.news.enrich
+    import argparse
     import sys
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--redo-days", type=int, default=0,
+                    help="clear this many days of enrichment first — use "
+                         "after changing themes.json")
+    ap.add_argument("--limit", type=int, default=_RUN_CAP)
+    a = ap.parse_args()
     logging.basicConfig(level=logging.INFO)
-    print(json.dumps(run(), ensure_ascii=False, indent=2))
+    if a.redo_days:
+        print(json.dumps(redo(a.redo_days), ensure_ascii=False))
+    print(json.dumps(run(limit=a.limit), ensure_ascii=False, indent=2))
     sys.exit(0)
