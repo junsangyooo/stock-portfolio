@@ -124,12 +124,6 @@
       "url": "https://www.federalreserve.gov/feeds/press_all.xml"
     },
     {
-      "id": "ferrotimes",
-      "kind": "rss",
-      "group": "news",
-      "url": "https://www.ferrotimes.com/rss/allArticle.xml"
-    },
-    {
       "id": "fiercebiotech",
       "kind": "rss",
       "group": "news",
@@ -165,6 +159,12 @@
       "group": "news",
       "url": "https://www.irobotnews.com/rss/allArticle.xml",
       "broad": true
+    },
+    {
+      "id": "metalminer",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://agmetalminer.com/feed/"
     },
     {
       "id": "mining_com",
@@ -215,6 +215,13 @@
       "url": "https://www.sec.gov/news/pressreleases.rss"
     },
     {
+      "id": "snmnews",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.snmnews.com/rss/allArticle.xml",
+      "broad": true
+    },
+    {
       "id": "spacenews",
       "kind": "rss",
       "group": "news",
@@ -231,12 +238,6 @@
       "kind": "rss",
       "group": "news",
       "url": "https://www.statnews.com/feed/"
-    },
-    {
-      "id": "steeldaily",
-      "kind": "rss",
-      "group": "news",
-      "url": "https://www.steeldaily.co.kr/rss/allArticle.xml"
     },
     {
       "id": "theelec_en",
