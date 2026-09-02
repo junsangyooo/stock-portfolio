@@ -470,12 +470,22 @@ const THEME_ICO = {
   battery:'battery-charging', ai_sw:'bot', bio:'dna', semiconductor:'cpu',
   robotics:'biceps-flexed', space:'rocket', fintech:'landmark',
   shipbuilding:'ship', adv_manufacturing:'printer', macro:'globe',
+  game_entertainment:'gamepad-2', consumer_retail:'shopping-cart',
+  renewable_nuclear:'atom', ev:'car', materials_raw:'pickaxe',
+  grid_ess:'zap', equipment:'wrench', datacenter_power:'server',
+  defense:'shield', regulation_fda:'clipboard-check', regulation_fin:'scale',
+  energy:'flame', steel:'factory',
 };
 // per-theme accent — badge / placeholder gradient / top-news chips
 const THEME_COLOR = {
   battery:'#2E7D4F', ai_sw:'#6B4FA8', bio:'#0F766E', semiconductor:'#1D4ED8',
   robotics:'#B5446E', space:'#4C51BF', fintech:'#A97A0B', shipbuilding:'#1F6F78',
   adv_manufacturing:'#C1600F', macro:'#5B6472',
+  game_entertainment:'#7E22CE', consumer_retail:'#BE123C',
+  renewable_nuclear:'#166534', ev:'#0E7490', materials_raw:'#7C3F1D',
+  grid_ess:'#047857', equipment:'#475569', datacenter_power:'#4338CA',
+  defense:'#374151', regulation_fda:'#9D174D', regulation_fin:'#854D0E',
+  energy:'#B45309', steel:'#57534E',
 };
 function themeColor(id) { return THEME_COLOR[id] || 'var(--cyan)'; }
 function hexA(hex, a) {  // '#4ade80' + alpha -> rgba()
@@ -494,7 +504,22 @@ const SRC_NAME = {
   gcaptain:'gCaptain', splash247:'Splash 247', '3dpi':'3D Printing Industry',
   fed_press:'Fed', bok_press:'한국은행',
   reddit_ml:'r/MachineLearning', reddit_semi:'r/semiconductors',
-  reddit_robotics:'r/robotics',
+  reddit_robotics:'r/robotics', reddit:'Reddit',
+  // sources added 2026-09-02; the reddit_* and steeldaily/ferrotimes keys
+  // above stay because articles collected under them are still in the window
+  snmnews:'철강금속신문', steeldaily:'스틸데일리', ferrotimes:'페로타임즈',
+  mining_com:'Mining.com', metalminer:'MetalMiner',
+  oilprice:'OilPrice', eia_tie:'EIA', electimes:'전기신문',
+  ess_news:'Energy-Storage.news', utilitydive:'Utility Dive',
+  dcd:'Data Center Dynamics', defensenews:'Defense News',
+  breakingdefense:'Breaking Defense', sec_press:'SEC',
+  fiercebiotech:'Fierce Biotech', electrive:'electrive',
+  cleantechnica:'CleanTechnica', theelec_en:'TheElec', eetimes:'EE Times',
+  '3dprint_com':'3DPrint.com', voxelmatters:'VoxelMatters',
+  nasa:'NASA', nsf:'NASASpaceflight', bea:'BEA',
+  arxiv_ai:'arXiv cs.AI', arxiv_robotics:'arXiv cs.RO',
+  arxiv_hardware:'arXiv cs.AR', arxiv_qbio:'arXiv q-bio',
+  arxiv_battery:'arXiv mtrl-sci',
 };
 function srcName(id) { return SRC_NAME[id] || id || ''; }
 function timeAgo(iso) {
