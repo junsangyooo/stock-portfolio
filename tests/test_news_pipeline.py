@@ -137,6 +137,31 @@ def test_an_undated_item_survives_the_cursor(monkeypatch, no_images):
     assert stat["written"] == 1 and stat["stale"] == 0
 
 
+def test_a_first_sweep_leaves_the_feeds_back_catalogue_behind(monkeypatch, no_images):
+    """No cursor means nothing bounds how far back the first fetch reaches.
+    BEA's feed is a rolling archive back to 2019, and all of it arrived
+    stamped with today's collected_on — which is the date `daily` reads."""
+    old = _item("2019 release", "http://a", published="Wed, 18 Dec 2019 08:30:00 +0000")
+    new = _item("this week", "http://b", published="Mon, 24 Aug 2026 08:30:00 +0000")
+    stat = _collect(monkeypatch, [old, new], cursor=None)
+    assert stat["written"] == 1 and stat["stale"] == 1
+    assert [r["title"] for r in _stored()] == ["this week"]
+
+
+def test_the_age_floor_applies_only_to_a_feed_we_have_never_fetched(monkeypatch,
+                                                                    no_images):
+    """Once a cursor exists it is the bound, and a feed that back-dates a
+    correction must not be silently dropped by a second rule."""
+    old = _item("backdated", "http://a", published="Wed, 18 Dec 2019 08:30:00 +0000")
+    stat = _collect(monkeypatch, [old], cursor="2019-01-01T00:00:00+00:00")
+    assert stat["written"] == 1
+
+
+def test_an_undated_item_survives_the_first_sweep_floor(monkeypatch, no_images):
+    stat = _collect(monkeypatch, [_item("no date", "http://a")], cursor=None)
+    assert stat["written"] == 1
+
+
 def test_the_cursor_advances_to_the_newest_item_seen(monkeypatch, no_images):
     _collect(monkeypatch, [_item("a", "http://a",
                                  published="2026-08-26T00:00:00+09:00")])

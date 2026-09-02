@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from ...core.kst import KST
@@ -33,6 +33,16 @@ log = logging.getLogger(__name__)
 # Short latin keywords (AI, ESS, HBM, LFP) need letter boundaries — a bare
 # substring match fires on 'ai' inside "Taiwan" and "daily".
 _ASCII_SHORT = 4
+
+# A feed we have never fetched has no cursor, so nothing bounds how far back
+# its first sweep reaches — and plenty of them are rolling archives. BEA's
+# carried releases from 2019 through 2026, and all forty landed with today's
+# collected_on, which is what `daily` reads: the day's macro overview was
+# built partly from a 2019 statistic, and Sunday's roll-up would have taken
+# that overview into the weekly memory. Seven days because that is the
+# horizon everything downstream reads (enrich._WINDOW_DAYS, read._HORIZON_DAYS)
+# — older articles cost an enrichment slot to produce text nothing looks at.
+_FIRST_SWEEP_DAYS = 7
 
 
 def _keyword_hit(title: str, summary: str, keywords: list[str]) -> bool:
@@ -131,12 +141,16 @@ def collect_one(feed: Feed, keywords: list[str], cursor: Optional[str],
 
     items = items[:max_per_source]
     fresh, newest = [], cursor or ""
+    floor = (now - timedelta(days=_FIRST_SWEEP_DAYS)).isoformat()
     for it in items:
         pub = _published_iso(it.published)
         # An item the feed dates at or before our cursor was seen last cycle.
         # Undated items fall through to the dedup check rather than being
         # dropped — plenty of feeds omit the field entirely.
         if cursor and pub and pub <= cursor:
+            stat["stale"] += 1
+            continue
+        if not cursor and pub and pub < floor:
             stat["stale"] += 1
             continue
         if feed.broad and keywords and not _keyword_hit(it.title, it.summary,
