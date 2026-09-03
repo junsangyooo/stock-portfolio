@@ -1,5 +1,4 @@
 # Oracle venv pip freeze (2026-07-13) — source of truth for deployment.
-# Regenerated after removing unused crypto + ML-calibration remnants (27 pkgs).
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.5
 aiosignal==1.4.0

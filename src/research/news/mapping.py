@@ -69,15 +69,15 @@ def _build_user_prompt(name: str, market: str, catalog: Catalog) -> str:
 
 
 def tag_stock_by_llm(name: str, market: str, catalog: Catalog,
-                     backend=None, timeout_s: float = 60) -> dict:
+                     backend=None) -> dict:
     """Tag one stock via the LLM. Filters out any theme_id not in the catalog.
 
-    `backend` must expose ``call(system, user, timeout_s, model)``; defaults to
+    `backend` must expose ``call(system, user, model=...)``; defaults to
     ClaudeCliBackend. Returns {"primary": [...], "related": [...]}.
     """
     backend = backend or ClaudeCliBackend(model=SLOW_MODEL)
     raw = backend.call(_SYSTEM, _build_user_prompt(name, market, catalog),
-                       timeout_s=timeout_s, model=SLOW_MODEL)
+                       model=SLOW_MODEL)
     data = _parse_json(raw)
     valid = set(catalog.themes)
     primary = [x for x in data.get("primary", []) if x in valid]

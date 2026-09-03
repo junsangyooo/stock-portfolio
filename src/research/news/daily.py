@@ -69,20 +69,18 @@ def _prompt(theme_name: str, date: str, items: list[dict]) -> str:
 
 
 def build_theme(theme_id: str, theme_name: str, date: str,
-                backend=None, timeout_s: float = 300) -> Optional[dict]:
+                backend=None) -> Optional[dict]:
     """One theme's overview for one date. None when there is nothing to say."""
     items = items_for(theme_id, date)
     if not items:
         return None
     prompt = _prompt(theme_name, date, items)
     if backend is not None:                       # tests inject their own
-        raw = backend.call(_SYSTEM, prompt, timeout_s=timeout_s,
-                           model=FAST_MODEL)
+        raw = backend.call(_SYSTEM, prompt, model=FAST_MODEL)
     else:
         raw, _ = local_or_claude(_SYSTEM, prompt, claude_model=FAST_MODEL,
                                  stage=f"daily:{theme_id}",
-                                 validate=_parse_json,
-                                 claude_timeout_s=timeout_s)
+                                 validate=_parse_json)
     data = _parse_json(raw)
     # Each field is parsed independently: a malformed watchlist must not cost
     # us the bullets, and vice versa.

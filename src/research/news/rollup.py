@@ -84,14 +84,12 @@ def _prompt(theme_name: str, span: str, unit: str, blocks: list[str]) -> str:
     )
 
 
-def _call(prompt: str, stage: str, backend, timeout_s: float) -> dict:
+def _call(prompt: str, stage: str, backend) -> dict:
     if backend is not None:                       # tests inject their own
-        raw = backend.call(_SYSTEM, prompt, timeout_s=timeout_s,
-                           model=FAST_MODEL)
+        raw = backend.call(_SYSTEM, prompt, model=FAST_MODEL)
     else:
         raw, _ = local_or_claude(_SYSTEM, prompt, claude_model=FAST_MODEL,
-                                 stage=stage, validate=_parse_json,
-                                 claude_timeout_s=timeout_s)
+                                 stage=stage, validate=_parse_json)
     data = _parse_json(raw)
     bl = data.get("bullets") or []
     return {
@@ -102,7 +100,7 @@ def _call(prompt: str, stage: str, backend, timeout_s: float) -> dict:
 
 
 def build_week(theme_id: str, theme_name: str, start: _date,
-               backend=None, timeout_s: float = 600) -> Optional[dict]:
+               backend=None) -> Optional[dict]:
     end = start + timedelta(days=6)
     rows = _daily_rows(theme_id, start, end)
     blocks = []
@@ -116,7 +114,7 @@ def build_week(theme_id: str, theme_name: str, start: _date,
     if not blocks:
         return None
     out = _call(_prompt(theme_name, f"{start} ~ {end}", "일별", blocks),
-                f"weekly:{theme_id}", backend, timeout_s)
+                f"weekly:{theme_id}", backend)
     if not out["summary"]:
         return None
     return {"theme_id": theme_id, "week_start": start.isoformat(),
@@ -124,7 +122,7 @@ def build_week(theme_id: str, theme_name: str, start: _date,
 
 
 def build_month(theme_id: str, theme_name: str, month: str,
-                backend=None, timeout_s: float = 600) -> Optional[dict]:
+                backend=None) -> Optional[dict]:
     rows = _weekly_rows(theme_id, month)
     blocks = []
     for r in rows:
@@ -139,7 +137,7 @@ def build_month(theme_id: str, theme_name: str, month: str,
     if not blocks:
         return None
     out = _call(_prompt(theme_name, month, "주간", blocks),
-                f"monthly:{theme_id}", backend, timeout_s)
+                f"monthly:{theme_id}", backend)
     if not out["summary"]:
         return None
     return {"theme_id": theme_id, "month": month, "n_weeks": len(blocks), **out}

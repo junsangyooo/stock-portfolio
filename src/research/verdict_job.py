@@ -30,15 +30,6 @@ from datetime import datetime
 from ..core.kst import KST as _KST
 from ..core.paths import ensure_dirs
 
-# Hang guard, NOT error detection. At 480 this ceiling sat inside the body of
-# the real latency distribution (743 chart runs: mean 352s, p90 439s, p95 461s)
-# and manufactured its own failures: 98 of 99 recorded chart errors were the
-# timeout itself, ~12% of runs every night, on a distribution that has not
-# drifted in months. The only thing a ceiling has to catch is a claude -p that
-# never returns and would otherwise stall the batch forever.
-_TIMEOUT_S = 1800.0
-
-
 
 def _name(symbol_id: str) -> str:
     try:
@@ -59,7 +50,7 @@ def run_symbol(symbol_id: str, date: str, *, force: bool) -> dict:
         return out
     t0 = time.monotonic()
     try:
-        res = analyze.run(symbol_id, _name(symbol_id), timeout_s=_TIMEOUT_S)
+        res = analyze.run(symbol_id, _name(symbol_id))
         out["status"] = res.get("status", "ok")
         # A held symbol whose analysis shipped without its position is the
         # 2026-06 삼성전자 incident; the batch proves the context attached.

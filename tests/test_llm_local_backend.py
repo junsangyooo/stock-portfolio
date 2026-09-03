@@ -93,17 +93,6 @@ class TestFallback(unittest.TestCase):
                              ("LOCAL", "local_llama"))
         self.assertEqual(m.call_count, 2)
 
-    def test_timeout_is_not_retried(self):
-        # A wedged slot means a second 30-min wait, which would push the news
-        # batch into the 21:10 fundamental job.
-        with patch.object(LB.LocalLlamaBackend, "call",
-                          side_effect=RuntimeError("local llama timeout (1800s)")) as m, \
-             patch.object(LB.ClaudeCliBackend, "__init__", return_value=None), \
-             patch.object(LB.ClaudeCliBackend, "call", return_value="CLAUDE"):
-            self.assertEqual(LB.local_or_claude("s", "u", claude_model="m"),
-                             ("CLAUDE", "claude_cli"))
-        self.assertEqual(m.call_count, 1)
-
     def test_fallback_log_carries_stage_and_timestamp(self):
         # The state stage discards the returned backend name, so this log line
         # is the only record of which theme fell back.
@@ -149,3 +138,26 @@ class TestFallback(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# Captured at import, before conftest's autouse fixture replaces it with a
+# guard — the one test that must run the real ``call``.
+_REAL_CLI_CALL = LB.ClaudeCliBackend.call
+
+
+class TestClaudeCliNoTimeout(unittest.TestCase):
+    def test_subprocess_runs_without_timeout(self):
+        # The CLI exits 1 on failure (169 logged); the only timeouts ever seen
+        # were the old 480s ceiling discarding live generations (153).
+        seen = {}
+
+        def fake_run(argv, **kw):
+            seen.update(kw)
+            return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+
+        b = LB.ClaudeCliBackend.__new__(LB.ClaudeCliBackend)
+        b.bin, b.model = "claude", "m"
+        with patch.object(LB.subprocess, "run", side_effect=fake_run):
+            self.assertEqual(_REAL_CLI_CALL(b, "s", "u"), "ok")
+        self.assertIn("timeout", seen)
+        self.assertIsNone(seen["timeout"])

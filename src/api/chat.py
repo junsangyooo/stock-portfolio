@@ -38,10 +38,11 @@ router = APIRouter(prefix="/api/accounts", tags=["chat"])
 
 MAX_CHARS = 4000      # per message, guard against a giant paste
 NEWS_N = 20
-# Hang guard only — nothing blocks on this now, so it is sized for the worst
-# honest run (a screen plus a dozen per-symbol lookups), not for an HTTP wait.
-TIMEOUT_S = 1800
-_STALE_S = TIMEOUT_S + 120   # a job still 'running' past this is dead
+# Display rule, not a timeout: the CLI call itself is unbounded. Past this the
+# poller reports 'timed out' and a new turn may start on the session. Sized
+# above the longest honest run (a screen plus a dozen per-symbol lookups);
+# chat has no measured latency distribution yet.
+_STALE_S = 1800
 _JOB_TTL_S = 3600            # finished jobs are pruned after an hour
 
 SYSTEM = """당신은 개인 투자자의 포트폴리오 대시보드에 내장된 분석 어시스턴트입니다.
@@ -306,8 +307,7 @@ def chat(account_id: str, body: ChatIn,
         try:
             system, user = _build(account_id, msg, seeded)
             reply = ClaudeCliBackend(model=SLOW_MODEL).call(
-                system, user, timeout_s=TIMEOUT_S,
-                extra_args=TOOL_ARGS + session_args)
+                system, user, extra_args=TOOL_ARGS + session_args)
             chat_store.append(account_id, body.session_id, "assistant", reply)
             with _lock:
                 if job_id in _jobs:

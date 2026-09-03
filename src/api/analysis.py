@@ -27,10 +27,6 @@ log = logging.getLogger(__name__)
 
 _VALID_KINDS = ("analysis", "chart")
 
-# Hang guard for the one runnable kind — the job runner's ceiling, which is
-# also what /status uses to call a job stale. verdict_job has its own copy.
-_RUN_TIMEOUT_S = {"analysis": analysis_jobs.RUN_TIMEOUT_S}
-
 
 def _stamp() -> str:
     """Response timestamp — KST, the same clock the agents write dates in."""
@@ -187,8 +183,7 @@ def run_analysis(kind: str, market: str, code: str) -> dict:
         # Imported on the worker thread: it pulls pandas and spawns claude,
         # neither of which belongs on the request path.
         from ..research import analyze
-        return analyze.run(symbol_id, name,
-                           timeout_s=_RUN_TIMEOUT_S["analysis"])
+        return analyze.run(symbol_id, name)
 
     job = analysis_jobs.start(kind, symbol_id, _fn)
     return {"ok": True, "symbol_id": symbol_id, "job": job,

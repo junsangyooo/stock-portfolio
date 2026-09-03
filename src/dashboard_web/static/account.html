@@ -4146,9 +4146,11 @@ renderAll();
   // Poll loop only — 탭 재진입 시 이미 도는 job에 이어 붙는 복구 경로에서 재사용.
   // alreadySec: job이 이미 흘려보낸 시간 (resume 시 진행바가 0초부터 시작하지 않게).
   async function pollAnalysisJob(opts, alreadySec) {
-    // MAX_MS (10min) > backend timeout_s (480s) so a model timeout surfaces as a
-    // clean job error before the poller gives up. Verdict gen measured 307–390s.
-    const POLL_MS = 4000, MAX_MS = 10 * 60 * 1000;
+    // The backend puts no timeout on the model call (CLI reports failures with
+    // exit 1). MAX_MS only stops the poller from running forever if the job
+    // registry loses the job; it must exceed the run distribution (p95 ~1,070s),
+    // so it matches the server-side stale threshold (2 × p95).
+    const POLL_MS = 4000, MAX_MS = 2 * 1070 * 1000;
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const t0 = Date.now() - (alreadySec || 0) * 1000;
     while (Date.now() - t0 < MAX_MS) {

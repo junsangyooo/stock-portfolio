@@ -11,12 +11,13 @@ Contents:
   - ``LocalLlamaBackend``  HTTP client for the on-host llama.cpp server
   - ``_parse_json``        lenient JSON extractor (handles fenced blocks)
   - constants              ``FAST_MODEL`` (Haiku 4.5), ``SLOW_MODEL`` (Sonnet 4.6),
-                           ``LOCAL_URL`` / ``LOCAL_TIMEOUT_S``
+                           ``LOCAL_URL``
 
-Migrated from an earlier trading module during the 2026-05
-cleanup. Its ``Decision`` dataclass,
-``decide()`` orchestrator, ``ApiBackend`` (API path), and ``_pick_backend``
-selector were dropped.
+No timeouts by default. A failed ``claude -p`` exits 1 with a message (Oracle
+logs: 167 auth errors, 2 overload errors — all surfaced that way); the only
+timeouts ever logged (153) were the old 480s ceiling discarding generations
+that were still running. A process that never returns has not been observed.
+``timeout_s`` stays on the backends for a caller that has a measured reason.
 """
 from __future__ import annotations
 
@@ -36,7 +37,6 @@ FAST_MODEL = "claude-haiku-4-5-20251001"
 
 # On-host llama.cpp server (docker, 127.0.0.1 only — never exposed).
 LOCAL_URL = os.getenv("LOCAL_LLM_URL", "http://127.0.0.1:8080")
-LOCAL_TIMEOUT_S = 1800  # measured worst case ~14 min for a 40-item digest
 
 
 def _find_claude() -> str | None:
@@ -86,7 +86,7 @@ class ClaudeCliBackend:
         if not self.bin:
             raise RuntimeError("`claude` CLI not found (PATH or nvm/usr/local)")
 
-    def call(self, system: str, user: str, timeout_s: float = 60,
+    def call(self, system: str, user: str, timeout_s: float | None = None,
              model: str | None = None,
              extra_args: list[str] | None = None) -> str:
         # extra_args: appended CLI flags, e.g. --allowedTools for the chat
@@ -135,11 +135,11 @@ class ClaudeCliBackend:
 class LocalLlamaBackend:
     """OpenAI-compatible client for the llama.cpp server running on this host.
 
-    Deliberately generous timeout: the box is a 4-core Ampere with no GPU, so
-    a full 40-item digest measured ~14 min (prefill 25 tok/s, generation down
-    to ~2 tok/s once the context is long). Nothing here is interactive — the
-    caller is a nightly batch — so slow is fine, silent is not: every failure
-    raises so the caller can fall back to Claude.
+    No timeout: the box is a 4-core Ampere with no GPU, so a full 40-item
+    digest measured ~14 min (prefill 25 tok/s, generation down to ~2 tok/s
+    once the context is long). Nothing here is interactive — the caller is a
+    nightly batch — so slow is fine, silent is not: every failure raises so
+    the caller can fall back to Claude.
     """
 
     name = "local_llama"
@@ -148,7 +148,7 @@ class LocalLlamaBackend:
         self.url = url.rstrip("/")
         self.model = model
 
-    def call(self, system: str, user: str, timeout_s: float = LOCAL_TIMEOUT_S,
+    def call(self, system: str, user: str, timeout_s: float | None = None,
              model: str | None = None) -> str:
         body = json.dumps({
             "messages": [{"role": "system", "content": system},
@@ -209,9 +209,7 @@ def _get_log() -> logging.Logger:
 
 
 def local_or_claude(system: str, user: str, *, claude_model: str,
-                    stage: str = "?", validate=None,
-                    timeout_s: float = LOCAL_TIMEOUT_S,
-                    claude_timeout_s: float = 300) -> tuple[str, str]:
+                    stage: str = "?", validate=None) -> tuple[str, str]:
     """Run on the local model, fall back to Claude on any failure.
 
     Returns ``(raw_text, backend_name)`` so callers can log which one served.
@@ -223,9 +221,7 @@ def local_or_claude(system: str, user: str, *, claude_model: str,
 
     The local call gets one retry first: the only fallback observed so far was
     a llama.cpp 500 on a generation its chat parser rejected — a dice roll at
-    temperature 0.2, not a dead server. A timeout is NOT retried; it means the
-    slot is wedged, and a second 30-minute wait would push the news batch into
-    the 21:10 fundamental job.
+    temperature 0.2, not a dead server.
 
     ``validate`` (e.g. ``_parse_json``) runs on the local answer and must raise
     to reject it. Without it, unusable local output escapes this function and
@@ -234,23 +230,18 @@ def local_or_claude(system: str, user: str, *, claude_model: str,
     """
     for attempt in (1, 2):
         try:
-            out = LocalLlamaBackend().call(system, user, timeout_s=timeout_s)
+            out = LocalLlamaBackend().call(system, user)
             if validate is not None:
                 validate(out)
             return out, "local_llama"
         except Exception as e:  # noqa: BLE001 — any local fault must not lose the run
-            # "timed out" too: a socket timeout surfacing through URLError
-            # keeps that wording, and retrying it costs another full timeout.
-            msg = str(e).lower()
-            timed_out = isinstance(e, TimeoutError) or "timeout" in msg or "timed out" in msg
-            retrying = attempt == 1 and not timed_out
+            retrying = attempt == 1
             _get_log().warning(
                 f"[{stage}] local backend failed (attempt {attempt}: {str(e)[:200]}) "
                 f"— {'retrying locally' if retrying else f'falling back to Claude ({claude_model})'}")
             if not retrying:
                 break
-    out = ClaudeCliBackend(model=claude_model).call(
-        system, user, timeout_s=claude_timeout_s, model=claude_model)
+    out = ClaudeCliBackend(model=claude_model).call(system, user, model=claude_model)
     _get_log().warning(f"[{stage}] served by claude_cli ({claude_model})")
     return out, "claude_cli"
 

@@ -21,7 +21,6 @@ data/analysis/
 data/logs/
 data/backup/
 # stale local orchestrator_state.json is still on disk here
-data/processed/
 
 # ── Catch-all by extension (defense in depth) ───────────────────────
 *.parquet

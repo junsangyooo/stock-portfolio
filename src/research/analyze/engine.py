@@ -254,7 +254,7 @@ def _facts_only(envelope: dict, reason: str) -> dict:
 
 def analyze(symbol_id: str, name: Optional[str] = None, *,
             force_chart: bool = False, backend=None,
-            timeout_s: float = 900, store: bool = True) -> dict:
+            store: bool = True) -> dict:
     """The whole thing. One deterministic pass, one call, one stored result."""
     t0 = time.monotonic()
     envelope = inputs.build(symbol_id, name, force_chart=force_chart)
@@ -266,8 +266,7 @@ def analyze(symbol_id: str, name: Optional[str] = None, *,
         out, err = None, ""
         for attempt in (1, 2):
             try:
-                raw = backend.call(prompt.SYSTEM, user, timeout_s=timeout_s,
-                                   model=SLOW_MODEL)
+                raw = backend.call(prompt.SYSTEM, user, model=SLOW_MODEL)
                 out = normalize(_parse_json(raw), envelope)
                 break
             except Exception as e:  # noqa: BLE001 — retry once, then be honest

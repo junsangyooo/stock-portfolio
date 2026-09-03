@@ -195,7 +195,7 @@ def _apply(items: list[dict], parsed: list[dict], valid: set[str],
 
 def run(*, catalog: Optional[Catalog] = None, date: Optional[str] = None,
         limit: int = _RUN_CAP, batch: int = _BATCH, backend=None,
-        window_days: int = _WINDOW_DAYS, timeout_s: float = 600,
+        window_days: int = _WINDOW_DAYS,
         now: Optional[datetime] = None) -> dict:
     """Enrich outstanding articles, newest first, up to `limit` (0 = no cap)."""
     catalog = catalog or load_catalog()
@@ -213,7 +213,7 @@ def run(*, catalog: Optional[Catalog] = None, date: Optional[str] = None,
         chunk = todo[i:i + batch]
         try:
             raw = backend.call(_SYSTEM, _prompt(chunk, catalog),
-                               timeout_s=timeout_s, model=FAST_MODEL)
+                               model=FAST_MODEL)
             parsed = _parse_json(raw).get("r") or []
         except Exception as e:  # noqa: BLE001 — the batch is the unit of failure
             log.warning("enrich batch %d failed: %s", i // batch, str(e)[:200])
