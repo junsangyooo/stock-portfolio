@@ -173,6 +173,13 @@
       "url": "https://www.mining.com/feed/"
     },
     {
+      "id": "mk_industry",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.mk.co.kr/rss/50100032/",
+      "broad": true
+    },
+    {
       "id": "mk_stock",
       "kind": "rss",
       "group": "news",
@@ -203,6 +210,12 @@
       "url": "https://payloadspace.com/feed/"
     },
     {
+      "id": "recyclingtoday",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.recyclingtoday.com/rss/"
+    },
+    {
       "id": "robotreport",
       "kind": "rss",
       "group": "news",
@@ -213,13 +226,6 @@
       "kind": "rss",
       "group": "news",
       "url": "https://www.sec.gov/news/pressreleases.rss"
-    },
-    {
-      "id": "snmnews",
-      "kind": "rss",
-      "group": "news",
-      "url": "https://www.snmnews.com/rss/allArticle.xml",
-      "broad": true
     },
     {
       "id": "spacenews",

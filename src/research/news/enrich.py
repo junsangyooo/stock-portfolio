@@ -115,8 +115,14 @@ def _since(days: int, now: Optional[datetime] = None) -> str:
 
 
 def pending(limit: int = 0, date: Optional[str] = None,
-            window_days: int = _WINDOW_DAYS) -> list[dict]:
+            window_days: int = _WINDOW_DAYS,
+            now: Optional[datetime] = None) -> list[dict]:
     """Articles collected but not yet enriched, newest first.
+
+    `now` exists so a caller can pin the window. Reading the wall clock with
+    no way to override it is what let the test suite rot by the calendar: its
+    fixture data sat at a fixed date and silently fell out of the window one
+    morning, with no code change.
 
     Bounded by `window_days` because nothing reads an older summary. Pass 0 to
     lift the window (backfilling an old date by hand).
@@ -129,7 +135,7 @@ def pending(limit: int = 0, date: Optional[str] = None,
         args.append(date)
     elif window_days > 0:
         sql += " AND collected_on >= ?"
-        args.append(_since(window_days))
+        args.append(_since(window_days, now))
     sql += " ORDER BY collected_on DESC, signal_id DESC"
     if limit > 0:
         sql += " LIMIT ?"
@@ -139,7 +145,8 @@ def pending(limit: int = 0, date: Optional[str] = None,
 
 
 def _backlog(date: Optional[str] = None,
-             window_days: int = _WINDOW_DAYS) -> int:
+             window_days: int = _WINDOW_DAYS,
+             now: Optional[datetime] = None) -> int:
     """Articles still waiting *inside the window* — reported so a cap that
     never drains is visible instead of merely quiet. Articles that aged out
     are not a backlog; nothing was ever going to read them."""
@@ -150,7 +157,7 @@ def _backlog(date: Optional[str] = None,
         args.append(date)
     elif window_days > 0:
         sql += " AND collected_on >= ?"
-        args.append(_since(window_days))
+        args.append(_since(window_days, now))
     with connect() as c:
         return c.execute(sql, args).fetchone()[0]
 
@@ -188,18 +195,19 @@ def _apply(items: list[dict], parsed: list[dict], valid: set[str],
 
 def run(*, catalog: Optional[Catalog] = None, date: Optional[str] = None,
         limit: int = _RUN_CAP, batch: int = _BATCH, backend=None,
-        window_days: int = _WINDOW_DAYS, timeout_s: float = 600) -> dict:
+        window_days: int = _WINDOW_DAYS, timeout_s: float = 600,
+        now: Optional[datetime] = None) -> dict:
     """Enrich outstanding articles, newest first, up to `limit` (0 = no cap)."""
     catalog = catalog or load_catalog()
     valid = set(catalog.themes)
-    todo = pending(limit=limit, date=date, window_days=window_days)
+    todo = pending(limit=limit, date=date, window_days=window_days, now=now)
     if not todo:
         return {"pending": 0, "enriched": 0, "batches": 0, "failed": 0,
                 "backlog": 0}
-    backlog = _backlog(date, window_days=window_days)
+    backlog = _backlog(date, window_days=window_days, now=now)
 
     backend = backend or ClaudeCliBackend(model=FAST_MODEL)
-    now_iso = datetime.now(KST).isoformat()
+    now_iso = (now or datetime.now(KST)).isoformat()
     enriched = batches = failed = 0
     for i in range(0, len(todo), batch):
         chunk = todo[i:i + batch]
@@ -223,7 +231,8 @@ def run(*, catalog: Optional[Catalog] = None, date: Optional[str] = None,
             "failed": failed, "backlog": max(backlog - enriched, 0)}
 
 
-def redo(days: int = _WINDOW_DAYS, date: Optional[str] = None) -> dict:
+def redo(days: int = _WINDOW_DAYS, date: Optional[str] = None,
+         now: Optional[datetime] = None) -> dict:
     """Clear enrichment over a window so the next run redoes it.
 
     What this is for is a change to the theme catalog: a new theme is worth
@@ -237,7 +246,7 @@ def redo(days: int = _WINDOW_DAYS, date: Optional[str] = None) -> dict:
     than `_WINDOW_DAYS`, so re-tagging further back buys nothing and costs an
     hour of Haiku per fortnight of history.
     """
-    where, args = "collected_on >= ?", [_since(days)]
+    where, args = "collected_on >= ?", [_since(days, now)]
     if date:
         where, args = "collected_on = ?", [date]
     with connect() as c:

@@ -248,7 +248,7 @@ def test_enrichment_writes_all_four_fields(monkeypatch):
     ids = _seed(monkeypatch, 1)
     be = _Backend({"r": [{"i": 0, "s": "요약", "imp": 4, "nov": True,
                           "t": ["semiconductor"]}]})
-    out = enrich.run(backend=be)
+    out = enrich.run(now=NOW, backend=be)
     assert out["enriched"] == 1
     with connect() as c:
         row = c.execute("SELECT summary, importance, novelty, enriched_at "
@@ -264,7 +264,7 @@ def test_unknown_theme_ids_are_dropped(monkeypatch):
     ids = _seed(monkeypatch, 1)
     be = _Backend({"r": [{"i": 0, "s": "x", "imp": 3, "nov": False,
                           "t": ["semiconductor", "not_a_theme"]}]})
-    enrich.run(backend=be)
+    enrich.run(now=NOW, backend=be)
     with connect() as c:
         themes = [r[0] for r in c.execute(
             "SELECT theme_id FROM signal_themes WHERE signal_id=?", (ids[0],))]
@@ -273,7 +273,7 @@ def test_unknown_theme_ids_are_dropped(monkeypatch):
 
 def test_importance_is_clamped(monkeypatch):
     _seed(monkeypatch, 1)
-    enrich.run(backend=_Backend({"r": [{"i": 0, "s": "x", "imp": 99, "t": []}]}))
+    enrich.run(now=NOW, backend=_Backend({"r": [{"i": 0, "s": "x", "imp": 99, "t": []}]}))
     with connect() as c:
         assert c.execute("SELECT importance FROM signals").fetchone()[0] == 5
 
@@ -281,8 +281,8 @@ def test_importance_is_clamped(monkeypatch):
 def test_an_article_the_model_skipped_stays_pending(monkeypatch):
     """It must be retried, not stamped as enriched with nothing in it."""
     _seed(monkeypatch, 2)
-    enrich.run(backend=_Backend({"r": [{"i": 0, "s": "x", "imp": 3, "t": []}]}))
-    assert len(enrich.pending()) == 1
+    enrich.run(now=NOW, backend=_Backend({"r": [{"i": 0, "s": "x", "imp": 3, "t": []}]}))
+    assert len(enrich.pending(now=NOW)) == 1
 
 
 def test_a_failed_batch_leaves_everything_pending(monkeypatch):
@@ -291,16 +291,16 @@ def test_a_failed_batch_leaves_everything_pending(monkeypatch):
     class _Boom:
         def call(self, *a, **kw):
             raise RuntimeError("cli exit 1")
-    out = enrich.run(backend=_Boom())
+    out = enrich.run(now=NOW, backend=_Boom())
     assert out["enriched"] == 0 and out["failed"] == 2
-    assert len(enrich.pending()) == 2
+    assert len(enrich.pending(now=NOW)) == 2
 
 
 def test_enrichment_is_not_repeated(monkeypatch):
     _seed(monkeypatch, 1)
     be = _Backend({"r": [{"i": 0, "s": "x", "imp": 3, "t": []}]})
-    enrich.run(backend=be)
-    second = enrich.run(backend=be)
+    enrich.run(now=NOW, backend=be)
+    second = enrich.run(now=NOW, backend=be)
     assert second["pending"] == 0 and len(be.calls) == 1
 
 
@@ -309,7 +309,7 @@ def test_enrichment_is_not_repeated(monkeypatch):
 def test_daily_overview_reads_only_enriched_items(monkeypatch):
     _seed(monkeypatch, 1)
     assert daily.items_for("semiconductor", "2026-08-27") == []
-    enrich.run(backend=_Backend(
+    enrich.run(now=NOW, backend=_Backend(
         {"r": [{"i": 0, "s": "칩 수요", "imp": 5, "t": ["semiconductor"]}]}))
     got = daily.items_for("semiconductor", "2026-08-27")
     assert len(got) == 1 and got[0]["summary"] == "칩 수요"
@@ -317,7 +317,7 @@ def test_daily_overview_reads_only_enriched_items(monkeypatch):
 
 def test_daily_overview_is_written_and_rebuildable(monkeypatch):
     _seed(monkeypatch, 1)
-    enrich.run(backend=_Backend(
+    enrich.run(now=NOW, backend=_Backend(
         {"r": [{"i": 0, "s": "칩 수요", "imp": 5, "t": ["semiconductor"]}]}))
     cat = load_catalog()
     daily.run("2026-08-27", catalog=cat, theme="semiconductor",
@@ -336,7 +336,7 @@ def test_daily_overview_is_written_and_rebuildable(monkeypatch):
 def test_sentiment_and_watchlist_ride_on_the_same_call(monkeypatch):
     """They replace the rolling state file; one call must produce all four."""
     _seed(monkeypatch, 1)
-    enrich.run(backend=_Backend(
+    enrich.run(now=NOW, backend=_Backend(
         {"r": [{"i": 0, "s": "칩 수요", "imp": 5, "t": ["semiconductor"]}]}))
     be = _Backend({"overview": ["오늘 반도체는 …"],
                    "sentiment": {"score": 0.6, "trend": "improving"},
@@ -359,7 +359,7 @@ def test_sentiment_and_watchlist_ride_on_the_same_call(monkeypatch):
 ])
 def test_bad_sentiment_is_dropped_not_guessed(monkeypatch, sent, score, trend):
     _seed(monkeypatch, 1)
-    enrich.run(backend=_Backend(
+    enrich.run(now=NOW, backend=_Backend(
         {"r": [{"i": 0, "s": "x", "imp": 3, "t": ["semiconductor"]}]}))
     row = daily.build_theme("semiconductor", "반도체", "2026-08-27",
                             backend=_Backend({"overview": ["b"],
@@ -444,7 +444,7 @@ def _enriched(monkeypatch, items, themes_by_index, *, day=None):
     collect_all.collect_one(_feed(), [], None, now=day or NOW)
     # window_days=0: this seeds fixtures at fixed past dates, and the freshness
     # window is measured against the real clock.
-    enrich.run(window_days=0, backend=_Backend({"r": [
+    enrich.run(now=NOW, window_days=0, backend=_Backend({"r": [
         {"i": i, "s": f"요약{i}", "imp": 5 - i, "nov": i == 0, "t": t}
         for i, t in enumerate(themes_by_index)]}))
 
@@ -610,6 +610,19 @@ def test_a_busy_news_day_does_not_starve_the_social_column(monkeypatch):
     assert [c["title"] for c in out["social"]] == ["S"]
 
 
+def test_the_enrich_window_can_be_pinned_to_a_clock(monkeypatch):
+    """Reading the wall clock with no override is how this suite rotted: the
+    fixture sits at a fixed date, and one morning it fell out of the 7-day
+    window and fifteen tests went red with no code change."""
+    from datetime import timedelta
+    monkeypatch.setattr(collect_all, "enrich_images", lambda its, **kw: 0)
+    monkeypatch.setattr(collect_all, "fetch_rss",
+                        lambda url, sid, timeout=15.0: [_item("t", "http://t")])
+    collect_all.collect_one(_feed(), [], None, now=NOW)
+    assert len(enrich.pending(now=NOW)) == 1
+    assert enrich.pending(now=NOW + timedelta(days=60)) == []
+
+
 def test_an_enrich_run_is_capped_and_takes_the_newest_first(monkeypatch):
     """The migration left tens of thousands behind; an uncapped pass would
     spend hours on old news before touching today's."""
@@ -621,7 +634,7 @@ def test_an_enrich_run_is_capped_and_takes_the_newest_first(monkeypatch):
     collect_all.collect_one(_feed(), [], None, now=NOW)
     be = _Backend({"r": [{"i": i, "s": f"s{i}", "imp": 3, "t": []}
                          for i in range(2)]})
-    out = enrich.run(limit=2, batch=2, backend=be)
+    out = enrich.run(now=NOW, limit=2, batch=2, backend=be)
     assert out["enriched"] == 2 and out["backlog"] == 3
     with connect() as c:
         done = [r[0] for r in c.execute(
@@ -641,6 +654,6 @@ def test_enrichment_ignores_articles_older_than_anything_reads(monkeypatch):
         collect_all.collect_one(_feed(), [], None, now=when)
     monkeypatch.setattr(enrich, "_since", lambda days, now=None:
                         (NOW - timedelta(days=days - 1)).strftime("%Y-%m-%d"))
-    assert [r["title"] for r in enrich.pending()] == ["fresh"]
+    assert [r["title"] for r in enrich.pending(now=NOW)] == ["fresh"]
     # the window can be lifted on purpose, for a hand-run backfill
-    assert len(enrich.pending(window_days=0)) == 2
+    assert len(enrich.pending(now=NOW, window_days=0)) == 2
