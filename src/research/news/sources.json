@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "updated": "2026-09-02",
+  "updated": "2026-09-03",
   "note": "소스 목록. 테마에 묶이지 않는다 — 수집은 이 목록을 한 번씩 훑고, 테마는 기사 단위로 붙는다. group이 lead_lag을 결정한다: research=leading, social=coincident, news=lagging. broad=true는 전체 사이트 피드라 enrich 전에 키워드 사전 필터를 탄다. reddit는 서브레딧을 multireddit 한 URL로 합친다 — IP당 스로틀이 초 단위가 아니라 장시간 예산이라, 세 번 부르면 두 번은 429다.",
   "sources": [
     {
@@ -124,6 +124,12 @@
       "url": "https://www.federalreserve.gov/feeds/press_all.xml"
     },
     {
+      "id": "ferrotimes",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.ferrotimes.com/rss/allArticle.xml"
+    },
+    {
       "id": "fiercebiotech",
       "kind": "rss",
       "group": "news",
@@ -228,6 +234,13 @@
       "url": "https://www.sec.gov/news/pressreleases.rss"
     },
     {
+      "id": "snmnews",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.snmnews.com/rss/allArticle.xml",
+      "broad": true
+    },
+    {
       "id": "spacenews",
       "kind": "rss",
       "group": "news",
@@ -244,6 +257,12 @@
       "kind": "rss",
       "group": "news",
       "url": "https://www.statnews.com/feed/"
+    },
+    {
+      "id": "steeldaily",
+      "kind": "rss",
+      "group": "news",
+      "url": "https://www.steeldaily.co.kr/rss/allArticle.xml"
     },
     {
       "id": "theelec_en",
