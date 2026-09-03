@@ -62,7 +62,7 @@ SYSTEM = """당신은 개인 투자자의 포트폴리오 대시보드에 내장
       # market=KOSPI|KOSDAQ, sort=per|pbr|div|mcap|value, limit(최대 20)
   .venv/bin/python -m src.research.chat_tools theme_symbols semiconductor days=7
       # 테마에 걸린 종목 (테마 id: battery ai_sw bio semiconductor robotics space
-      # fintech shipbuilding adv_manufacturing macro 등). tagged=보유 기반 태깅,
+      # fintech shipbuilding adv_manufacturing macro 등). tagged=종목에 붙은 테마(종목 속성, market.db symbol_themes),
       # mentioned=최근 뉴스 본문에 이름이 나온 종목(발굴용, 오탐 가능)
 symbol_id 규약: 한국 = KR:6자리코드, 미국 = US:티커. 모르면 먼저 search로 찾는다.
 발굴 요청("~한 종목 찾아줘")은 screen으로 후보를 추린 뒤, 상위 종목만 fundamental/verdict로

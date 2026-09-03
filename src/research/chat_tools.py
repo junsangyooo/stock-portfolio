@@ -6,16 +6,19 @@ allowed command family:
     .venv/bin/python -m src.research.chat_tools <command> [arg ...]
 
 Commands call the same internal read functions the API routers use — no
-HTTP, no session, and by construction no writes. One JSON object goes to
-stdout; failures come back as {"error": ...} with exit 0 so the model can
-read and recover from them.
+HTTP, no session. Nothing here touches an account book; `chart` and
+`fundamental` do write to market.db on a symbol's first sight
+(`_ensure_tracked` pulls its OHLCV, `fundamental` its statements) so an
+untracked candidate can be examined at all. One JSON object goes to stdout;
+failures come back as {"error": ...} with exit 0 so the model can read and
+recover from them.
 
 Commands:
     search <query>              universe fuzzy search (KR+US, top 8)
     quote <SYMBOL_ID>           latest price/prev-close (KR:005930 | US:AAPL)
     chart <SYMBOL_ID>           live chart facts (indicators, no LLM)
     fundamental <SYMBOL_ID>     valuation + financials facts (trimmed)
-    verdict <SYMBOL_ID> [kind]  latest stored analysis (default: analysis)
+    verdict <SYMBOL_ID>         latest stored comprehensive analysis
     news <SYMBOL_ID>            connected news signals (themes, developments)
     screen k=v ...              KR whole-market factor screen (pykrx daily);
                                 market=NASD|NYSE|AMEX면 KIS 해외조건검색으로 전환
@@ -100,10 +103,10 @@ def _cmd_fundamental(symbol_id: str) -> dict:
     return facts
 
 
-def _cmd_verdict(symbol_id: str, kind: str = "analysis") -> dict:
-    from ..api.analysis import get_verdict
+def _cmd_verdict(symbol_id: str) -> dict:
+    from ..api.analysis import get_analysis
     market, code = _split(symbol_id)
-    return get_verdict(kind, market, code)
+    return get_analysis("analysis", market, code)
 
 
 def _cmd_news(symbol_id: str) -> dict:

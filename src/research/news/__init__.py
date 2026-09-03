@@ -6,7 +6,7 @@
   DAILY      per-theme overview + sentiment   daily.py        → news.db theme_daily
   ROLLUP     weekly / monthly compression     rollup.py       → theme_weekly / theme_monthly
   READ       every query against news.db      read.py
-  EVALUATE   per-symbol news verdict          evaluate.py     (on demand)
+  ASSEMBLE   per-symbol inputs for analyze    evaluate.py
 
 cycle.py is the cron entry. Collection is independent of holdings — every
 field is always on, and the filtering lives on the read side.

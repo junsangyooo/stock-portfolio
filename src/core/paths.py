@@ -1,12 +1,13 @@
 """Filesystem layout for the new portfolio-dashboard.
 
-  data/portfolio.db                                 — SQLite (accounts, holdings, balances, snapshots)
+  data/portfolio.db                                 — SQLite (ledger: accounts, holdings, trades, cash, snapshots, plans + chat_sessions)
+  data/quant.db                                     — SQLite (same ledger + cycles, journal, orders)
   data/market.db                                    — SQLite (ohlcv, valuation, financials, sector, etf, symbol_themes)
   data/news.db                                      — SQLite (signals, signal_themes, theme_daily/weekly/monthly)
-  data/universe/{kr,us,etf_kr}.json                 — symbol master (daily refresh)
+  data/universe/{kr,us}.json                        — symbol master (daily refresh)
   data/market/quote/last.json                       — last-known quote snapshot
   data/universe/dart_corp_codes.json                — KR code → DART corp_code map
-  data/analysis/{kind}/{MARKET}_{CODE}/{YYYYMMDD}.json
+  data/analysis/analysis/{MARKET}_{CODE}/{YYYYMMDD}.json — comprehensive analysis results
 """
 from __future__ import annotations
 
@@ -41,8 +42,6 @@ QUOTE_DIR = MARKET_DIR / "quote"   # last.json only — the rest is market.db
 
 ANALYSIS_DIR = DATA / "analysis"
 
-SIGNALS_DIR = DATA / "signals"          # qualitative raw signals (news/trend)
-
 LOGS_DIR = DATA / "logs"
 BACKUP_DIR = DATA / "backup"
 
@@ -54,7 +53,7 @@ QUANT_DIR = DATA / "quant"          # auto-trade runtime state (token cache, loc
 
 def ensure_dirs() -> None:
     for d in (DATA, UNIVERSE_DIR, MARKET_DIR, QUOTE_DIR,
-              ANALYSIS_DIR, SIGNALS_DIR, LOGS_DIR, BACKUP_DIR, QUANT_DIR):
+              ANALYSIS_DIR, LOGS_DIR, BACKUP_DIR, QUANT_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
 

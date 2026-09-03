@@ -17,6 +17,7 @@ import pytest
 import src.core.paths as paths
 from src.core.notify import discord
 from src.quant.broker import toss
+from src.research.llm_backend import ClaudeCliBackend
 
 
 @pytest.fixture(autouse=True)
@@ -48,6 +49,17 @@ def no_live_broker(tmp_path, monkeypatch):
     # Discord too: no test may post to the real channel. A test that wants to
     # count messages patches ``discord.send`` itself; this only unplugs the URL.
     monkeypatch.setattr(discord, "_url", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def no_claude_cli(monkeypatch):
+    """No test may spawn ``claude -p`` — a call is minutes of real model time
+    on the subscription. Best-effort paths that swallow the error (theme
+    auto-map, warm batches) keep working; a test that needs an answer stubs
+    ``ClaudeCliBackend.call`` itself, which takes precedence."""
+    def _blocked(self, *a, **k):
+        raise RuntimeError("test reached claude CLI")
+    monkeypatch.setattr(ClaudeCliBackend, "call", _blocked)
 
 
 @pytest.fixture

@@ -1,9 +1,9 @@
 """Quantitative (chart) analysis — FACT EXTRACTION ONLY.
 
 This package extracts objective technical facts from OHLCV. It does NOT judge
-(no buy/sell, no aggregate score). Judgment is done downstream by the claude -p
-judgment agent, which reads the harness guide chart_rules.md and
-the facts produced here.
+(no buy/sell, no aggregate score). The facts are one of the three domains
+src/research/analyze reads in a single call; chart_rules.md is that domain's
+dictionary (field meanings, when an indicator lies), not a rulebook.
 
 Modules:
   schema.py        IndicatorFact (value + objective state)

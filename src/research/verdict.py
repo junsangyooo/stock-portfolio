@@ -1,10 +1,8 @@
-"""The shared score/label vocabulary and the write path.
+"""Score/label vocabulary and the write path for src/research/analyze.
 
-chart / fundamental / news / judge all score a symbol on [-1, 1], map that to
-the same 5-level label, and write to data/analysis/{kind}/{symbol}/{date}.json.
-Keeping the thresholds and the write path here is what stops the four agents
-from drifting apart — the Judge fuses their labels, so they must mean the same
-thing.
+The analysis scores a symbol on [-1, 1] and maps that to a 5-level label
+(strong_sell … strong_buy); the clamps normalise what the model returned, and
+`persist` writes the result to data/analysis/{kind}/{symbol}/{date}.json.
 """
 from __future__ import annotations
 

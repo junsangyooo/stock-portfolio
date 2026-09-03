@@ -6,7 +6,7 @@ the routers and the quant tools already import.
 """
 from __future__ import annotations
 
-from .read import feed as _feed, published_iso  # noqa: F401  (re-exported)
+from .read import feed as _feed
 
 
 def build(limit: int = 60) -> dict:

@@ -4,7 +4,6 @@ Routes:
   GET /              — landing.html (홈 / 소식) — quant.* host serves /q instead
   GET /a/{id}        — account.html (per-account view)
   GET /q             — quant.html (auto-trading cockpit)
-  GET /stock         — account.html (legacy alias, will be dropped later)
   /api/universe/*    — symbol master search
   /api/accounts/*    — account CRUD + holdings + balances + snapshots + chat
   /api/market/*      — ohlcv + quotes
@@ -188,12 +187,6 @@ def _serve_quant() -> HTMLResponse:
 def account_page(account_id: str) -> HTMLResponse:
     # account_id is read by the page's JS from window.location.pathname,
     # so the server just hands over the same shell for every account.
-    return _serve("account.html")
-
-
-# Legacy alias — old /stock bookmarks redirect to the active account view.
-@app.get("/stock", response_class=HTMLResponse)
-def stock_legacy() -> HTMLResponse:
     return _serve("account.html")
 
 

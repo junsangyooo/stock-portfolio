@@ -55,6 +55,14 @@ class TestAnalysisAPI(unittest.TestCase):
         body = self.c.post("/api/analysis/chart/KR/005930/run").json()
         self.assertIn("error", body)
 
+    def test_stored_analysis_is_read_from_the_kind_route(self):
+        """One route for the stored result; there is no /verdict twin."""
+        body = self.c.get("/api/analysis/analysis/KR/005930").json()
+        self.assertEqual(body["kind"], "analysis")
+        self.assertFalse(body["exists"])
+        r = self.c.get("/api/analysis/analysis/KR/005930/verdict")
+        self.assertEqual(r.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

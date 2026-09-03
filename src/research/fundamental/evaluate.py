@@ -1,29 +1,23 @@
-"""Fundamental agent — per-symbol quantitative (재무) evaluation.
+"""Fundamental facts — per-symbol 재무 assembly, no LLM.
 
-Triggered on-demand by the UI "재무 분석" button (POST /api/analysis/
-fundamental/{market}/{code}/run). Reads the symbol's ALREADY-COLLECTED
-valuation + financials (the daily 06:00 KST batch does the collecting — see
-src/market/pipeline/fundamental_job.py), assembles the L1/L2/L3 snapshot, and
-produces a 5-axis verdict (value / profitability / growth / stability /
-shareholder_return) per src/research/fundamental/fundamental_rules.md.
+Reads the symbol's ALREADY-COLLECTED valuation + financials (the daily 06:00
+KST batch does the collecting — see src/market/pipeline/fundamental_job.py)
+and shapes them for two readers:
 
-Output uses the SAME 5-level label vocabulary as the chart / news agents so the
-Judge can fuse all three. Written to data/analysis/fundamental/{symbol}/
-{date}.json, which the existing GET /api/analysis/fundamental/{market}/{code}
-endpoint already serves.
+  assemble_inputs      — enriched L1/L2/L3 snapshot + trend series + quality
+                         metrics (QoE/Sloan/Altman Z/Piotroski F) + valuation
+                         band + sector tag. The fundamental domain of
+                         src/research/analyze, which reads it next to chart
+                         and news with fundamental_rules.md as the dictionary.
+  assemble_etf_inputs  — the ETF shape of the same (snapshot + holdings).
+  assemble_display     — the 재무 tab's default view
+                         (GET /api/analysis/fundamental/{m}/{c}/facts).
 
-Pipeline (all live):
-  assemble_inputs  — enriched L1/L2/L3 snapshot + trend series + quality
-                     metrics (QoE/Sloan/Altman Z/Piotroski F) + valuation band
-                     + sector tag (read-only; the daily batch collects).
-  _judge           — applies fundamental_rules.md via claude -p (Sonnet) and
-                     returns a layperson-first 5-axis verdict (plain-Korean
-                     summary, per-axis notes, per-metric explanations).
-  evaluate_symbol  — assemble → judge → persist.
+Judgment does not happen here: a domain judged alone hardens a one-dimensional
+conclusion the later merge cannot undo.
 """
 from __future__ import annotations
 
-import json
 import math
 from typing import Optional
 
@@ -138,20 +132,6 @@ def assemble_inputs(symbol_id: str) -> dict:
             "sector": bool(sector_rec.get("sector")),
         },
     }
-
-
-_AXES = ("value", "profitability", "growth", "stability", "shareholder_return")
-
-# System directive: rulebook (the analyst frameworks) + a layperson-output
-# contract. The user's #1 goal is "explain it so a non-reader understands",
-# so the agent must produce plain-Korean summary + per-axis + per-metric prose.
-
-# The per-domain judgment (_judge / evaluate_symbol) lived here until
-# 2026-09-01. It is gone: judging a domain in isolation hardens a
-# one-dimensional conclusion, and the merge that followed could no longer undo
-# it. src/research/analyze/ now sees all three domains in one call, with this
-# module's assembly as its input and fundamental_rules.md injected as that domain's
-# dictionary.
 
 
 def assemble_display(symbol_id: str, name: Optional[str] = None,

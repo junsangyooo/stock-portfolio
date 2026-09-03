@@ -2268,8 +2268,9 @@ const API = {
     const m = sid.slice(0, ix), c = sid.slice(ix + 1);   // symbol_id prefix (KR/US), not market label
     return '/api/analysis/chart/' + encodeURIComponent(m) + '/' + encodeURIComponent(c);
   },
+  // the stored comprehensive result — the chart tab renders its chart section
   chartVerdict: (market, code) =>
-    '/api/analysis/chart/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/verdict',
+    '/api/analysis/analysis/' + encodeURIComponent(market) + '/' + encodeURIComponent(code),
   runChartAnalysis: (market, code) =>
     '/api/analysis/chart/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/run',
   newsSignals: (market, code) =>
@@ -2277,7 +2278,7 @@ const API = {
   fundamentalFacts: (market, code) =>
     '/api/analysis/fundamental/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/facts',
   analysisResult: (market, code) =>
-    '/api/analysis/analysis/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/verdict',
+    '/api/analysis/analysis/' + encodeURIComponent(market) + '/' + encodeURIComponent(code),
   runAnalysis: (market, code) =>
     '/api/analysis/analysis/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/run',
   // async job status (all kinds): POST .../run starts → poll this → load verdict

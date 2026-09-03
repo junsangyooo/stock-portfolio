@@ -253,48 +253,6 @@ def feed(limit: int = 60, days: int = 3,
     }
 
 
-# ── where the taxonomy is failing ───────────────────────────────────────────
-def tagging_gaps(days: int = 7, weak_below: float = 0.4, limit: int = 40,
-                 now: Optional[datetime] = None) -> dict:
-    """Articles the theme catalog could not place, and tags it placed weakly.
-
-    Both are evidence of the same thing — a field we collect news about and
-    have no theme for. Without somewhere to look at them they vanish: the
-    untagged ones are simply never joined to, and a forced tag is
-    indistinguishable from a real one once it is written.
-
-    ``untagged`` is the honest miss. ``weak`` is the dishonest one, and the
-    more informative of the two: the model reached for the nearest label
-    rather than leaving the article unplaced, so a theme that keeps showing
-    up here is being used as a drain.
-    """
-    since = _days_back(max(days, 1), now)[-1]
-    with connect() as c:
-        untagged = [dict(r) for r in c.execute(
-            "SELECT s.source_id, s.title, s.url, s.importance, s.collected_on "
-            "FROM signals s WHERE s.collected_on >= ? "
-            "  AND s.enriched_at IS NOT NULL "
-            "  AND NOT EXISTS (SELECT 1 FROM signal_themes st "
-            "                  WHERE st.signal_id = s.signal_id) "
-            "ORDER BY s.importance DESC, s.signal_id DESC LIMIT ?",
-            (since, limit)).fetchall()]
-        weak = [dict(r) for r in c.execute(
-            "SELECT st.theme_id, st.confidence, s.source_id, s.title, s.url "
-            "FROM signal_themes st JOIN signals s USING (signal_id) "
-            "WHERE s.collected_on >= ? AND st.confidence < ? "
-            "ORDER BY st.confidence, s.signal_id DESC LIMIT ?",
-            (since, weak_below, limit)).fetchall()]
-        drains = [dict(r) for r in c.execute(
-            "SELECT st.theme_id, count(*) n, "
-            "       round(avg(st.confidence), 2) avg_conf, "
-            "       sum(st.confidence < ?) weak "
-            "FROM signal_themes st JOIN signals s USING (signal_id) "
-            "WHERE s.collected_on >= ? GROUP BY 1 ORDER BY weak DESC, n DESC",
-            (weak_below, since)).fetchall()]
-    return {"days": days, "untagged": untagged, "weak": weak,
-            "by_theme": drains}
-
-
 # ── raw articles, for the company-name miner ────────────────────────────────
 def read_items(theme_id: str, days: int = 14,
                now: Optional[datetime] = None) -> list[dict]:

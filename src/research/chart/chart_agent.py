@@ -3,9 +3,10 @@
 It EXTRACTS facts only; it does NOT judge. For each timeframe (daily / weekly /
 monthly, look-ahead-guarded) it gathers every indicator's objective state +
 value, the volume-spike flag, and the structure detections (S/R, fib, pivots,
-trendlines, candle/chart patterns, gaps). The output JSON is the input for the
-later claude -p judgment agent, which applies the harness rules
-(chart_rules.md) to decide buy/sell/risk.
+trendlines, candle/chart patterns, gaps). The output JSON is the chart domain
+of src/research/analyze, which reads it next to fundamental and news with
+chart_rules.md as this domain's dictionary (field meanings, when an indicator
+lies — not a rulebook).
 
 No aggregate score, no buy/sell label, no LLM here — 100% deterministic facts.
 """

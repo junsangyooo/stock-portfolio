@@ -1,8 +1,9 @@
-"""The conftest guard: no test may reach the live Toss API."""
+"""The conftest guard: no test may reach the live Toss API or claude CLI."""
 import pytest
 
 from src.core.notify import discord
 from src.quant.broker import toss
+from src.research.llm_backend import ClaudeCliBackend
 
 
 def test_broker_http_is_blocked(monkeypatch):
@@ -24,3 +25,9 @@ def test_discord_is_unplugged(monkeypatch):
     assert discord.send("x") is False
     assert discord.send_embed("t") is False
     assert posted == []
+
+
+def test_claude_cli_is_blocked(monkeypatch):
+    monkeypatch.setattr(ClaudeCliBackend, "__init__", lambda self, *a, **k: None)
+    with pytest.raises(RuntimeError, match="test reached claude CLI"):
+        ClaudeCliBackend().call("system", "user")

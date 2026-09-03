@@ -1,121 +1,87 @@
 # portfolio-dashboard
 
-멀티 계좌(ISA·일반·연금·해외) 통합 트래킹 + 종목 분석(차트·재무·뉴스) 대시보드.
+주식 분석 프로그램. 한 가족(family) 안에 앱이 둘이고, 둘은 **같은 지식 자원**을 공유한다.
 
-- 단일 진실 분리: **portfolio**(계좌·보유) vs **market**(시장 데이터) vs **universe**(종목 마스터) vs **analysis**(분석)
-- 동일 종목이 여러 계좌에 있어도 시장 데이터·분석은 종목 단위로 **딱 1벌**
-- 분석 파이프라인 LIVE: 에이전트 3종(chart / fundamental / news) + judge 통합 + 야간 verdict 워밍 배치
-- **유료 LLM API 절대 금지** — 판단은 Claude CLI 구독, 기계적 작업은 온호스트 open-weight
+| | **portfolio** | **quant** |
+|---|---|---|
+| 무엇 | 여러 증권계좌를 팔로업하고 분석하는 웹 | 토스 계좌에서 자동매매하는 계좌 |
+| 계좌 | 사람 계좌 4개 (ISA·일반·연금·해외) | 자동매매 계좌 1개 |
+| 주소 | `portfolio.jsyoo.dev` | `quant.jsyoo.dev` |
+| 하는 일 | 보유 조회·손익·종목 분석·채팅 | 사이클마다 판단·주문·감시 |
+
+```
+   앱 (계좌의 책)      portfolio        quant
+                          │  읽는다       │  읽는다
+                    ┌─────▼──────────────▼─────┐
+   공유 지식        │ research  (수집·분석)     │
+                    │ market    (시세·재무·지표) │
+                    │ universe  (종목 마스터)    │
+                    └──────────────────────────┘
+```
+
+**화살표는 한 방향뿐이다.** 앱은 공유 자원을 읽어도 되고, 공유 자원은 앱을 읽으면 안 된다.
+`tests/test_layering.py`가 AST로 이 경계를 검사한다.
+
+- **유료 LLM API 절대 금지** — 판단은 Claude CLI 구독(`claude -p --safe-mode`), 요약·분류는 온호스트 open-weight(Qwen)
+- **네 권의 책(DB)** — `portfolio.db`·`quant.db`(앱 소유) / `market.db`·`news.db`(공유). 계좌 장부는 `src/ledger` 한 스키마를 두 책이 함께 쓴다
 
 
 ---
 
-## 라이브 배포
-
-- **Dashboard**: https://portfolio.jsyoo.dev (Cloudflare → nginx → `127.0.0.1:8888`)
-- **인증**: 계좌 6자리 PIN + HMAC 세션 쿠키(30일). `/api/*`는 앱 미들웨어가 쿠키로 차단
-- **서버**: Oracle Cloud (Ampere A1, Ubuntu 22.04 aarch64, 춘천 region), systemd `dashboard.service`
-
-## 4-영역 분리
-
-| 영역 | 책임 | 저장 |
-|---|---|---|
-| **portfolio** | 계좌·보유·잔고·스냅샷 | `data/portfolio.db` (SQLite) |
-| **market** | OHLCV·시세·재무·섹터·ETF (계좌 무관) | `data/market/**` (parquet/json) |
-| **universe** | 종목 마스터 (KRX+US ~1.3만) | `data/universe/{kr,us}.json` (일 1회 batch) |
-| **analysis** | chart·fundamental·news·judge verdict | `data/analysis/**` (rulebook JSON) |
-
-## 아키텍처
+## 저장소 구조
 
 ```
-src/
-├── core/                 공용 유틸 (paths, kst, notify, security=PIN·세션토큰)
-├── universe/             종목 마스터 (builder / search / refresh_job)
-├── market/               시장 데이터 (source / store / pipeline)
-├── portfolio/            계좌·보유·잔고 (store / service / snapshot_job)
-├── api/                  FastAPI 라우터 — 얇은 read/dispatch (universe / accounts / market / analysis / chat)
-├── agents/               분석 에이전트 (chart / fundamental / news / judge, 룰북 = *_rules.md)
-│   ├── verdict.py            4에이전트 공통 라벨·clamp·산출물 저장
-│   ├── verdict_job.py        야간 verdict 워밍 배치
-│   └── llm_backend.py        Claude CLI subprocess + 로컬 llama.cpp
-└── dashboard_web/        server.py(라우터 mount + PIN 게이트 + theme 주입) + static
-
-data/                     운영 데이터 (Oracle 단방향, gitignore)
-├── portfolio.db          accounts / holdings / balances / snapshots / holding_themes
-├── universe/, market/, analysis/, signals/, backup/, logs/
+portfolio-dashboard/
+├── README.md
+├── deploy/           deploy.sh · dashboard.service · nginx-portfolio.conf
+├── docs/             기획·설계 문서 (Obsidian Vault 심링크, gitignore)
+├── tests/            pytest
+├── src/
+│   ├── core/         paths · kst · notify · security · backup       [공유]
+│   ├── ledger/       계좌 장부 스키마 — 두 책이 함께 쓴다              [공유]
+│   ├── universe/     종목 마스터 (builder · search · refresh_job)    [공유]
+│   ├── market/       시세·재무·지표 (source / store / pipeline)       [공유]
+│   ├── research/     news(수집) · chart · fundamental · analyze(LLM)  [공유]
+│   ├── portfolio/    사람 계좌 앱 (store · service · jobs)            [앱]
+│   ├── quant/        자동매매 앱 (broker/toss · keeper · cycle_job)   [앱]
+│   ├── api/          얇은 read/dispatch 층
+│   └── dashboard_web/  server.py + static/{landing,account,quant}.html
+└── data/             운영 데이터 (gitignore) — *.db · universe/ · analysis/ · backup/ · logs/
 ```
 
-## 분석 파이프라인 & AI 개입 지점
+`[공유]`가 시스템의 대부분이라 `shared/`로 다시 감싸지 않는다.
 
-에이전트별 산출물은 `(symbol_id, date) → JSON`으로 통일. **AI(Claude CLI)** 개입은 다음과 같다.
+## 실행
 
-| 에이전트 | AI | 모델 | 트리거 |
-|---|---|---|---|
-| **chart** | facts=순수함수 / verdict=LLM | Sonnet | 종목 분석 버튼 · 야간 배치 |
-| **fundamental** | DART 파생 재무 verdict | Sonnet | 야간 배치 |
-| **news** | 아래 뉴스 파이프라인 참조 | 로컬(배치) / Sonnet(종목) | 매일 batch + 종목 evaluate |
-| **judge** | 크로스도메인 종합 verdict | Sonnet | 야간 배치 · 버튼 |
-
-## 뉴스(정성) 파이프라인 — holdings-driven
-
-매일 05:00 KST `news.daily_job`이 **테마 단위**로 `collect → digest → state`를 돈다.
-
-```
-collect  (규칙기반, NO LLM)  RSS·arXiv 크롤 → 키워드 필터 → url dedup → jsonl
-  ↓
-digest   (LLM = 로컬)         원시 시그널 중복병합 + 상위 5~8건 선별·요약·중요도
-  ↓
-state    (LLM = 로컬, 게이트)  장기추세 요약·watchlist·sentiment 갱신 (slow memory)
-```
-
-**수집 대상 테마 = 보유 종목에서 도출** (2026-07-17~):
-
-- 테마 활성 여부는 `themes.json`의 static 플래그가 아니라 **`holding_themes`(어느 계좌든 primary로 매핑된 테마) ∪ macro(always_on)** 에서 실시간 도출.
-- **종목 추가** 시 미매핑이면 background로 자동 태깅(ETF=이름규칙 / 개별=LLM 1콜) → 저장 → 다음 배치부터 그 테마 수집 시작.
-- **종목 삭제** 시 어느 계좌에도 없으면 `holding_themes` 정리 → 마지막 보유자가 사라진 테마는 수집 자동 중단.
-- 즉 **뉴스 커버리지가 포트폴리오를 자동으로 따라간다.**
-
-**비용 최적화**:
-
-- **digest·state = 온호스트 open-weight** (중복병합·선별·요약은 기계적 태스크 → 구독 예산은 판단 계층에. 실패 시 Claude 자동 폴백)
-- digest 투입은 테마당 **상위 40건 상한** (lead_lag 우선순위 + 최신순 규칙 pre-rank, 어차피 5~8건만 남음)
-- **state = 이벤트 게이트** — 당일 digest에 중요도≥4 또는 novelty 신호가 없으면 결정적 decay만 수행하고 LLM은 skip (조용한 테마는 자연히 주 2~3회, 사건 있는 날은 즉시 반영)
-
-> **LLM 백엔드 불변식**: 유료 API 절대 금지. 판단(judge·chart·fundamental·news evaluate·테마 매핑)은 `ClaudeCliBackend`(`claude -p`) 구독, 기계적 작업(뉴스 digest·state)은 온호스트 open-weight. `ANTHROPIC_API_KEY`는 subprocess env에서 빈값 강제.
-
-## systemd / cron (Oracle, UTC)
-
-| 시각 | 잡 | 역할 |
-|---|---|---|
-| 21:05 | backup | `portfolio.db` 일 1회 백업 (요일별 7일 회전) |
-| 20:00 | `news.daily_job` | 뉴스 수집·digest·state (holdings-driven, 로컬 LLM ~1h) |
-| 21:10 | `fundamental_job` | 재무 backfill (보유 종목) |
-| 21:15 | `etf_job` | ETF 일별 스냅샷 |
-| 21:20 | `snapshot_job` | 계좌 자산 스냅샷 (OHLCV gap-fill 후) |
-| 21:30 | `verdict_job` | verdict 캐시 워밍 (chart→judge, 2워커) |
-| 22:30 | `universe.refresh_job` | 종목 마스터 refresh (~1.3만) |
-
-## 배포
+### 로컬
 
 ```bash
-# 로컬 단일 진실 → git commit → deploy
-./deploy/deploy.sh            # 코드 sync (push + Oracle pull, restart 없음)
-./deploy/deploy.sh dashboard  # + dashboard.service restart + 헬스체크
+uv venv .venv && source .venv/bin/activate
+uv pip install -r requirements.lock.txt
+source ~/secrets/.env            # KRX_ID · DART_API_KEY · TOSS_* 등
+
+python -m src.dashboard_web.server --port 8888
 ```
 
-- **로컬(MacBook) = 단일 진실.** Oracle은 `git pull`만 받는 배포 mirror (직접 편집 금지).
-- 새 의존성은 Oracle venv에 수동 설치 후 restart.
+### 테스트
 
-## 주요 API
-
-```
-GET  /                                     landing (홈)
-GET  /a/{account_id}                        계좌 페이지 (PIN 게이트)
-
-GET  /api/universe/search|stats
-CRUD /api/accounts/**                       계좌·보유·잔고·스냅샷·PIN·chat
-GET  /api/market/ohlcv|quotes
-GET  /api/analysis/{kind}/{market}/{code}   verdict·facts·feed·summary
-POST /api/analysis/{kind}/{market}/{code}/run   비동기 agent 실행
+```bash
+pytest tests/
 ```
 
+`test_layering.py`(공유 → 앱 import 금지)와 `test_quant_api.py`(전 라우트 `require_quant`)는 구조 불변식이다. 실패하면 코드가 아니라 설계가 틀어진 것이다.
+
+### 배포
+
+로컬(MacBook)이 단일 진실, Oracle은 `git pull`만 받는 mirror다.
+
+```bash
+./deploy/deploy.sh                    # push → Oracle pull → DB 백업 (restart 없음)
+./deploy/deploy.sh dashboard.service  # + restart + 헬스체크
+```
+
+새 의존성은 Oracle venv에 수동 설치한다. 운영 cron 일정은 deploy/portfolio.cron.
+
+## 문서
+
+- **`docs/`** — Obsidian Vault 원본의 심링크(`_STATUS.md`, `planning-*.md`). gitignore라 Oracle에는 없다

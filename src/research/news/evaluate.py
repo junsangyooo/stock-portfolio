@@ -1,35 +1,22 @@
-"""L4 step 3 — per-symbol qualitative (news/trend/issue) evaluation.
+"""Per-symbol news inputs — the qualitative domain of src/research/analyze.
 
-Triggered on-demand by the UI 📰 button (POST /api/analysis/news/{m}/{c}/run).
-Reads the symbol's theme mapping (market.db symbol_themes) + each theme's rolling state
-(refreshed by the collection cycle: collect→enrich→daily) and applies
-src/research/news/news_rules.md via claude -p to produce a qualitative verdict.
+Reads the symbol's theme mapping (market.db symbol_themes) + each theme's
+rolling state (refreshed by the collection cycle: collect→enrich→daily) and
+shapes it for the one analysis call, where it sits next to chart and
+fundamental with news_rules.md as this domain's dictionary. Read-only — it
+does not collect, and it does not judge.
 
-The rulebook drives a 4-lens read (per news_rules.md):
-  §B priced-in → §C direction/magnitude → §D timing → §E second-order,
-then §F attributes the theme signal to THIS symbol (primary / related+weight /
-macro background).
-
-Output uses the SAME 5-level label vocabulary as the chart / fundamental agents
-so the 🧠 Judge can fuse all three. Written to data/analysis/news/{symbol}/
-{date}.json, served by GET /api/analysis/news/{market}/{code}.
+  get_symbol_themes — the mapping, primary first
+  assemble_inputs   — symbol_themes + per-theme state (primary full / related
+                      brief + edge_relation from the primary theme's
+                      themes.json edges / macro brief, always injected)
 
 ⚠️ No price/volume input by design — "priced-in" is inferred from the
-information-diffusion stage (lead_lag / novelty / watchlist), NOT observed price
-(rulebook §I). Cross-domain fusion is the Judge's job.
-
-Pipeline:
-  assemble_inputs — symbol_themes + per-theme state (primary full / related
-                    brief + edge_relation from the primary theme's themes.json
-                    edges / macro brief). Read-only — does NOT collect.
-  _judge          — applies news_rules.md via claude -p → rich verdict
-                    (priced_in / time_horizon / second_order / drivers / risks /
-                    event_tags / evidence / watch + layperson summary_ko).
-  evaluate_symbol — assemble → judge → persist.
+information-diffusion stage (lead_lag / novelty / watchlist), not observed
+price. Cross-domain reading happens in the analysis call.
 """
 from __future__ import annotations
 
-import json
 from typing import Optional
 
 from .catalog import Catalog, load_catalog
@@ -37,8 +24,6 @@ from .read import theme_state
 
 _RECENT_PRIMARY = 8   # recent developments injected for the primary theme
 _RECENT_RELATED = 3   # ... for each related/macro theme (kept brief)
-
-_HORIZONS = ("immediate", "near", "mid", "long")
 
 
 def get_symbol_themes(symbol_id: str) -> list[dict]:
@@ -148,14 +133,3 @@ def assemble_inputs(symbol_id: str, *, catalog: Optional[Catalog] = None) -> dic
         },
     }
 
-
-# ── judgment (claude -p applies the rulebook) ───────────────────────────────
-
-# System directive: 4-lens contract + layperson-first output + the rulebook.
-
-# The per-domain judgment (_judge / evaluate_symbol) lived here until
-# 2026-09-01. It is gone: judging a domain in isolation hardens a
-# one-dimensional conclusion, and the merge that followed could no longer undo
-# it. src/research/analyze/ now sees all three domains in one call, with this
-# module's assembly as its input and news_rules.md injected as that domain's
-# dictionary.

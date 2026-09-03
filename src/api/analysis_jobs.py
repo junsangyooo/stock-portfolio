@@ -1,11 +1,12 @@
-"""In-process async job runner for the on-demand analysis verdicts.
+"""In-process async job runner for the on-demand comprehensive analysis.
 
-WHY: a chart / judge verdict (claude -p applying a long rulebook to a rich
-schema) takes ~300s. The web path can never wait that long — nginx cuts at 30s,
-Cloudflare at ~100s. So a synchronous POST /run always 504s before the model
-finishes. This runner decouples generation from the HTTP request: POST /run
-spawns a background thread and returns immediately; the browser polls GET
-/status until the verdict file is written, then loads it via GET /verdict.
+WHY: the analysis (one claude -p call over chart + fundamental + news and
+their dictionaries) takes ~570s on average and longer at p95. The web path can
+never wait that long — nginx cuts at 30s, Cloudflare at ~100s. So a synchronous
+POST /run always 504s before the model finishes. This runner decouples
+generation from the HTTP request: POST /run spawns a background thread and
+returns immediately; the browser polls GET /status until the result is stored,
+then loads it via GET /analysis/{m}/{c}.
 
 Single uvicorn worker (server.py runs uvicorn.run with no workers arg), so a
 plain in-memory registry is shared across requests. Jobs are keyed by
@@ -23,8 +24,11 @@ from typing import Callable
 _jobs: dict = {}
 _lock = threading.Lock()
 
-# A "running" job older than this is treated as dead (thread crashed / restart).
-_STALE_S = 600.0
+# The analysis call's hang guard (analyze.run timeout_s), and therefore the
+# longest a job can legitimately be "running": one older than this is dead
+# (thread crashed / restart). Below the real p95 the UI gave up on live jobs.
+RUN_TIMEOUT_S = 1800.0
+_STALE_S = RUN_TIMEOUT_S
 
 
 def _key(kind: str, symbol_id: str) -> str:
@@ -44,9 +48,9 @@ def get_status(kind: str, symbol_id: str) -> dict:
 
 
 def start(kind: str, symbol_id: str, fn: Callable[[], dict]) -> dict:
-    """Spawn `fn` (a blocking evaluate_symbol) on a daemon thread unless an
+    """Spawn `fn` (a blocking analyze.run) on a daemon thread unless an
     identical job is already running. Returns {state: started|running}. The
-    thread records done/error + the persisted verdict's date into the registry.
+    thread records done/error + the stored result's date into the registry.
     """
     k = _key(kind, symbol_id)
     with _lock:

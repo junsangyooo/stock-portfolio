@@ -13,14 +13,13 @@ domains now meet inside a single call.
 """
 from __future__ import annotations
 
-import json
 import logging
-from typing import Optional
 
 from fastapi import APIRouter
 
 from ..core.kst import now as kst_now
 from ..universe import search as uni_search
+from . import analysis_jobs
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
@@ -28,9 +27,9 @@ log = logging.getLogger(__name__)
 
 _VALID_KINDS = ("analysis", "chart")
 
-# Only the two rulebook-heavy agents need the widened ceiling; the others run
-# well inside evaluate_symbol's own default.
-_RUN_TIMEOUT_S = {"analysis": 1800}  # hang guard only — see verdict_job._TIMEOUT_S
+# Hang guard for the one runnable kind — the job runner's ceiling, which is
+# also what /status uses to call a job stale. verdict_job has its own copy.
+_RUN_TIMEOUT_S = {"analysis": analysis_jobs.RUN_TIMEOUT_S}
 
 
 def _stamp() -> str:
@@ -58,7 +57,7 @@ def analysis_summary(symbols: str) -> dict:
 
 @router.get("/news/feed")
 def news_feed(limit: int = 60) -> dict:
-    """Landing-page qualitative feed (see agents/news/feed.py)."""
+    """Landing-page qualitative feed (see research/news/feed.py)."""
     from ..research.news import feed
     return {**feed.build(limit=limit), "queried_at": _stamp()}
 
@@ -136,7 +135,7 @@ def get_analysis(kind: str, market: str, code: str) -> dict:
 
     # chart = deterministic fact extraction, computed live (no claude -p here).
     if kind == "chart":
-        from ..research.chart import chart_agent  # lazy: pulls pandas-ta
+        from ..research.chart import chart_agent  # lazy: pulls pandas
         try:
             facts = chart_agent.collect_facts(symbol_id, persist=False)
             facts["queried_at"] = _stamp()
@@ -154,30 +153,15 @@ def get_analysis(kind: str, market: str, code: str) -> dict:
             "queried_at": _stamp()}
 
 
-@router.get("/{kind}/{market}/{code}/verdict")
-def get_verdict(kind: str, market: str, code: str) -> dict:
-    """Latest stored analysis (no LLM call). For chart this is distinct from
-    GET /chart/{m}/{c}, which returns the live facts."""
-    if kind not in _VALID_KINDS:
-        return _bad_kind(kind)
-    symbol_id = f"{market.upper()}:{code}"
-    from ..research import analyze
-    body = analyze.latest(symbol_id)
-    return {"kind": kind, "symbol_id": symbol_id, "exists": body is not None,
-            "result": {"date": body["date"], "body": body} if body else None,
-            "queried_at": _stamp()}
-
-
 @router.get("/{kind}/{market}/{code}/status")
 def get_job_status(kind: str, market: str, code: str) -> dict:
     """Poll the state of an async analysis job started by POST .../run.
     state: idle | running | done | error | stale. The UI polls this, then loads
-    GET .../verdict on done.
+    GET /analysis/{m}/{c} on done.
     """
     if kind not in _VALID_KINDS:
         return _bad_kind(kind)
     symbol_id = f"{market.upper()}:{code}"
-    from . import analysis_jobs
     return {"kind": kind, "symbol_id": symbol_id,
             **analysis_jobs.get_status(kind, symbol_id),
             "queried_at": _stamp()}
@@ -200,13 +184,12 @@ def run_analysis(kind: str, market: str, code: str) -> dict:
     name = _display_name(symbol_id)
 
     def _fn():
-        # Imported on the worker thread: it pulls pandas-ta and spawns claude,
+        # Imported on the worker thread: it pulls pandas and spawns claude,
         # neither of which belongs on the request path.
         from ..research import analyze
         return analyze.run(symbol_id, name,
                            timeout_s=_RUN_TIMEOUT_S["analysis"])
 
-    from . import analysis_jobs
     job = analysis_jobs.start(kind, symbol_id, _fn)
     return {"ok": True, "symbol_id": symbol_id, "job": job,
             "queued_at": _stamp()}

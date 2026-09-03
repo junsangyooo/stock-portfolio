@@ -1,9 +1,9 @@
 """IndicatorFact schema — the OBJECTIVE output of every indicator.
 
-Design decision (2026-05-24): the quantitative pipeline only EXTRACTS facts. It
-does NOT judge (no buy/sell vote, no aggregate score, no label). Judgment —
-"RSI oversold + resistance break = buy point" — is done later by the claude -p
-judgment agent reading the harness guide (chart_rules.md).
+The quantitative pipeline only EXTRACTS facts. It does NOT judge (no buy/sell
+vote, no aggregate score, no label). Reading them — "RSI oversold + resistance
+break" — is src/research/analyze's job, with chart_rules.md as the dictionary
+for what each field means.
 
 So an indicator reports a measured `value` and an OBJECTIVE `state` (e.g.
 "oversold", "golden_cross", "above_cloud", "squeeze_on") plus `evidence`. These

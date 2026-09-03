@@ -18,23 +18,10 @@ data/news.db
 data/news.db-*
 data/market/
 data/analysis/
-data/signals/
 data/logs/
 data/backup/
-
-# Legacy paths (kept for safety until backups are confirmed deleted)
-data/raw/
+# stale local orchestrator_state.json is still on disk here
 data/processed/
-data/backtest/
-data/live/
-data/paper/
-data/live_*/
-data/paper_*/
-data/stock/
-data/training/
-
-# ── ML artifacts ────────────────────────────────────────────────────
-models/
 
 # ── Catch-all by extension (defense in depth) ───────────────────────
 *.parquet
@@ -44,14 +31,8 @@ models/
 *.pid
 *.png
 
-# Editor / notebooks
-notebooks/.ipynb_checkpoints/
-
 # ── Docs symlinked to Obsidian Vault (local-only, breaks on Oracle) ──
 docs/
-
-# ── Local caches (DART corp codes, etc.) — never git add ─────────────
-docs_cache/
 
 # session signing secret (Oracle-generated, never commit)
 data/.session_secret
