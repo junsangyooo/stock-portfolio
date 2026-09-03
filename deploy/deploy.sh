@@ -29,12 +29,18 @@ REMOTE_HEAD=$(ssh "$HOST" 'git -C ~/portfolio-dashboard rev-parse HEAD')
   || fail "HEAD mismatch after pull: local=$LOCAL_HEAD oracle=$REMOTE_HEAD"
 echo "[deploy] HEAD verified: ${REMOTE_HEAD:0:7}"
 
+# Backup every book before anything restarts on the new code. Runs after the
+# pull so the module exists on Oracle; a failure leaves the service untouched.
+ROLLBACK="ssh $HOST 'git -C ~/portfolio-dashboard reset --hard $PREV_HEAD' && ./deploy/deploy.sh $SERVICE"
+echo "[deploy] backing up DBs on Oracle..."
+ssh "$HOST" 'cd ~/portfolio-dashboard && .venv/bin/python -m src.core.backup --only portfolio quant news' \
+  || fail "DB backup failed on Oracle (service not restarted) — rollback: $ROLLBACK"
+
 # nginx config drift check (warn only — never auto-apply)
 ssh "$HOST" 'sudo -n diff -q ~/portfolio-dashboard/deploy/nginx-portfolio.conf /etc/nginx/sites-available/portfolio >/dev/null 2>&1' \
   || echo "[deploy] WARN: nginx config drift (deployed != git) — review manually"
 
 if [ -n "$SERVICE" ]; then
-  ROLLBACK="ssh $HOST 'git -C ~/portfolio-dashboard reset --hard $PREV_HEAD' && ./deploy/deploy.sh $SERVICE"
   echo "[deploy] restarting $SERVICE..."
   ssh "$HOST" "sudo systemctl restart $SERVICE" \
     || fail "restart failed — rollback: $ROLLBACK"
