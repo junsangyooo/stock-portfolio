@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS plans (
   note                  TEXT,
   status                TEXT NOT NULL DEFAULT 'armed',
                         -- armed|entered|done|stopped|abandoned|expired
+  source                TEXT NOT NULL DEFAULT 'agent',  -- user | agent
   conditions            TEXT,           -- JSON, see above
   conditional_order_id  TEXT,
   expires_at            INTEGER,
@@ -169,7 +170,15 @@ _ADDED = {
                  ("updated_at", "INTEGER NOT NULL DEFAULT 0")],
     "plans": [("status", "TEXT NOT NULL DEFAULT 'armed'"),
               ("conditions", "TEXT"), ("conditional_order_id", "TEXT"),
-              ("expires_at", "INTEGER")],
+              ("expires_at", "INTEGER"),
+              ("source", "TEXT NOT NULL DEFAULT 'agent'")],
+}
+
+# Before plans.source existed, the quant UI told a human plan apart by a tag
+# it appended to the note. Run once, when the column is first added.
+_BACKFILL = {
+    ("plans", "source"):
+        "UPDATE plans SET source = 'user' WHERE note LIKE '%[사용자 작성]%'",
 }
 
 
@@ -190,5 +199,7 @@ def apply(conn: sqlite3.Connection) -> None:
         for name, decl in cols:
             if name not in have:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+                if (table, name) in _BACKFILL:
+                    conn.execute(_BACKFILL[(table, name)])
     conn.executescript(INDEXES)
     conn.commit()

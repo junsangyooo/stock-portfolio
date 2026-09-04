@@ -49,8 +49,8 @@ def create(account_id: str, *, symbol_id: str, name: str, side: str,
         cur = c.execute(
             """
             INSERT INTO plans (account_id, symbol_id, name, side, price, qty,
-                               note, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                               note, source, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'user', ?, ?)
             """,
             (account_id, symbol_id, name, side, float(price), float(qty),
              note or None, now, now),

@@ -85,6 +85,8 @@ SHARED_NAMES = (
     "money", "ccyMoney", "pct", "signCls",
     "designColor", "designRgba", "newsThemeColor", "newsThemeIcon",
     "srcName", "newsCard", "newsGrid", "toast", "api",
+    # U4: the card grammar both pages draw with
+    "drawChart", "fmtBarDate", "drawCurve", "LABEL_KO", "freshInfo", "verdictBadge",
 )
 
 # A colour literal in a VALUE position: after ':' / '=' / '(' / ',' or an
@@ -235,3 +237,104 @@ def test_account_page_trade_flow_uses_trades_route():
     assert "/trades'" in src
     for gone in ("trade_side", "trade_price", "trade_qty", "sell_price=", "sell_qty="):
         assert gone not in src, gone
+
+
+# ── U4: quant cockpit ────────────────────────────────────────────────────
+QUANT = STATIC / "quant.html"
+
+
+def _quant_route_paths():
+    from fastapi.routing import APIRoute
+    from src.api import quant as qapi
+    return {r.path for r in qapi.router.routes if isinstance(r, APIRoute)}
+
+
+def _call_text(src, start):
+    """The full `qapi(...)` call starting at `start`, by paren balance."""
+    depth, i = 0, src.index("(", start)
+    for j in range(i, len(src)):
+        if src[j] == "(":
+            depth += 1
+        elif src[j] == ")":
+            depth -= 1
+            if depth == 0:
+                return src[start:j + 1]
+    return src[start:]
+
+
+def test_quant_page_calls_only_existing_routes():
+    """Every qapi('/x') and '/api/quant/x' literal resolves to a route on the
+    quant router. A literal ending in '/' is followed by a path param."""
+    src = QUANT.read_text()
+    paths = _quant_route_paths()
+    lits = set(re.findall(r"qapi\('([^']+)'", src))
+    lits |= {p[len("/api/quant"):] for p in re.findall(r"'(/api/quant/[^']+)'", src)}
+    bad = []
+    for lit in lits:
+        lit = lit.split("?")[0]
+        ok = (any(p.startswith("/api/quant" + lit + "{") for p in paths)
+              if lit.endswith("/") else ("/api/quant" + lit) in paths)
+        if not ok:
+            bad.append(lit)
+    assert not bad, f"quant.html calls routes that do not exist: {sorted(bad)}"
+
+
+def test_quant_page_reads_the_uiless_apis():
+    """/snapshots, /orders, /sync, entry_rationale and the cycle header fields
+    had zero readers (ui-01-prd §2.2)."""
+    src = QUANT.read_text()
+    for needle in ("'/snapshots", "'/orders", "'/sync", "entry_rationale",
+                   "S.newsGrid(", "/api/analysis/news/feed",
+                   "/api/analysis/summary", "/api/market/ohlcv", "S.drawCurve(",
+                   "S.drawChart(", "S.verdictBadge(", "stock-card"):
+        assert needle in src, needle
+    for field in ("focus", "ended_at", "phase"):
+        assert re.search(rf"\.{field}\b", src), f"cycle.{field} is fetched but not shown"
+
+
+def test_quant_guarded_writes_carry_the_pin():
+    """The two-tier rule (ops notes §10): new plan · mode · cancel_all · sync
+    re-send the PIN in the body. Every such call site on the page does."""
+    src = QUANT.read_text()
+    guarded = ("/sync", "/mode", "/orders/cancel_all", "/plans")
+    seen, bad = 0, []
+    for m in re.finditer(r"qapi\('(" + "|".join(re.escape(g) for g in guarded) + r")(\?[^']*)?'", src):
+        call = _call_text(src, m.start())
+        if "method: 'POST'" not in call:
+            continue
+        seen += 1
+        if not re.search(r"\bpin\b", call):
+            bad.append(call.splitlines()[0])
+    assert seen >= 5, "expected the guarded POST call sites (plans×3, mode×2, cancel_all, sync×2)"
+    assert not bad, "guarded POST without pin in body:\n" + "\n".join(bad)
+    # the force path is a second confirmation, never the first call
+    assert "'/sync?force=1'" in src
+    # structured refusal, never a string match on the error sentence
+    assert "refused === 'full_close'" in src
+    assert "none of the ledger" not in src
+
+
+def test_quant_plan_author_is_a_column():
+    src = QUANT.read_text()
+    assert "[사용자" not in src, "author detection by note marker is gone"
+    assert re.search(r"\.source\s*===\s*'user'", src)
+
+
+def test_quant_journal_kind_is_not_whitelisted():
+    """Unknown kinds render with the slug and a fallback colour (FR-D3), and
+    the clamp is measured, not a character count (FR-D4)."""
+    src = QUANT.read_text()
+    assert re.search(r"KIND_LABEL\[[^\]]+\]\s*\|\|", src)
+    assert re.search(r"KIND_COLOR\[[^\]]+\]\s*\|\|", src)
+    assert not re.search(r"\.length\s*>\s*\d{2,}", src), "character-count clamp threshold"
+    assert "ResizeObserver" in src
+    assert "scrollHeight > " in src
+
+
+def test_quant_page_has_no_stale_sections():
+    """The body is two layers; the rest lives behind buttons (FR-C1/C5)."""
+    src = QUANT.read_text()
+    assert 'id="sec-now"' in src and 'id="sec-positions"' in src
+    for pid in ("panel-plans", "panel-watch", "panel-news"):
+        assert re.search(rf'id="{pid}"[^>]*\bhidden\b', src), f"{pid} must start collapsed"
+    assert 'class="nav"' not in src

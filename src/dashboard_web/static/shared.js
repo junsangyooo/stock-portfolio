@@ -244,6 +244,280 @@ function newsGrid(items, mount) {
   for (const n of items) mount.appendChild(newsCard(n));
 }
 
+// ── analysis badge (Level 0) ─────────────────────────────────────────
+// The engine judges the symbol only (label); "what it means for me" is the
+// account screen's business. Both pages draw the same badge from one entry
+// of GET /api/analysis/summary.
+const LABEL_KO = {
+  strong_buy: '적극 긍정', buy: '긍정', neutral: '중립',
+  sell: '부정', strong_sell: '적극 부정',
+};
+// 'YYYY-MM-DD' (or a 'YYYYMMDD' stem) → {days, cls(ok|warn|old), text}
+function freshInfo(dateStr) {
+  if (!dateStr) return null;
+  let s = String(dateStr).slice(0, 10);
+  if (/^\d{8}$/.test(s)) s = s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6);
+  const d = new Date(s + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return null;
+  const days = Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+  return {
+    days,
+    cls: days <= 7 ? 'ok' : (days <= 30 ? 'warn' : 'old'),
+    text: days === 0 ? '오늘' : days + '일 전',
+  };
+}
+// In-place update of a .sc-verdict-badge span. No entry → hidden (never a
+// synthetic badge); facts_only → 「판단 없음」, not a neutral label.
+function verdictBadge(span, entry, etaKo) {
+  if (!span) return;
+  if (entry && entry.running) {
+    span.hidden = false;
+    span.className = 'sc-verdict-badge running';
+    span.textContent = '⏳ 분석중';
+    span.title = '종합 분석 실행 중' + (etaKo ? ' (' + etaKo + ')' : '');
+    return;
+  }
+  const factsOnly = !!(entry && entry.status === 'facts_only');
+  const ko = factsOnly ? '판단 없음' : LABEL_KO[entry && entry.label];
+  if (!ko) { span.hidden = true; return; }
+  const f = freshInfo(entry.date);
+  span.hidden = false;
+  span.className = 'sc-verdict-badge act-' + (factsOnly ? 'neutral' : entry.label) +
+    (f && f.cls === 'old' ? ' stale' : '');
+  span.textContent = ko + (f ? ' · ' + f.text : '') +
+    (f && f.cls === 'old' ? ' ⚠' : '');
+  span.title = '종합 판단 (' + (entry.date || '?') + ')' +
+    (f && f.cls === 'old' ? ' — 오래된 분석입니다. 다시 분석을 권장합니다.' : '');
+}
+
+// ── charts (canvas — colours via designColor, never var(--x)) ────────
+const KST_OFFSET_MS = 9 * 3600 * 1000;
+// bar unix-ts (KST) → x-axis label. mode: 'MD' | 'YM' | 'Y' | 'HM'
+function fmtBarDate(ts, mode) {
+  if (!ts) return '';
+  const d = new Date(ts * 1000 + KST_OFFSET_MS);
+  const y = d.getUTCFullYear(), m = d.getUTCMonth() + 1, day = d.getUTCDate();
+  if (mode === 'Y') return String(y);
+  if (mode === 'YM') return String(y).slice(2) + '.' + ('0' + m).slice(-2);
+  if (mode === 'HM') return ('0' + d.getUTCHours()).slice(-2) + ':' +
+                             ('0' + d.getUTCMinutes()).slice(-2);
+  return m + '/' + day;
+}
+
+// drawChart(canvas, candles, style, opts)
+//   opts.dates       — draw an x-axis with date labels (default false)
+//   opts.dateMode    — 'MD' | 'YM' | 'Y' (label format)
+//   opts.labelEvery  — label every Nth candle (auto if omitted)
+// candles each carry .ts (unix seconds). Window/pan slicing is done by the
+// caller; drawChart just renders whatever slice it's handed.
+function drawChart(canvas, candles, style, opts) {
+  opts = opts || {};
+  const showDates = !!opts.dates;
+  const w = canvas.clientWidth || 400;
+  const h = canvas.clientHeight || 180;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  if (!candles.length) {
+    ctx.fillStyle = designColor('dim');
+    ctx.font = '11px JetBrains Mono';
+    ctx.fillText('데이터 없음', (w / 2) - 30, h / 2);
+    return;
+  }
+
+  const PAD_L = 44, PAD_R = 8, PAD_T = 6;
+  const PAD_B = showDates ? 28 : 16;
+  const plotW = w - PAD_L - PAD_R;
+  const plotH = h - PAD_T - PAD_B;
+
+  let lo = Infinity, hi = -Infinity;
+  candles.forEach(c => {
+    if (c.low < lo) lo = c.low;
+    if (c.high > hi) hi = c.high;
+  });
+  const pad = (hi - lo) * 0.08 || hi * 0.005 || 1;
+  lo -= pad; hi += pad;
+  const yOf = v => PAD_T + (1 - (v - lo) / (hi - lo)) * plotH;
+
+  // y gridlines + price labels
+  ctx.strokeStyle = designRgba('dim', 0.18);
+  ctx.fillStyle = designColor('dim');
+  ctx.font = '9px JetBrains Mono';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const v = lo + (hi - lo) * i / 4;
+    const y = yOf(v);
+    ctx.beginPath();
+    ctx.moveTo(PAD_L, y); ctx.lineTo(w - PAD_R, y);
+    ctx.stroke();
+    ctx.fillText(v >= 1000 ? v.toFixed(0) : v.toFixed(2), 4, y + 3);
+  }
+
+  const slot = plotW / candles.length;
+
+  // x-axis date labels (only when requested — expand chart)
+  if (showDates) {
+    const mode = opts.dateMode || 'MD';
+    const every = opts.labelEvery || Math.max(1, Math.ceil(candles.length / 8));
+    ctx.fillStyle = designColor('dim');
+    ctx.strokeStyle = designRgba('dim', 0.10);
+    ctx.font = '9px JetBrains Mono';
+    for (let i = 0; i < candles.length; i += every) {
+      const x = PAD_L + (i + 0.5) * slot;
+      // faint vertical guide
+      ctx.beginPath(); ctx.moveTo(x, PAD_T); ctx.lineTo(x, PAD_T + plotH); ctx.stroke();
+      const label = fmtBarDate(candles[i].ts, mode);
+      ctx.fillText(label, x - 14, h - 8);
+    }
+  }
+
+  if (style === 'line') {
+    ctx.strokeStyle = designColor('cyan');
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    candles.forEach((c, i) => {
+      const x = PAD_L + (i + 0.5) * slot;
+      const y = yOf(c.close);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    const last = candles[candles.length - 1];
+    const xL = PAD_L + (candles.length - 0.5) * slot;
+    const yL = yOf(last.close);
+    ctx.fillStyle = designColor('cyan');
+    ctx.beginPath(); ctx.arc(xL, yL, 3, 0, Math.PI * 2); ctx.fill();
+  } else {
+    const bw = Math.max(1, slot * 0.6);
+    candles.forEach((c, i) => {
+      const x = PAD_L + (i + 0.5) * slot;
+      const isUp = c.close >= c.open;
+      const color = isUp ? designColor('green') : designColor('red');
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(x, yOf(c.high));
+      ctx.lineTo(x, yOf(c.low));
+      ctx.stroke();
+      const yo = yOf(c.open), yc = yOf(c.close);
+      const top = Math.min(yo, yc);
+      const bh = Math.max(1, Math.abs(yc - yo));
+      if (isUp) {
+        ctx.fillStyle = designRgba('green', 0.5);
+        ctx.fillRect(x - bw / 2, top, bw, bh);
+        ctx.strokeRect(x - bw / 2, top, bw, bh);
+      } else {
+        ctx.fillRect(x - bw / 2, top, bw, bh);
+      }
+    });
+  }
+
+  // ── analysis overlay: S/R horizontal lines (visible-window) ──
+  if (opts.srLevels && opts.srLevels.length) {
+    ctx.font = '9px JetBrains Mono';
+    ctx.setLineDash([4, 3]);
+    ctx.lineWidth = 1;
+    opts.srLevels.forEach(lv => {
+      if (lv.price < lo || lv.price > hi) return;   // skip off-screen levels
+      const y = yOf(lv.price);
+      const col = lv.kind === 'r' ? designColor('red') : designColor('green');
+      ctx.strokeStyle = col;
+      ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(w - PAD_R, y); ctx.stroke();
+      ctx.fillStyle = col;
+      const px = lv.price >= 1000 ? lv.price.toFixed(0) : lv.price.toFixed(2);
+      ctx.fillText((lv.kind === 'r' ? '저항 ' : '지지 ') + px + ' ·' + lv.tests, PAD_L + 4, y - 3);
+    });
+    ctx.setLineDash([]);
+  }
+}
+
+// Asset curve — pure: knows neither a DOM id nor an API. `snapshots` are
+// {date, total_assets} rows; opts.fmt formats the y labels.
+function drawCurve(canvas, snapshots, opts) {
+  opts = opts || {};
+  const fmt = opts.fmt || (v => ccyMoney(v, opts.currency));
+  const w = canvas.clientWidth || 800, h = opts.height || 320;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+  if (snapshots.length < 2) return;
+
+  const PAD_L = 70, PAD_R = 14, PAD_T = 14, PAD_B = 28;
+  const plotW = w - PAD_L - PAD_R;
+  const plotH = h - PAD_T - PAD_B;
+
+  let lo = Infinity, hi = -Infinity;
+  snapshots.forEach(s => {
+    const v = s.total_assets;
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  });
+  const pad = (hi - lo) * 0.08 || hi * 0.005 || 1;
+  lo -= pad; hi += pad;
+
+  const px = i => PAD_L + (i / (snapshots.length - 1)) * plotW;
+  const py = v => PAD_T + (1 - (v - lo) / (hi - lo)) * plotH;
+  const first = snapshots[0], last = snapshots[snapshots.length - 1];
+  const isUp = last.total_assets - first.total_assets >= 0;
+
+  // y grid
+  ctx.strokeStyle = designRgba('dim', 0.18);
+  ctx.fillStyle = designColor('dim');
+  ctx.font = '10px JetBrains Mono';
+  for (let i = 0; i <= 5; i++) {
+    const v = lo + (hi - lo) * i / 5;
+    const y = py(v);
+    ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(w - PAD_R, y); ctx.stroke();
+    ctx.fillText(fmt(v), 4, y + 3);
+  }
+
+  // baseline (start value)
+  const yBase = py(first.total_assets);
+  ctx.strokeStyle = designColor('dim');
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.moveTo(PAD_L, yBase); ctx.lineTo(w - PAD_R, yBase); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // X axis dates (first, mid, last)
+  ctx.fillStyle = designColor('dim');
+  ctx.fillText(first.date, PAD_L, h - 8);
+  if (snapshots.length >= 3) {
+    const m = snapshots[Math.floor(snapshots.length / 2)];
+    ctx.fillText(m.date, PAD_L + plotW / 2 - 30, h - 8);
+  }
+  ctx.fillText(last.date, w - PAD_R - 60, h - 8);
+
+  // line + fill
+  const color = isUp ? designColor('green') : designColor('red');
+  ctx.fillStyle = isUp ? designRgba('green', 0.18) : designRgba('red', 0.18);
+  ctx.beginPath();
+  ctx.moveTo(px(0), yBase);
+  snapshots.forEach((s, i) => ctx.lineTo(px(i), py(s.total_assets)));
+  ctx.lineTo(px(snapshots.length - 1), yBase);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  snapshots.forEach((s, i) => {
+    const x = px(i), y = py(s.total_assets);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(px(snapshots.length - 1), py(last.total_assets), 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 // ── icon sprite (Lucide, ISC, lucide.dev) ────────────────────────────
 // Inserted at the top of <body> once it exists; <use href> resolves live,
 // so cards built before that moment still pick their symbol up.
@@ -286,5 +560,7 @@ window.S = {
   money, ccyMoney, pct, signCls,
   toast, api,
   srcName, newsCard, newsGrid,
+  LABEL_KO, freshInfo, verdictBadge,
+  fmtBarDate, drawChart, drawCurve,
 };
 })();
