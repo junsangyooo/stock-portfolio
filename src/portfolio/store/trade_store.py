@@ -4,8 +4,8 @@ One recorded trade moves four things in one transaction (ops notes §3.1):
 
   trades     a new row
   holdings   buy: qty +=, avg_cost = weighted mean
-             sell: qty -=, avg_cost unchanged; a full sell leaves qty 0 and
-             avg_cost NULL (a watch row), or no row at all (remove_when_flat)
+             sell: qty -=, avg_cost unchanged; a full sell deletes the row
+             (the trade rows keep the history)
   cash       buy: −(price·qty + fee)   sell: +(price·qty − fee)
   plans      the trade row is what transitions plan.status —
              buy: armed → entered     sell (full): armed sell / entered → done
@@ -22,8 +22,10 @@ quant does not share this: its holdings truth is the broker reconcile
 from __future__ import annotations
 
 import time
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
+from ...core.kst import KST
 from .db import connect
 from .plan_store import _row as _plan_row
 
@@ -56,13 +58,9 @@ def _matches(plan: dict, side: str) -> bool:
 def record(account_id: str, *, symbol_id: str, side: str, qty: float,
            price: float, currency: str, fee: float = 0.0,
            name: Optional[str] = None, traded_at: Optional[int] = None,
-           plan_id: Optional[int] = None, note: Optional[str] = None,
-           remove_when_flat: bool = False) -> dict:
+           plan_id: Optional[int] = None, note: Optional[str] = None) -> dict:
     """Raises ValueError for a bad trade (→400), LookupError when plan_id is
-    not this account's (→404). Nothing is written on either.
-
-    `remove_when_flat`: a sell that empties the position drops the holdings
-    row in the same transaction instead of leaving a watch row."""
+    not this account's (→404). Nothing is written on either."""
     side = (side or "").lower()
     if side not in SIDES:
         raise ValueError("side must be 'buy' or 'sell'")
@@ -121,12 +119,11 @@ def record(account_id: str, *, symbol_id: str, side: str, qty: float,
                 new_qty = old_qty - qty
                 if new_qty <= 1e-9:          # float dust (0.1+0.2 ≠ 0.3) is flat
                     new_qty = 0.0
-                new_avg = old_avg if new_qty > 0 else None   # flat → watch row
-            removed = side == "sell" and new_qty <= 0 and remove_when_flat
+                new_avg = old_avg if new_qty > 0 else None
+            removed = side == "sell" and new_qty <= 0
             # entry_* is written when the position opens and left alone after —
             # a changed quantity does not change why it was bought. A full sell
-            # keeps the row at qty 0, so "opens" must win over COALESCE on the
-            # next buy or the closed-out rationale would outlive the position.
+            # takes the row with it, so the next buy starts from nothing.
             opening = side == "buy" and old_qty <= 0
             if removed:
                 c.execute("DELETE FROM holdings WHERE account_id = ? AND symbol_id = ?",
@@ -144,10 +141,8 @@ def record(account_id: str, *, symbol_id: str, side: str, qty: float,
                     ON CONFLICT(account_id, symbol_id) DO UPDATE SET
                       qty=excluded.qty, avg_cost=excluded.avg_cost,
                       currency=COALESCE(holdings.currency, excluded.currency),
-                      entry_plan_id=CASE WHEN excluded.opened_at IS NOT NULL
-                                         THEN excluded.entry_plan_id ELSE holdings.entry_plan_id END,
-                      entry_rationale=CASE WHEN excluded.opened_at IS NOT NULL
-                                         THEN excluded.entry_rationale ELSE holdings.entry_rationale END,
+                      entry_plan_id=COALESCE(excluded.entry_plan_id, holdings.entry_plan_id),
+                      entry_rationale=COALESCE(excluded.entry_rationale, holdings.entry_rationale),
                       opened_at=COALESCE(excluded.opened_at, holdings.opened_at),
                       updated_at=excluded.updated_at
                     """,
@@ -212,10 +207,31 @@ def record(account_id: str, *, symbol_id: str, side: str, qty: float,
     }
 
 
-def list_by_account(account_id: str, limit: int = 200) -> List[dict]:
+def _kst_day(day: str) -> datetime:
+    """'YYYY-MM-DD' → midnight KST. ValueError on anything else (→400)."""
+    d = date.fromisoformat(day)          # strict: '2026-9-1' is refused
+    return datetime(d.year, d.month, d.day, tzinfo=KST)
+
+
+def list_by_account(account_id: str, limit: int = 200, *,
+                    symbol_id: Optional[str] = None,
+                    since: Optional[str] = None,
+                    until: Optional[str] = None) -> List[dict]:
+    """Newest first. `since`/`until` are KST calendar days, both inclusive,
+    against `traded_at`."""
+    where, args = ["account_id = ?"], [account_id]
+    if symbol_id:
+        where.append("symbol_id = ?")
+        args.append(symbol_id)
+    if since:
+        where.append("traded_at >= ?")
+        args.append(int(_kst_day(since).timestamp()))
+    if until:
+        where.append("traded_at < ?")
+        args.append(int((_kst_day(until) + timedelta(days=1)).timestamp()))
+    args.append(int(limit))
     with connect() as c:
         rows = c.execute(
-            "SELECT * FROM trades WHERE account_id = ? "
-            "ORDER BY traded_at DESC, trade_id DESC LIMIT ?",
-            (account_id, int(limit))).fetchall()
+            f"SELECT * FROM trades WHERE {' AND '.join(where)} "
+            "ORDER BY traded_at DESC, trade_id DESC LIMIT ?", args).fetchall()
         return [dict(r) for r in rows]

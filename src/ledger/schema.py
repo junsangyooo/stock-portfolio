@@ -139,6 +139,8 @@ CREATE TABLE IF NOT EXISTS plans (
   conditions            TEXT,           -- JSON, see above
   conditional_order_id  TEXT,
   expires_at            INTEGER,
+  cycle_id              INTEGER,        -- auto only: the cycle that wrote it;
+                                        -- NULL for a person's or a user's plan
   created_at            INTEGER NOT NULL,
   updated_at            INTEGER NOT NULL
 );
@@ -174,7 +176,8 @@ _ADDED = {
     "plans": [("status", "TEXT NOT NULL DEFAULT 'armed'"),
               ("conditions", "TEXT"), ("conditional_order_id", "TEXT"),
               ("expires_at", "INTEGER"),
-              ("source", "TEXT NOT NULL DEFAULT 'agent'")],
+              ("source", "TEXT NOT NULL DEFAULT 'agent'"),
+              ("cycle_id", "INTEGER")],
 }
 
 # Before plans.source existed, the quant UI told a human plan apart by a tag

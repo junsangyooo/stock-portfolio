@@ -85,12 +85,14 @@ def test_sell_reduces_keeps_avg_and_credits_cash(client):
     assert balance_store.get_all("alice")["KRW"] == -700_000 + 320_000 - 100
 
 
-def test_full_sell_leaves_row_with_zero_qty(client):
+def test_full_sell_removes_the_row(client):
+    """A sell-out deletes the card; the trade rows keep the history."""
     _trade(client, qty=5, price=70000)
     r = _trade(client, side="sell", qty=5, price=80000)
     assert r.status_code == 200, r.text
-    assert _holding()["qty"] == 0
-    assert r.json()["holding"]["qty"] == 0
+    assert r.json()["holding"] == {"qty": 0, "avg_cost": None, "removed": True}
+    assert holding_store.list_by_account("alice") == []
+    assert len(trade_store.list_by_account("alice")) == 2
 
 
 def test_oversell_rejected(client):
@@ -125,18 +127,19 @@ def test_entry_rationale_written_once(client):
     assert _holding()["entry_plan_id"] == p["plan_id"]
 
 
-def test_reentry_after_full_sell_rewrites_entry_context(client):
-    """A full sell keeps the row at qty 0; the next buy re-opens the position
-    and must carry the new plan's rationale, not the closed-out one's."""
+def test_buy_after_full_sell_creates_a_fresh_row(client):
+    """The sell-out took the row with it, so the next buy opens a new card
+    carrying the new plan's context, not the closed-out one's."""
     p = plan_store.create("alice", symbol_id="KR:005930", name="삼성전자",
                           side="buy", price=70000, qty=10, note="첫 이유")
     _trade(client, plan_id=p["plan_id"])
     _trade(client, side="sell", qty=10, price=71000)
-    assert _holding()["qty"] == 0
+    assert holding_store.list_by_account("alice") == []
     p2 = plan_store.create("alice", symbol_id="KR:005930", name="삼성전자",
                            side="buy", price=60000, qty=5, note="두번째 이유")
     _trade(client, plan_id=p2["plan_id"], qty=5, price=60000)
     h = _holding()
+    assert h["qty"] == 5 and h["avg_cost"] == 60000
     assert h["entry_rationale"] == "두번째 이유"
     assert h["entry_plan_id"] == p2["plan_id"]
 
@@ -193,8 +196,7 @@ def test_explicit_plan_must_take_the_trade(client):
 
 def test_float_dust_sell_is_flat(client):
     holding_store.upsert("alice", "US:AAPL", avg_cost=100, qty=0.1 + 0.2)   # 0.30000000000000004
-    r = _trade(client, symbol_id="US:AAPL", side="sell", qty=0.3, price=200,
-               remove_when_flat=True)
+    r = _trade(client, symbol_id="US:AAPL", side="sell", qty=0.3, price=200)
     assert r.status_code == 200, r.text
     assert r.json()["holding"] == {"qty": 0, "avg_cost": None, "removed": True}
 
@@ -287,32 +289,71 @@ def test_every_account_route_requires_account():
 
 # ── flat position · sort order · unknown cost ─────────────────────────
 
-def test_full_sell_keeps_a_watch_row_with_note_and_no_avg(client):
+def test_partial_sell_keeps_the_row(client):
     holding_store.upsert("alice", "KR:005930", avg_cost=70000, qty=5,
                          note="배당 목적")
-    r = _trade(client, side="sell", qty=5, price=80000)
-    assert r.status_code == 200, r.text
-    assert r.json()["holding"] == {"qty": 0, "avg_cost": None, "removed": False}
-    h = _holding()
-    assert h["qty"] == 0 and h["avg_cost"] is None and h["note"] == "배당 목적"
-
-
-def test_remove_when_flat_is_ignored_unless_flat(client):
-    holding_store.upsert("alice", "KR:005930", avg_cost=70000, qty=5)
-    r = _trade(client, side="sell", qty=2, price=80000, remove_when_flat=True)
+    r = _trade(client, side="sell", qty=2, price=80000)
     assert r.status_code == 200, r.text
     assert r.json()["holding"] == {"qty": 3, "avg_cost": 70000, "removed": False}
-    assert _holding()["qty"] == 3
+    h = _holding()
+    assert h["qty"] == 3 and h["note"] == "배당 목적"
 
 
-def test_remove_when_flat_drops_the_row(client):
-    holding_store.upsert("alice", "KR:005930", avg_cost=70000, qty=5)
-    r = _trade(client, side="sell", qty=5, price=80000, remove_when_flat=True)
+def test_buy_onto_a_watch_row_opens_it(client):
+    """A qty-0 watch row (added without a trade) becomes a position on the
+    first buy and takes that buy's plan as its entry context."""
+    holding_store.upsert("alice", "KR:005930", note="지켜보는 중")
+    p = _plan()
+    r = _trade(client, plan_id=p["plan_id"])
     assert r.status_code == 200, r.text
-    assert r.json()["holding"]["removed"] is True
-    assert holding_store.list_by_account("alice") == []
-    # the trade row itself is kept — the ledger remembers what the book forgot
-    assert len(trade_store.list_by_account("alice")) == 1
+    h = _holding()
+    assert h["qty"] == 10 and h["note"] == "지켜보는 중"
+    assert h["entry_plan_id"] == p["plan_id"]
+
+
+# ── trade history filters ─────────────────────────────────────────────
+
+def _seed_history(client):
+    # 2026-09-01 00:00 KST = 1788188400; 09-02 = +86400; 09-03 = +172800
+    _trade(client, traded_at=1788188400 + 3600)                            # 09-01
+    _trade(client, traded_at=1788188400 + 86400 + 3600, symbol_id="KR:000660")  # 09-02
+    _trade(client, traded_at=1788188400 + 172800 + 3600)                   # 09-03
+
+
+def _history(client, **params):
+    r = client.get("/api/accounts/alice/trades", params=params, cookies=_cookie())
+    assert r.status_code == 200, r.text
+    return r.json()["trades"]
+
+
+def test_trades_filter_by_symbol(client):
+    _seed_history(client)
+    rows = _history(client, symbol_id="KR:000660")
+    assert [t["symbol_id"] for t in rows] == ["KR:000660"]
+
+
+def test_trades_filter_by_date_range_inclusive_kst(client):
+    _seed_history(client)
+    assert len(_history(client, since="2026-09-02")) == 2
+    assert len(_history(client, until="2026-09-02")) == 2
+    rows = _history(client, since="2026-09-02", until="2026-09-02")
+    assert [t["traded_at"] for t in rows] == [1788188400 + 86400 + 3600]
+    # a trade at 23:59 KST on the `until` day is still inside
+    _trade(client, traded_at=1788188400 + 172800 + 86400 - 1)              # 09-03 23:59:59
+    assert len(_history(client, since="2026-09-03", until="2026-09-03")) == 2
+
+
+def test_trades_limit_is_clamped(client):
+    _seed_history(client)
+    assert len(_history(client, limit=2)) == 2
+    assert len(_history(client, limit=5000)) == 3
+
+
+@pytest.mark.parametrize("bad", [{"since": "2026-9-1"}, {"until": "yesterday"},
+                                 {"since": "2026-13-01"}])
+def test_trades_malformed_date_is_400(client, bad):
+    r = client.get("/api/accounts/alice/trades", params=bad, cookies=_cookie())
+    assert r.status_code == 400
 
 
 def test_trade_opened_holding_sorts_after_existing_cards(client):

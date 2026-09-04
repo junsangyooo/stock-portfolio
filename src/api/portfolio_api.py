@@ -251,7 +251,6 @@ class TradeBody(BaseModel):
     traded_at: Optional[int] = None          # epoch seconds; default now
     plan_id: Optional[int] = None
     note: Optional[str] = None
-    remove_when_flat: bool = False           # sell-out: drop the row, not keep a watch row
 
 
 @router.post("/{account_id}/trades")
@@ -272,8 +271,7 @@ def record_trade(account_id: str, body: TradeBody,
             currency=_currency_of(symbol_id),
             name=meta.get("name_kr") or meta.get("name_en") or symbol_id,
             traded_at=body.traded_at, plan_id=body.plan_id,
-            note=(body.note or "").strip() or None,
-            remove_when_flat=body.remove_when_flat)
+            note=(body.note or "").strip() or None)
     except LookupError as e:
         raise HTTPException(404, str(e))
     except ValueError as e:
@@ -288,9 +286,18 @@ def record_trade(account_id: str, body: TradeBody,
 
 @router.get("/{account_id}/trades")
 def list_trades(account_id: str, limit: int = 200,
+                symbol_id: Optional[str] = None,
+                since: Optional[str] = None, until: Optional[str] = None,
                 _: str = Depends(require_account)) -> dict:
-    return {"account_id": account_id,
-            "trades": trade_store.list_by_account(account_id, limit)}
+    """Newest first. `since`/`until` are inclusive KST days (YYYY-MM-DD)."""
+    try:
+        rows = trade_store.list_by_account(
+            account_id, max(1, min(limit, 1000)),
+            symbol_id=(symbol_id or "").strip() or None,
+            since=since or None, until=until or None)
+    except ValueError:
+        raise HTTPException(400, "since/until must be YYYY-MM-DD")
+    return {"account_id": account_id, "trades": rows}
 
 
 # ── balances ─────────────────────────────────────────────────────────

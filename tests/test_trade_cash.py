@@ -121,7 +121,7 @@ def test_edit_mode_does_not_touch_cash(client):
 def test_full_sellout_removes_in_the_same_request(client):
     balance_store.set_many("acc1", {"KRW": 100_000})
     holding_store.upsert("acc1", "KR:005930", avg_cost=70000, qty=5)
-    r = _trade(client, side="sell", qty=5, price=80000, remove_when_flat=True)
+    r = _trade(client, side="sell", qty=5, price=80000)
     assert r.status_code == 200, r.text
     assert r.json()["cash_balance"] == 100_000 + 400_000
     assert r.json()["holding"] == {"qty": 0, "avg_cost": None, "removed": True}
