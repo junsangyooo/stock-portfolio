@@ -21,7 +21,7 @@ import logging
 import re
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from src.core import security
@@ -147,12 +147,21 @@ def _serve(name: str) -> HTMLResponse:
 # host-only, so the quant origin has its own login — a portfolio session
 # cannot reach the order book, and vice versa.
 _QUANT_HOST_RE = re.compile(r"^quant\b", re.IGNORECASE)
+_PORTFOLIO_HOST_RE = re.compile(r"^portfolio\b", re.IGNORECASE)
 
 
 def _is_quant_host(request: Request) -> bool:
     return bool(_QUANT_HOST_RE.match(request.headers.get("host", "")))
 
 
+def _is_portfolio_host(request: Request) -> bool:
+    return bool(_PORTFOLIO_HOST_RE.match(request.headers.get("host", "")))
+
+
+# Page routes refuse the *other* product's public host with a 404 — never a
+# redirect, which would itself be a path between the two products. It is a
+# deny-list, not an allow-list: a host that is neither public origin (laptop,
+# Oracle shell, the deploy health check) reaches every page.
 @app.get("/", response_class=HTMLResponse)
 def landing(request: Request) -> HTMLResponse:
     if _is_quant_host(request):
@@ -161,7 +170,9 @@ def landing(request: Request) -> HTMLResponse:
 
 
 @app.get("/q", response_class=HTMLResponse)
-def quant_page() -> HTMLResponse:
+def quant_page(request: Request) -> HTMLResponse:
+    if _is_portfolio_host(request):
+        raise HTTPException(status_code=404)
     return _serve_quant()
 
 
@@ -184,7 +195,9 @@ def _serve_quant() -> HTMLResponse:
 
 
 @app.get("/a/{account_id}", response_class=HTMLResponse)
-def account_page(account_id: str) -> HTMLResponse:
+def account_page(request: Request, account_id: str) -> HTMLResponse:
+    if _is_quant_host(request):
+        raise HTTPException(status_code=404)
     # account_id is read by the page's JS from window.location.pathname,
     # so the server just hands over the same shell for every account.
     return _serve("account.html")
