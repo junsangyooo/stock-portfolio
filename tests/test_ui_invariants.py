@@ -22,7 +22,6 @@ def client(tmp_path, monkeypatch):
     # /q names the quant account from quant.db — point the book at a tmp file.
     monkeypatch.setattr(qdb, "QUANT_DB_PATH", tmp_path / "quant.db")
     monkeypatch.setattr(qdb, "_initialized", False)
-    qdb.forget_account_id()
     return TestClient(server.app)
 
 

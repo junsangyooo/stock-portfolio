@@ -11,7 +11,6 @@ from src.quant import db as qdb, execute, keeper, plans, store
 def _tmp_db(tmp_path, monkeypatch):
     monkeypatch.setattr(qdb, "QUANT_DB_PATH", tmp_path / "quant.db")
     monkeypatch.setattr(qdb, "_initialized", False)
-    qdb.forget_account_id()
     store.create_account("robo", "로보")
     monkeypatch.setattr(keeper, "market_open", lambda m, now: True)
     # Nothing here may reach Toss: local secrets make the facade live.
@@ -29,17 +28,17 @@ def sent(monkeypatch):
 
 
 def _alerts():
-    return [e for e in store.journal_recent() if e["kind"] == "alert"]
+    return [e for e in store.journal_recent("robo") if e["kind"] == "alert"]
 
 
 def _armed(sid="KR:005930"):
-    return plans.create(symbol_id=sid, name="n", side="buy", qty=1,
+    return plans.create("robo", symbol_id=sid, name="n", side="buy", qty=1,
                         price=70000,
                         conditions={"entry": {"kind": "below", "price": 70000}})
 
 
 def test_quote_none_is_counted_and_alerted(monkeypatch, sent):
-    store.set_trade_mode("dry")
+    store.set_trade_mode("robo", "dry")
     pid = _armed()
     monkeypatch.setattr(keeper, "_quote", lambda sid: None)
 
@@ -51,7 +50,7 @@ def test_quote_none_is_counted_and_alerted(monkeypatch, sent):
 
 
 def test_rejected_then_duplicate_are_alerted(monkeypatch, sent):
-    store.set_trade_mode("live")
+    store.set_trade_mode("robo", "live")
     pid = _armed()
     monkeypatch.setattr(keeper, "_quote", lambda sid: 69000.0)
 
@@ -69,11 +68,11 @@ def test_rejected_then_duplicate_are_alerted(monkeypatch, sent):
 
 
 def test_order_record_error_is_alerted(monkeypatch, sent):
-    store.set_trade_mode("live")
+    store.set_trade_mode("robo", "live")
     pid = _armed()
     monkeypatch.setattr(keeper, "_quote", lambda sid: 69000.0)
     monkeypatch.setattr(execute, "execute_orders",
-                        lambda cid, orders, **k: [{**o, "status": "error",
+                        lambda aid, cid, orders, **k: [{**o, "status": "error",
                                                    "error": "db locked"}
                                                   for o in orders])
     keeper.run()
@@ -82,7 +81,7 @@ def test_order_record_error_is_alerted(monkeypatch, sent):
 
 
 def test_clean_tick_sends_nothing(monkeypatch, sent):
-    store.set_trade_mode("dry")
+    store.set_trade_mode("robo", "dry")
     _armed()
     monkeypatch.setattr(keeper, "_quote", lambda sid: 69000.0)
     keeper.run()
@@ -90,7 +89,7 @@ def test_clean_tick_sends_nothing(monkeypatch, sent):
 
 
 def test_rejected_entry_does_not_arm_the_exit_pair(monkeypatch, sent):
-    store.set_trade_mode("live")
+    store.set_trade_mode("robo", "live")
     _armed()
     monkeypatch.setattr(keeper, "_quote", lambda sid: 69000.0)
     armed = []
@@ -101,7 +100,7 @@ def test_rejected_entry_does_not_arm_the_exit_pair(monkeypatch, sent):
 
 
 def test_one_plan_raising_does_not_stop_the_others(monkeypatch, sent):
-    store.set_trade_mode("dry")
+    store.set_trade_mode("robo", "dry")
     bad, good = _armed("KR:005930"), _armed("KR:000660")
 
     def quote(sid):
@@ -120,7 +119,7 @@ def test_one_plan_raising_does_not_stop_the_others(monkeypatch, sent):
 
 
 def test_repeated_issue_is_sent_on_the_first_and_every_sixth_tick(monkeypatch, sent):
-    store.set_trade_mode("dry")
+    store.set_trade_mode("robo", "dry")
     _armed()
     monkeypatch.setattr(keeper, "_quote", lambda sid: None)
     for _ in range(7):
@@ -130,7 +129,7 @@ def test_repeated_issue_is_sent_on_the_first_and_every_sixth_tick(monkeypatch, s
 
 
 def test_rejected_reason_lands_in_the_plan_note(monkeypatch, sent):
-    store.set_trade_mode("live")
+    store.set_trade_mode("robo", "live")
     pid = _armed()
     monkeypatch.setattr(keeper, "_quote", lambda sid: 69000.0)
     keeper.run()                                   # _submit refuses (fixture)

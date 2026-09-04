@@ -14,7 +14,6 @@ from src.quant import cycle_job, db as qdb, execute, keeper, plans, store
 def _tmp_db(tmp_path, monkeypatch):
     monkeypatch.setattr(qdb, "QUANT_DB_PATH", tmp_path / "quant.db")
     monkeypatch.setattr(qdb, "_initialized", False)
-    qdb.forget_account_id()
     store.create_account("robo", "로보")   # mode defaults to off
 
 
@@ -22,14 +21,14 @@ def _tmp_db(tmp_path, monkeypatch):
 def _count_orders(monkeypatch):
     calls = []
     monkeypatch.setattr(execute, "execute_orders",
-                        lambda cid, orders, **k: calls.append(orders)
+                        lambda aid, cid, orders, **k: calls.append(orders)
                         or [{**o, "status": "dry_run"} for o in orders])
     monkeypatch.setattr(execute, "arm_conditional", lambda *a, **k: {})
     return calls
 
 
 def _armed_plan():
-    return plans.create(symbol_id="KR:005930", name="삼성전자", side="buy",
+    return plans.create("robo", symbol_id="KR:005930", name="삼성전자", side="buy",
                         qty=1, price=70000,
                         conditions={"entry": {"kind": "immediate"}})
 
@@ -44,7 +43,7 @@ def test_keeper_off_ignores_forced_live(monkeypatch, _count_orders):
     assert _count_orders == []
 
     # the same tick runs once the account is switched on
-    store.set_trade_mode("dry")
+    store.set_trade_mode("robo", "dry")
     out = keeper.run(dry_run=None)
     assert out["fired"] == 1
 
@@ -72,18 +71,18 @@ def test_cycle_never_abandons_the_persons_plan(monkeypatch):
     broker watch is not cancelled."""
     cancelled = []
     monkeypatch.setattr(execute, "cancel_conditionals",
-                        lambda cid, ids, **k: cancelled.extend(ids))
-    mine = plans.create(symbol_id="KR:005930", name="s", side="buy", qty=1, price=1,
+                        lambda aid, cid, ids, **k: cancelled.extend(ids))
+    mine = plans.create("robo", symbol_id="KR:005930", name="s", side="buy", qty=1, price=1,
                         conditions={"entry": {"kind": "immediate"}}, source="user")
-    theirs = plans.create(symbol_id="KR:000660", name="h", side="buy", qty=1, price=1,
+    theirs = plans.create("robo", symbol_id="KR:000660", name="h", side="buy", qty=1, price=1,
                           conditions={"entry": {"kind": "immediate"}})
     plans.set_conditional(mine, "C1")
-    cid = store.cycle_start("morning", "KR", dry_run=True)
-    cycle_job._abandon(cid, [mine, theirs], dry_run=True)
+    cid = store.cycle_start("robo", "morning", "KR", dry_run=True)
+    cycle_job._abandon("robo", cid, [mine, theirs], dry_run=True)
     assert plans.get(mine)["status"] == "armed"
     assert plans.get(theirs)["status"] == "abandoned"
     assert cancelled == []
     seen = {(e["payload"]["plan_id"], e["payload"]["abandoned"])
-            for e in store.journal_recent(limit=10) if e["kind"] == "watch"}
+            for e in store.journal_recent("robo", limit=10) if e["kind"] == "watch"}
     assert {(mine, False), (theirs, True)} <= seen
-    assert "[사용자]" in plans.for_context()          # the brief says whose it is
+    assert "[사용자]" in plans.for_context("robo")          # the brief says whose it is
