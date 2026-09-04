@@ -613,12 +613,51 @@ document.addEventListener('DOMContentLoaded', () => {
   document.body.insertAdjacentHTML('afterbegin', SPRITE);
 });
 
+
+// ── a11y / lifecycle helpers shared by every page ────────────────────
+const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
+// Keep Tab inside `container` until the returned release() runs; restores
+// focus to whatever had it before. Pages call this from their modal openers.
+function trapFocus(container) {
+  const before = document.activeElement;
+  function onKey(e) {
+    if (e.key !== 'Tab') return;
+    const items = Array.from(container.querySelectorAll(FOCUSABLE))
+      .filter(n => n.offsetParent !== null);
+    if (!items.length) { e.preventDefault(); return; }
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+  container.addEventListener('keydown', onKey);
+  const initial = container.querySelector(FOCUSABLE);
+  if (initial) initial.focus();
+  return function release() {
+    container.removeEventListener('keydown', onKey);
+    if (before && document.contains(before)) before.focus();
+  };
+}
+
+// setInterval that sleeps while the tab is hidden and fires once on return —
+// the harness's "auto-updating content has a pause" without a visible control.
+function whenVisible(fn, ms) {
+  let id = null;
+  function start() { if (id == null) id = setInterval(fn, ms); }
+  function stop() { if (id != null) { clearInterval(id); id = null; } }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stop(); else { fn(); start(); }
+  });
+  if (!document.hidden) start();
+  return stop;
+}
+
 window.S = {
   el, clear, svgIco,
   designColor, designRgba, designToken, newsThemeColor, newsThemeIcon, LABELS,
   timeAgo, itemTime, kstClock,
   money, ccyMoney, pct, signCls,
-  toast, api, confirmModal,
+  toast, api, confirmModal, trapFocus, whenVisible,
   srcName, newsCard, newsGrid,
   LABEL_KO, freshInfo, verdictBadge,
   fmtBarDate, drawChart, drawCurve,

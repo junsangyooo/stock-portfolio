@@ -88,6 +88,8 @@ SHARED_NAMES = (
     "drawChart", "fmtBarDate", "drawCurve", "LABEL_KO", "freshInfo", "verdictBadge",
     # U5: the one confirm dialog (native confirm() is banned below)
     "confirmModal",
+    # modal focus trap and tab-aware polling, used by every page's modals/timers
+    "trapFocus", "whenVisible",
 )
 
 # A colour literal in a VALUE position: after ':' / '=' / '(' / ',' or an
