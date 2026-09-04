@@ -1,5 +1,5 @@
 from . import (account_store, balance_store, chat_store, db, holding_store,
-               snapshot_store)
+               plan_store, snapshot_store, trade_store)
 
 __all__ = ["account_store", "balance_store", "chat_store", "db",
-           "holding_store", "snapshot_store"]
+           "holding_store", "plan_store", "snapshot_store", "trade_store"]

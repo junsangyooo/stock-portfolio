@@ -185,3 +185,53 @@ def test_shared_names_not_called_bare():
                 if re.search(rf"(?<![\w.$]){name}\s*\(", line):
                     bad.append(f"{f}:{i}: {line.strip()}")
     assert not bad, "shared helpers called without S. or destructure:\n" + "\n".join(bad)
+
+
+# ── U3: portfolio account page ───────────────────────────────────────────
+ACCOUNT = STATIC / "account.html"
+
+
+def test_account_page_has_one_analysis_run_trigger():
+    """The only thing that starts an analysis job is the modal header's
+    「다시 분석」. Per-domain runs are gone from the server (B7), and a second
+    button in an empty/error state re-created the double-run bug."""
+    src = ACCOUNT.read_text()
+    assert "runChartAnalysis" not in src
+    assert "watchChartJob" not in src
+    assert len(re.findall(r"API\.runAnalysis\(", src)) == 1
+    assert len(re.findall(r"/run'", src)) == 1
+    assert "['다시 시도']" not in src and "전체 분석 실행" not in src
+
+
+def test_account_page_reads_current_engine_schema():
+    """Keys the 종합 renderer reads must exist in what engine.normalize and
+    engine._facts_only actually emit. ANALYSIS_BODY_KEYS in account.html is
+    the one list; this test resolves every dotted path against both shapes."""
+    from src.research.analyze import engine
+    src = ACCOUNT.read_text()
+    for stale in ("crossItems", "disagreement_note_ko", "levels.supports",
+                  "levels.resistances", "'junisa'", "10~14"):
+        assert stale not in src, stale
+    m = re.search(r"const ANALYSIS_BODY_KEYS\s*=\s*\[([^\]]*)\]", src)
+    assert m, "ANALYSIS_BODY_KEYS missing from account.html"
+    paths = re.findall(r"'([\w.]+)'", m.group(1))
+    assert paths
+    env = {"symbol": {"symbol_id": "KR:005930", "name": "삼성전자", "market": "KOSPI"},
+           "asof": "2026-09-04", "domains": [], "available": []}
+    shapes = {"ok": engine.normalize({}, env), "facts_only": engine._facts_only(env, "x")}
+    for path in paths:
+        for kind, body in shapes.items():
+            cur = body
+            for seg in path.split("."):
+                assert isinstance(cur, dict) and seg in cur, f"{kind} lacks {path}"
+                cur = cur[seg]
+        # the renderer really reads that leaf (not just the list)
+        leaf = path.split(".")[-1]
+        assert re.search(rf"[.'\"]{leaf}\b", src.split("const ANALYSIS_BODY_KEYS")[1]), leaf
+
+
+def test_account_page_trade_flow_uses_trades_route():
+    src = ACCOUNT.read_text()
+    assert "/trades'" in src
+    for gone in ("trade_side", "trade_price", "trade_qty", "sell_price=", "sell_qty="):
+        assert gone not in src, gone

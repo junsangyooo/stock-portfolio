@@ -13,6 +13,7 @@ def upsert(account_id: str, symbol_id: str, *,
     """`name` overrides the universe display name; omitting it keeps whatever
     override is already stored (the edit form only sends it when changed)."""
     now = int(time.time())
+    qty = 0 if qty is None else qty     # column is NOT NULL; 0 = watch-only
     with connect() as c:
         c.execute(
             """
@@ -44,7 +45,7 @@ def list_by_account(account_id: str) -> List[dict]:
         rows = c.execute(
             """
             SELECT account_id, symbol_id, avg_cost, qty, note, name,
-                   added_at, sort_order
+                   entry_plan_id, entry_rationale, added_at, sort_order
             FROM holdings WHERE account_id = ?
             ORDER BY sort_order ASC, added_at ASC
             """,

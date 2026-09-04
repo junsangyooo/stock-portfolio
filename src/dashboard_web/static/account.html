@@ -1711,8 +1711,7 @@ body.chat-open { padding-right: 388px; }
         <span class="expand-price" id="ex-price">—</span>
         <span class="expand-delta" id="ex-delta">—</span>
       </div>
-      <button class="expand-rerun" id="expand-rerun"
-              title="차트→종합 순차 재분석 · 약 10~14분 (야간 자동 분석과 동일 경로)"><svg class="lci"><use href="#i-refresh-cw"/></svg> 다시 분석</button>
+      <button class="expand-rerun" id="expand-rerun"><svg class="lci"><use href="#i-refresh-cw"/></svg> 다시 분석</button>
       <button class="sc-delete-btn" id="expand-delete" title="포트폴리오에서 제거"
               style="margin-right:4px;">✕ 제거</button>
       <button class="modal-close" id="expand-close" aria-label="닫기">✕</button>
@@ -2032,7 +2031,7 @@ body.chat-open { padding-right: 388px; }
 // ─────────────────────────────────────────────────────────────
 const ACCOUNT_ID = (function() {
   const m = location.pathname.match(/^\/a\/([^\/?#]+)/);
-  return m ? decodeURIComponent(m[1]) : 'junisa';
+  return m ? decodeURIComponent(m[1]) : '';   // no fallback — a wrong URL is shown, not mapped
 })();
 const _ACC = encodeURIComponent(ACCOUNT_ID);
 const API = {
@@ -2050,6 +2049,7 @@ const API = {
   search: (q) => '/api/universe/search?q=' + encodeURIComponent(q) + '&limit=15',
   plans:          () => '/api/accounts/' + _ACC + '/plans',
   plan:           (id) => '/api/accounts/' + _ACC + '/plans/' + encodeURIComponent(id),
+  trades:         () => '/api/accounts/' + _ACC + '/trades',
   quotes: (ids) => '/api/market/quotes?symbols=' + encodeURIComponent(ids),
   ohlcv:  (sid, period, n) => {
     const ix = sid.indexOf(':');
@@ -2063,11 +2063,6 @@ const API = {
     const m = sid.slice(0, ix), c = sid.slice(ix + 1);   // symbol_id prefix (KR/US), not market label
     return '/api/analysis/chart/' + encodeURIComponent(m) + '/' + encodeURIComponent(c);
   },
-  // the stored comprehensive result — the chart tab renders its chart section
-  chartVerdict: (market, code) =>
-    '/api/analysis/analysis/' + encodeURIComponent(market) + '/' + encodeURIComponent(code),
-  runChartAnalysis: (market, code) =>
-    '/api/analysis/chart/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/run',
   newsSignals: (market, code) =>
     '/api/analysis/news/' + encodeURIComponent(market) + '/' + encodeURIComponent(code) + '/signals',
   fundamentalFacts: (market, code) =>
@@ -2158,6 +2153,11 @@ function accordion(title, children) {
   ]);
 }
 
+// 분석 잡 ETA — 실측(307~390s) 기준. 문구는 전부 여기서 계산한다 (상수와 문구 두 벌 금지).
+const AJOB_ETA_S = 420;
+const AJOB_ETA_KO = '약 ' + Math.round(AJOB_ETA_S * 0.75 / 60) + '~' +
+  Math.round(AJOB_ETA_S / 60) + '분';
+
 // ── Level 0 종합 배지: in-place 갱신만 (DOM rebuild 금지 컨벤션) ──
 window._analysisBadgeEls = window._analysisBadgeEls || {};   // symbolId → span (renderCard가 등록)
 function _analysisBadgeApply(span, entry) {
@@ -2166,14 +2166,16 @@ function _analysisBadgeApply(span, entry) {
     span.hidden = false;
     span.className = 'sc-verdict-badge running';
     span.textContent = '⏳ 분석중';
-    span.title = '종합 분석 실행 중 (약 5~7분)';
+    span.title = '종합 분석 실행 중 (' + AJOB_ETA_KO + ')';
     return;
   }
-  const ko = LABEL_KO[entry && entry.label];
+  // facts_only = 판단 생성 실패. 중립으로 읽히면 안 되므로 라벨 대신 '판단 없음'
+  const factsOnly = !!(entry && entry.status === 'facts_only');
+  const ko = factsOnly ? '판단 없음' : LABEL_KO[entry && entry.label];
   if (!ko) { span.hidden = true; return; }   // 미분석 → 배지 생략 (합성 배지 금지)
   const f = freshInfo(entry.date);
   span.hidden = false;
-  span.className = 'sc-verdict-badge act-' + entry.label +
+  span.className = 'sc-verdict-badge act-' + (factsOnly ? 'neutral' : entry.label) +
     (f && f.cls === 'old' ? ' stale' : '');
   span.textContent = ko + (f ? ' · ' + f.text : '') +
     (f && f.cls === 'old' ? ' ⚠' : '');
@@ -2941,10 +2943,25 @@ function renderAssetsRow() {
   });
   row.appendChild(planBtn);
 
+  const tradesBtn = el('button', { className: 'curve-btn' }, [svgIco('wallet'), ' 거래 이력']);
+  tradesBtn.addEventListener('click', () => {
+    if (window.openTradeHistory) window.openTradeHistory();
+  });
+  row.appendChild(tradesBtn);
+
   // 예수금 수정은 헤더 ⚙ 설정 모달로 이동 (툴바 밀도 축소)
 }
 
 async function renderAll() {
+  if (!ACCOUNT_ID) {
+    const grid = document.getElementById('stock-grid');
+    clear(grid);
+    grid.appendChild(el('div', { className: 'empty-state' }, [
+      el('div', { className: 'big' }, ['계좌를 알 수 없습니다']),
+      el('div', {}, ['주소가 /a/{계좌ID} 형식이어야 합니다. 랜딩에서 계좌를 다시 선택하세요.']),
+    ]));
+    return;
+  }
   if (await loadPortfolio() === false) return;   // 403 → PIN gate shown
   renderAssetsRow();
   const grid = document.getElementById('stock-grid');
@@ -3037,31 +3054,13 @@ async function runSearch(q) {
       item.addEventListener('click', () => {
         searchDropdown.hidden = true;
         searchInput.value = '';
-        addHolding(r.symbol_id, label);
+        if (window.openAddModal) window.openAddModal(r);   // same form as ＋ 추가
       });
       searchDropdown.appendChild(item);
     });
   } catch (e) {
     clear(searchDropdown);
     searchDropdown.appendChild(el('div', { className: 'search-empty' }, ['검색 오류']));
-  }
-}
-
-async function addHolding(symbolId, label) {
-  try {
-    const r = await fetch(API.addHolding(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol_id: symbolId }),
-    });
-    const d = await r.json();
-    if (!r.ok || !d.ok) {
-      alert('추가 실패: ' + (d.detail || r.statusText));
-      return;
-    }
-    await renderAll();
-  } catch (e) {
-    alert('추가 실패: ' + e.message);
   }
 }
 
@@ -3260,8 +3259,11 @@ renderAll();
         const hay = ((s.name || '') + ' ' + (s.code || '')).toLowerCase();
         if (!hay.includes(q)) show = false;
       }
-      if (filters.market && s.market !== filters.market) show = false;
-      if (filters.kind === 'etf' && s.sector !== 'ETF') show = false;
+      // KR ETF rows carry market 'ETF' in the universe (builder.py); the chip
+      // asks for the exchange they trade on, which is KOSPI for every KR ETF.
+      const mkt = (s.market === 'ETF' && s.symbolId.startsWith('KR:')) ? 'KOSPI' : s.market;
+      if (filters.market && mkt !== filters.market) show = false;
+      if (filters.kind === 'etf' && s.sector !== 'ETF' && s.market !== 'ETF') show = false;
       if (filters.pnl) {
         const pnl = (s.price != null && s.avgCost != null && s.qty != null)
                     ? (s.price - s.avgCost) * s.qty : null;
@@ -3349,6 +3351,57 @@ renderAll();
 })();
 
 // ─────────────────────────────────────────────────────────────
+// TRADE HISTORY MODAL — GET /api/accounts/{id}/trades (읽기 전용)
+// ─────────────────────────────────────────────────────────────
+window.openTradeHistory = async function () {
+  const closeBtn = el('button', { className: 'modal-close', 'aria-label': '닫기' }, ['✕']);
+  const list = el('div', {}, [el('div', { className: 'ca-empty' }, ['불러오는 중…'])]);
+  const overlay = el('div', { className: 'modal-overlay' }, [
+    el('div', { className: 'modal-dialog', role: 'dialog', 'aria-modal': 'true' }, [
+      el('div', { className: 'modal-header' }, [
+        el('div', { className: 'modal-title' }, [svgIco('wallet'), ' 거래 이력']), closeBtn]),
+      el('div', { className: 'modal-body' }, [list]),
+    ]),
+  ]);
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onEsc); };
+  function onEsc(e) { if (e.key === 'Escape') close(); }
+  closeBtn.addEventListener('click', close);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', onEsc);
+  document.body.appendChild(overlay);
+  try {
+    const d = await S.api(API.trades());
+    clear(list);
+    const rows = d.trades || [];
+    if (!rows.length) {
+      list.appendChild(el('div', { className: 'ca-empty' },
+        ['기록된 거래가 없습니다. 카드의 매수·매도 버튼으로 기록합니다.']));
+      return;
+    }
+    rows.forEach(t => {
+      const ix = (t.symbol_id || '').indexOf(':');
+      const when = new Date((t.traded_at || 0) * 1000).toLocaleDateString('ko-KR');
+      const row = el('div', { className: 'plan-row' }, [
+        el('div', {}, [
+          el('div', { className: 'p-name' }, [t.name || t.symbol_id]),
+          el('div', { className: 'p-code' }, [when + ' · ' + (t.symbol_id || '').slice(ix + 1)]),
+        ]),
+        el('div', { className: 'p-side ' + t.side }, [t.side === 'buy' ? '매수' : '매도']),
+        el('div', { className: 'p-num' }, [fmtPrice(t.price, t.currency)]),
+        el('div', { className: 'p-num' }, [fmtQty(t.qty) + '주']),
+        el('div', { className: 'p-amt' }, [fmtPrice(t.price * t.qty, t.currency)]),
+        el('div', { className: 'p-num' }, [t.fee ? '수수료 ' + fmtPrice(t.fee, t.currency) : '']),
+      ]);
+      if (t.note) row.appendChild(el('div', { className: 'p-note' }, [t.note]));
+      list.appendChild(row);
+    });
+  } catch (e) {
+    clear(list);
+    list.appendChild(el('div', { className: 'ca-empty' }, ['거래 이력을 불러오지 못했습니다.']));
+  }
+};
+
+// ─────────────────────────────────────────────────────────────
 // PLAN NOTE MODAL — 매매 계획 노트
 //
 // Account-scoped and deliberately independent of the stock cards: a plan is
@@ -3387,6 +3440,9 @@ renderAll();
   }
 
   const ccyOf = sid => (sid || '').startsWith('US:') ? 'USD' : 'KRW';
+  // a trade row moves a plan (§3.1): buy → entered, full sell → done
+  const PLAN_STATUS_KO = { entered: '진입', done: '완료', stopped: '손절',
+                           expired: '만료', abandoned: '철회' };
 
   function currentSide() {
     const on = sideSeg.querySelector('button.active');
@@ -3508,7 +3564,8 @@ renderAll();
             plan.symbol_id.slice(0, ix) + ' · ' + plan.symbol_id.slice(ix + 1)]),
         ]),
         el('div', { className: 'p-side ' + plan.side },
-           [plan.side === 'buy' ? '매수' : '매도']),
+           [(plan.side === 'buy' ? '매수' : '매도') +
+            (plan.status && plan.status !== 'armed' ? ' · ' + (PLAN_STATUS_KO[plan.status] || plan.status) : '')]),
         el('div', { className: 'p-num' }, [fmtPrice(plan.price, ccy)]),
         el('div', { className: 'p-num' }, [fmtQty(plan.qty) + '주']),
         el('div', { className: 'p-amt' }, [fmtPrice(plan.price * plan.qty, ccy)]),
@@ -3819,17 +3876,16 @@ renderAll();
     bars: [], _loadedPeriod: null, _loadedSym: null,
     srLevels: [],   // S/R lines the 📈 verdict curated → drawn on the chart (P0-A)
   };
-  // verdict.levels(supports/resistances) → drawChart opts.srLevels.
-  // Clutter guard: ≤3 strongest (by test count) per side, ≤6 total. anchored
-  // levels preferred so the drawn line lands on a real extracted level.
+  // verdict.levels.{support,resistance} → drawChart opts.srLevels.
+  // Clutter guard: ≤3 strongest (by anchor test count) per side, ≤6 total.
   function srFromVerdict(levels) {
     if (!levels) return [];
     const pick = (arr, kind) => (arr || [])
       .filter(x => x && x.price != null)
-      .sort((a, b) => ((b.tests || 0) - (a.tests || 0)))
+      .sort((a, b) => ((b.anchor_tests || 0) - (a.anchor_tests || 0)))
       .slice(0, 3)
-      .map(x => ({ price: Number(x.price), kind, tests: x.tests || 0 }));
-    return pick(levels.resistances, 'r').concat(pick(levels.supports, 's'));
+      .map(x => ({ price: Number(x.price), kind, tests: x.anchor_tests || 0 }));
+    return pick(levels.resistance, 'r').concat(pick(levels.support, 's'));
   }
   let currentStock = null;
   // Analysis endpoints key off the symbol_id PREFIX (KR/US), not the display
@@ -3856,7 +3912,9 @@ renderAll();
   navBar.querySelectorAll('button').forEach(b => {
     b.addEventListener('click', () => setTab(b.dataset.tab));
   });
-  document.getElementById('expand-rerun').addEventListener('click', runFullAnalysis);
+  const rerunBtn = document.getElementById('expand-rerun');
+  rerunBtn.title = '종합 재분석 · ' + AJOB_ETA_KO + ' (야간 자동 분석과 동일 경로)';
+  rerunBtn.addEventListener('click', runFullAnalysis);
 
   // ── Generic async-job driver (verdict generation ~300-400s) ──────────────
   // The claude verdict far exceeds proxy timeouts (nginx 30s / Cloudflare ~100s),
@@ -3913,8 +3971,7 @@ renderAll();
   }
 
   // 진행바 + 시간 기반 단계 문구. 실제 단계 신호는 없으므로 연출임을 인지하고
-  // 과하지 않게 — ETA 카피는 실측(307~390s) 기반 "약 5~7분"으로 통일.
-  const AJOB_ETA_S = 420;
+  // 과하지 않게 — ETA 카피는 AJOB_ETA_KO 하나에서 나온다.
   function makeJobProgress(kindKo) {
     const bar = el('i', { style: 'width:0%' }, []);
     const stage = el('span', { className: 'ajob-stage' }, [kindKo + ' 준비 중…']);
@@ -3923,7 +3980,7 @@ renderAll();
       el('div', { className: 'ajob-head' }, [stage, elapsed]),
       el('div', { className: 'ajob-bar' }, [bar]),
       el('div', { className: 'ajob-eta' },
-        ['약 5~7분 걸립니다. 완료되면 자동으로 표시됩니다 — 다른 탭·종목을 봐도 됩니다.']),
+        [AJOB_ETA_KO + ' 걸립니다. 완료되면 자동으로 표시됩니다 — 다른 탭·종목을 봐도 됩니다.']),
     ]);
     return {
       root,
@@ -3949,7 +4006,7 @@ renderAll();
   }
 
   // pane별 watcher 세대 카운터 — 새 watcher가 붙으면 이전 poller는 isStale()로 소멸
-  const _watchSeq = { analysis: 0, chart: 0 };
+  const _watchSeq = { analysis: 0 };
 
   // 🧠 종합 분석 — 단일 claude -p 호출. chart × fundamental × news + cached
   //    domain verdicts → unified verdict (analyze.md).
@@ -3971,8 +4028,8 @@ renderAll();
       if (!currentStock || currentStock.symbolId !== sym) return;
       _analysisLoadedSym = sym;
       clear(pane);
-      if (vd.exists && vd.result && vd.result.body && vd.result.body.status === 'ok') {
-        renderAnalysis(pane, vd.result.body, vd.result.date);
+      if (vd.exists && vd.result && vd.result.body) {
+        renderAnalysis(pane, vd.result.body, vd.result.date);   // ok · facts_only
       } else {
         renderAnalysisEmpty(pane);
       }
@@ -3987,9 +4044,8 @@ renderAll();
     pane.appendChild(el('div', { className: 'ca-section' }, [
       el('div', { className: 'ca-h' }, [svgIco('brain'), ' 종합 판단']),
       el('div', { className: 'ca-empty' },
-        ['아직 종합 판단이 없습니다. 차트·재무·뉴스를 종합해 한 단어 판단을 만듭니다.']),
-      el('button', { className: 'ex-news-run', onClick: runFullAnalysis },
-        [svgIco('brain'), ' 전체 분석 실행 (차트→종합 · 약 10~14분)']),
+        ['아직 종합 판단이 없습니다. 상단 「다시 분석」이 차트·재무·뉴스를 한 번에 읽어 만듭니다 (' +
+         AJOB_ETA_KO + ').']),
     ]));
     // 그동안 참고할 수 있는 것 — LLM 없이 즉시 뜨는 가벼운 신호만
     const aux = el('div', { className: 'ca-section' }, [
@@ -4034,11 +4090,6 @@ renderAll();
     })();
   }
 
-  function runAnalysis() {
-    if (!currentStock) return;
-    watchAnalysisJob(panes.analysis, currentStock.symbolId, _amkt(), currentStock.code, {});
-  }
-
   // ── 통합 재분석 (헤더 「🔄 다시 분석」) — 야간 배치와 동일 경로. ──
   // 2026-09-01 이전에는 chart 잡을 돌리고 완료되면 judge 잡을 이어 붙였다.
   // 이제 잡이 하나다: 종합 분석이 차트 지표를 안에서 계산하고(거래일당 1회,
@@ -4069,13 +4120,17 @@ renderAll();
       onError: (m) => {
         clear(pane);
         loadAnalysisBadges();   // 실행 전 배지 상태로 복원
-        pane.appendChild(el('div', { className: 'ca-empty' }, ['종합 분석 실패: ' + m]));
-        pane.appendChild(el('button', { className: 'ex-news-run', onClick: runAnalysis }, ['다시 시도']));
+        pane.appendChild(el('div', { className: 'ca-empty' },
+          ['종합 분석 실패: ' + m + ' — 상단 「다시 분석」으로 다시 시도하세요.']));
       },
       onDone: (body, date) => {
+        finish(body, date);   // badge first: a render exception must never leave ⏳ 분석중
         clear(pane); _analysisLoadedSym = sym;
-        renderAnalysis(pane, body, date);
-        finish(body, date);
+        try { renderAnalysis(pane, body, date); }
+        catch (e) {
+          clear(pane);
+          pane.appendChild(el('div', { className: 'ca-empty' }, ['결과 표시 실패: ' + e]));
+        }
       },
       // 다른 종목을 보는 중에 완료 → pane은 건드리지 않고 배지만 갱신
       onBackgroundDone: finish,
@@ -4089,9 +4144,18 @@ renderAll();
 
   // ── Level 1 통합 요약 카드: 판단 1 + 근거 3 + 리스크 1 + 신선도. 그 외 접힘. ──
   // 화면 순서 = 비전문가의 질문 순서: 사·팔·들고가? → 왜 → 뭘 조심 → 언제 분석?
+  // 종합 탭이 읽는 엔진 출력 키 — tests/test_ui_invariants.py 가 engine.normalize 와 대조한다
+  const ANALYSIS_BODY_KEYS = [
+    'status', 'label', 'confidence', 'summary_ko', 'domain_view', 'drivers', 'risks',
+    'observations', 'readings', 'counter.case_ko', 'counter.what_would_show_it',
+    'outlook.horizon', 'outlook.base_ko', 'outlook.scenarios',
+    'levels.support', 'levels.resistance', 'levels.entry_zone', 'levels.invalidation',
+    'levels.targets', 'disagreement_ko', 'reassess_when', 'limitations',
+  ];
   function renderAnalysis(pane, body, date) {
     const held = !!(currentStock && currentStock.qty != null && currentStock.qty > 0);
-    const actKo = LABEL_KO[body.label];
+    const factsOnly = body.status === 'facts_only';   // 판단 생성 실패 → 사실만
+    const actKo = factsOnly ? null : LABEL_KO[body.label];
     const actColor = LABEL_COLOR[body.label] || 'var(--fg)';
     // 여기가 계좌 쪽 해석이다. 분석은 종목만 말하고, 그 판정이 보유 중인 나에게
     // 무슨 뜻인지는 qty 를 아는 이 화면이 붙인다.
@@ -4109,7 +4173,7 @@ renderAll();
       sell: '진입 후보에서 한발 물러섭니다',
       strong_sell: '지금은 들어가지 않습니다',
     };
-    const hint = (held ? HINT_HELD : HINT_FLAT)[body.label];
+    const hint = factsOnly ? null : (held ? HINT_HELD : HINT_FLAT)[body.label];
 
     const domRow = (key, ico, name) => {
       const d = (body.domain_view || {})[key];
@@ -4133,7 +4197,7 @@ renderAll();
       el('div', { className: 'jd-top' }, [
         el('div', {}, [
           el('div', { className: 'jd-verdict', style: 'color:' + actColor },
-            [actKo ? '지금은 「 ' + actKo + ' 」' : '판단 대기']),
+            [actKo ? '지금은 「 ' + actKo + ' 」' : (factsOnly ? '판단 없음 — 계산된 사실만' : '판단 대기')]),
           hint ? el('div', { className: 'jd-hint' }, [hint]) : null,
         ].filter(Boolean)),
         el('div', { className: 'jd-when' }, [
@@ -4152,16 +4216,55 @@ renderAll();
         ? el('div', { className: 'jd-risk' }, [svgIco('triangle-alert'), ' 조심할 것: ' + body.risks[0]]) : null,
     ].filter(Boolean)));
 
-    // ── 자세히 보기 (기본 접힘): 반영도/시점·교차 분석·동인·추가 리스크·관찰·한계 ──
+    // ── 자세히 보기 (기본 접힘): 관찰 → 해석 → 반증 → 전망 → 좌표 ──
+    const ol = body.outlook || {};
+    const lv = body.levels || {};
     const chips = [];
-    if ((body.outlook||{}).horizon && HORIZON_KO[(body.outlook||{}).horizon])
-      chips.push(el('span', { className: 'na-tag' }, ['시점: ' + HORIZON_KO[(body.outlook||{}).horizon]]));
+    if (ol.horizon && HORIZON_KO[ol.horizon])
+      chips.push(el('span', { className: 'na-tag' }, ['시점: ' + HORIZON_KO[ol.horizon]]));
+    const obs = (body.observations || []).filter(o => o && o.fact_ko);
+    const readings = (body.readings || []).filter(r => r && r.claim_ko);
+    const counter = body.counter || {};
+    const para = (t) => el('div', { style: 'color:var(--fg); font-size:11px; line-height:1.5;' }, [t]);
+    // 좌표 — 파이프라인이 검출한 레벨에 스냅됐으면 터치 수, 모델만 말한 값이면 「추정」
+    const estTag = (o) => (o && o.llm_only)
+      ? el('span', { className: 'ca-tag warn', title: '검출된 레벨에 없는 추정 가격' }, [svgIco('triangle-alert'), ' 추정'])
+      : null;
+    const lvRow = (o, cls, label) => el('div', { className: 'ca-level' }, [
+      el('span', { className: cls }, [label + ' ' + fmtNum(o.price) +
+        (o.anchor_tests ? ' (' + o.anchor_tests + '터치)' : '')]),
+      estTag(o),
+      o.basis_ko ? el('span', { className: 'ca-muted' }, [o.basis_ko]) : null,
+    ]);
+    const lvKids = [];
+    (lv.resistance || []).forEach(r => lvKids.push(lvRow(r, 'lv-r', '저항')));
+    (lv.support || []).forEach(x => lvKids.push(lvRow(x, 'lv-s', '지지')));
+    const ez = lv.entry_zone, inv = lv.invalidation;
+    if (ez && ez.low != null && ez.high != null) lvKids.push(el('div', { className: 'cv-lvrow' }, [
+      el('b', {}, ['진입존 ']), fmtNum(ez.low) + ' ~ ' + fmtNum(ez.high), ' ',
+      estTag((ez.anchoring || {}).low) || estTag((ez.anchoring || {}).high),
+      ez.rationale_ko ? el('span', { className: 'ca-muted' }, [' ' + ez.rationale_ko]) : null,
+    ]));
+    if (inv && inv.price != null) lvKids.push(el('div', { className: 'cv-lvrow warn' }, [
+      el('b', {}, ['무효화(손절) ']), fmtNum(inv.price), ' ',
+      estTag((inv.anchoring || {}).price),
+      inv.rationale_ko ? el('span', { className: 'ca-muted' }, [' ' + inv.rationale_ko]) : null,
+    ]));
+    if ((lv.targets || []).length) lvKids.push(el('div', { className: 'cv-lvrow' }, [
+      el('b', {}, ['목표 ']),
+      lv.targets.filter(t => t && t.price != null)
+        .map(t => fmtNum(t.price) + (t.llm_only ? '(추정)' : '')).join(' → ')]));
+    const CASE_KO = { bull: '상승', base: '기본', bear: '하락' };
+    // 확률은 없다 — 시나리오마다 확인·반증 조건만 (서버가 그렇게 낸다)
+    const scenarios = (ol.scenarios || []).filter(Boolean).map(sc =>
+      el('div', { className: 'cv-scn ' + (CASE_KO[sc.case] ? sc.case : 'base') }, [
+        el('b', {}, [(CASE_KO[sc.case] || '') + ' ']), sc.narrative_ko || '',
+        (sc.confirm || []).length ? el('div', { className: 'ca-muted' }, ['확인: ' + sc.confirm.join(' · ')]) : null,
+        (sc.invalidate || []).length ? el('div', { className: 'ca-muted' }, ['반증: ' + sc.invalidate.join(' · ')]) : null,
+      ]));
+
     const detail = accordion('자세히 보기', [
       chips.length ? el('div', { className: 'na-meta' }, chips) : null,
-      crossItems.length ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['교차 분석']),
-        el('ul', { className: 'na-list' }, crossItems.map(s => el('li', {}, [s]))),
-      ]) : null,
       (body.drivers && body.drivers.length) ? el('div', { className: 'ca-section' }, [
         el('div', { className: 'ca-h' }, [svgIco('thumbs-up'), ' 긍정 동인']),
         cappedList(body.drivers, 3, 'na-list na-pos'),
@@ -4170,104 +4273,66 @@ renderAll();
         el('div', { className: 'ca-h' }, [svgIco('triangle-alert'), ' 추가 리스크']),
         cappedList(body.risks.slice(1), 3, 'na-list na-neg'),
       ]) : null,
+      obs.length ? el('div', { className: 'ca-section' }, [
+        el('div', { className: 'ca-h' }, [svgIco('eye'), ' 관찰']),
+        cappedList(obs.map(o => o.fact_ko + (o.cite ? ' (' + o.cite + ')' : '')), 4, 'na-list'),
+      ]) : null,
+      readings.length ? el('div', { className: 'ca-section' }, [
+        el('div', { className: 'ca-h' }, ['해석']),
+        cappedList(readings.map(r => r.claim_ko), 3, 'na-list'),
+      ]) : null,
+      counter.case_ko ? el('div', { className: 'ca-section' }, [
+        el('div', { className: 'ca-h' }, [svgIco('triangle-alert'), ' 반증']),
+        para(counter.case_ko),
+        (counter.what_would_show_it || []).length
+          ? cappedList(counter.what_would_show_it, 3, 'na-list') : null,
+      ]) : null,
+      (ol.base_ko || scenarios.length) ? el('div', { className: 'ca-section' }, [
+        el('div', { className: 'ca-h' }, ['전망']),
+        ol.base_ko ? para(ol.base_ko) : null,
+        ...scenarios,
+      ]) : null,
+      lvKids.length ? el('div', { className: 'ca-section' }, [
+        el('div', { className: 'ca-h' }, ['좌표 (지지·저항·진입·무효화·목표)']),
+        ...lvKids,
+      ]) : null,
       (body.reassess_when && body.reassess_when.length) ? el('div', { className: 'ca-section' }, [
         el('div', { className: 'ca-h' }, [svgIco('eye'), ' 관찰 포인트']),
         cappedList(body.reassess_when, 3, 'na-list'),
       ]) : null,
-      body.disagreement_note_ko ? el('div', { className: 'ca-section' }, [
+      body.disagreement_ko ? el('div', { className: 'ca-section' }, [
         el('div', { className: 'ca-h' }, ['도메인 충돌 메모']),
-        el('div', { style: 'color:var(--fg); font-size:11px; line-height:1.5;' },
-          [body.disagreement_note_ko]),
+        para(body.disagreement_ko),
       ]) : null,
       (body.limitations && body.limitations.length)
         ? el('div', { style: 'font-size:10px; color:var(--muted);' },
             ['※ 한계: ' + body.limitations.join(' / ')]) : null,
     ]);
     if (detail) pane.appendChild(detail);
+    // 검출된 지지·저항을 차트에 그린다 — 종합이 유일한 판정 화면이라 여기서 건다
+    chartState.srLevels = srFromVerdict(lv);
+    drawVisibleWindow();
   }
 
-  // 📈 그래프 분석 — claude -p 심층 판단(verdict, 캐시) + 결정론적 facts(라이브).
-  // 골격: 결론 카드 + 행동 정보 1블록 + 접힌 상세 (facts는 아코디언으로).
+  // 📈 그래프 — 판정하지 않는다. 차트와 chart_facts 정량 지표만 (LLM 없음, 라이브).
   async function loadChartAnalysis() {
     if (!currentStock) return;
     const pane = panes.chart;
     if (_chartLoadedSym === currentStock.symbolId && pane.childNodes.length) return;
-    const sym = currentStock.symbolId, mkt = _amkt(), code = currentStock.code;
+    const sym = currentStock.symbolId;
     clear(pane);
-    pane.appendChild(el('div', { className: 'ca-empty' }, ['그래프 분석 불러오는 중…']));
-    // 탭 재진입 복구: 실행 중이면 진행 표시 + 폴링 재개 (중복 실행 방지)
-    const sec = await runningElapsed('chart', mkt, code);
-    if (!currentStock || currentStock.symbolId !== sym) return;
-    if (sec != null) return watchChartJob(pane, sym, mkt, code, { resumeSec: sec });
+    pane.appendChild(el('div', { className: 'ca-empty' }, ['지표 불러오는 중…']));
     try {
-      const [factsRes, vdRes] = await Promise.all([
-        fetch(API.chartAnalysis(sym)),
-        fetch(API.chartVerdict(mkt, code)),
-      ]);
-      const facts = await factsRes.json();
-      const vd = await vdRes.json();
+      const facts = await (await fetch(API.chartAnalysis(sym))).json();
       if (!currentStock || currentStock.symbolId !== sym) return;
       _chartLoadedSym = sym;
       clear(pane);
-      if (vd.exists && vd.result && vd.result.body && vd.result.body.status === 'ok') {
-        renderChartVerdict(pane, vd.result.body, vd.result.date);
-      } else {
-        renderChartVerdictEmpty(pane);
-      }
-      appendChartFactsAccordion(pane, facts);
+      pane.appendChild(el('div', { className: 'ca-h' }, [svgIco('trending-up'), ' 차트 정량 지표 (자동 추출)']));
+      renderChartFacts(pane, facts);
     } catch (e) {
       clear(pane);
-      pane.appendChild(el('div', { className: 'ca-empty' }, ['분석 로드 실패: ' + e]));
+      pane.appendChild(el('div', { className: 'ca-empty' }, ['지표 로드 실패: ' + e]));
     }
-  }
-
-  // facts 신호판 전체는 기본 접힘 (판단의 근거 — 원하면 펼쳐본다)
-  function appendChartFactsAccordion(pane, facts) {
-    const wrap = el('div', { style: 'display:flex; flex-direction:column; gap:14px;' }, []);
-    renderChartFacts(wrap, facts);
-    const acc = accordion('전체 지표 데이터 (자동 추출 근거)', [wrap]);
-    if (acc) pane.appendChild(acc);
-  }
-
-  function renderChartVerdictEmpty(pane) {
-    pane.appendChild(el('div', { className: 'ca-section' }, [
-      el('div', { className: 'ca-h' }, [svgIco('trending-up'), ' 차트 심층 분석']),
-      el('div', { className: 'ca-empty' },
-        ['차트 심층 판단은 매일 아침 자동 생성됩니다. 지금 만들려면 상단 「다시 분석」.']),
-    ]));
-  }
-
-  function watchChartJob(pane, sym, mkt, code, opts) {
-    const my = ++_watchSeq.chart;
-    clear(pane);
-    const prog = makeJobProgress('차트 심층 분석');
-    pane.appendChild(prog.root);
-    const common = {
-      sym,
-      statusUrl: API.analysisStatus('chart', mkt, code),
-      verdictUrl: API.chartVerdict(mkt, code),
-      isStale: () => _watchSeq.chart !== my,
-      onProgress: prog.update,
-      onError: (m) => {
-        clear(pane);
-        pane.appendChild(el('div', { className: 'ca-empty' }, ['분석 실패: ' + m]));
-        pane.appendChild(el('button', { className: 'ex-news-run', onClick: runFullAnalysis }, ['다시 시도']));
-      },
-      onDone: async (body, date) => {
-        clear(pane);
-        _chartLoadedSym = sym;
-        renderChartVerdict(pane, body, date);   // sets chartState.srLevels + draws (P0-A)
-        try {
-          const fr = await fetch(API.chartAnalysis(sym));   // facts 근거 아코디언
-          appendChartFactsAccordion(pane, await fr.json());
-        } catch (_) { /* facts 실패는 무시 */ }
-      },
-    };
-    if (opts && opts.resumeSec != null) {
-      prog.update(opts.resumeSec);
-      return pollAnalysisJob(common, opts.resumeSec);
-    }
-    return driveAnalysisJob(Object.assign({ runUrl: API.runChartAnalysis(mkt, code) }, common));
   }
 
   // 📰 뉴스 탭 — 연결 뉴스·이슈 (LLM 없이 테마 state에서, 라이브). 뉴스 verdict는
@@ -4337,12 +4402,6 @@ renderAll();
     if (moreAcc) pane.appendChild(moreAcc);
   }
 
-  const NEWS_LABEL_KO = {
-    strong_sell: '매우 부정', sell: '부정', neutral: '중립', buy: '긍정', strong_buy: '매우 긍정',
-  };
-  const NEWS_LABEL_CLS = {
-    strong_sell: 'bear', sell: 'bear', neutral: '', buy: 'bull', strong_buy: 'bull',
-  };
   const PRICED_IN_KO = {
     unpriced: '미반영', partially_priced: '부분 반영', mostly_priced: '대부분 반영',
   };
@@ -4380,7 +4439,6 @@ renderAll();
     const n = Math.max(0, Math.min(4, Math.round((conf || 0) * 4)));
     return '●'.repeat(n) + '○'.repeat(4 - n);
   }
-  function _axisCls(v) { return v >= 66 ? 'good' : (v >= 34 ? 'mid' : 'bad'); }
 
   // ── 재무제표 · 지표 · 추세 (LLM 없이 — 탭 열면 항상 표시) ──
   // 큰 금액 포맷: KR=조/억(원), US=B/M(달러). 표시는 사람이 읽기 쉽게, CSV는 원본 숫자.
@@ -4621,176 +4679,6 @@ renderAll();
     regular_bullish: '강세 다이버전스', regular_bearish: '약세 다이버전스',
     hidden_bullish: '히든 강세 다이버전스', hidden_bearish: '히든 약세 다이버전스',
   };
-  const CHART_AXIS_KO = { trend: '추세', momentum: '모멘텀', volatility: '변동성', volume: '수급' };
-  const TC_KO = { up: '상승', down: '하락', sideways: '횡보', no_data: '—' };
-  const ALIGN_KO = {
-    aligned_up: '정렬 상승', aligned_down: '정렬 하락', conflict: 'TF 충돌', mixed: '혼조',
-  };
-  function renderChartVerdict(pane, body, date) {
-    const lbl = body.label || 'neutral';
-    const lv = body.levels || {};
-
-    // ── ① 결론 카드 (도메인 탭 공통 골격: 한글 라벨 + 결론 + 신뢰도 + 신선도) ──
-    // score raw 숫자·stance 중복 칩은 렌더하지 않는다 (summary_ko가 이미 문장으로 말함)
-    pane.appendChild(el('div', { className: 'ca-section' }, [
-      el('div', { className: 'ca-h' }, [svgIco('trending-up'), ' 그래프 분석']),
-      el('div', { className: 'na-head' }, [
-        el('span', { className: 'ca-chip ' + (NEWS_LABEL_CLS[lbl] || '') }, [NEWS_LABEL_KO[lbl] || lbl]),
-        freshEl(date),
-      ].filter(Boolean)),
-      body.summary_ko ? el('div', { className: 'fa-summary' }, [body.summary_ko]) : null,
-      (body.confidence != null)
-        ? el('div', { className: 'fa-conf' }, ['신뢰도 ', el('span', { className: 'dots' }, [_confDots(body.confidence)])]) : null,
-    ].filter(Boolean)));
-
-    // P0-B: levels carry provenance (anchored or llm_only = model-invented)
-    const estTag = (o) => (o && o.llm_only)
-      ? el('span', { className: 'ca-tag warn', title: 'facts에 없는 추정 가격' }, [svgIco('triangle-alert'), ' 추정'])
-      : null;
-
-    // ── ② 행동 정보: 지금 가격 기준 — 가장 가까운 저항 1 + 지지 1 + 손절선만 ──
-    const px = currentStock && currentStock.price;
-    const _near = (arr, above) => {
-      const xs = (arr || []).filter(x => x && x.price != null);
-      if (!xs.length) return null;
-      if (px == null) return xs[0];
-      const side = xs.filter(x => (above ? x.price >= px : x.price <= px))
-        .sort((a, b) => (above ? a.price - b.price : b.price - a.price));
-      return side[0] || xs[0];
-    };
-    const _dist = (p) => (px != null && p != null)
-      ? ' (' + fmtPctSigned((p - px) / px * 100) + ')' : '';
-    const nr = _near(lv.resistances, true), ns = _near(lv.supports, false);
-    if (nr || ns || lv.invalidation) {
-      const sec = el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, [svgIco('wallet'), ' 지금 가격 기준']),
-      ]);
-      if (nr) sec.appendChild(el('div', { className: 'ca-level' }, [
-        el('span', { className: 'lv-r' }, ['저항 ' + fmtNum(nr.price) + _dist(nr.price)]),
-        estTag(nr),
-        nr.why ? el('span', { className: 'ca-muted' }, [nr.why]) : null,
-      ].filter(Boolean)));
-      if (ns) sec.appendChild(el('div', { className: 'ca-level' }, [
-        el('span', { className: 'lv-s' }, ['지지 ' + fmtNum(ns.price) + _dist(ns.price)]),
-        estTag(ns),
-        ns.why ? el('span', { className: 'ca-muted' }, [ns.why]) : null,
-      ].filter(Boolean)));
-      if (lv.invalidation) sec.appendChild(el('div', { className: 'cv-lvrow warn' }, [
-        el('b', {}, ['손절 기준 ']), lv.invalidation]));
-      pane.appendChild(sec);
-    }
-
-    // ── ③ 접힌 상세: 근거 / 시나리오 / 전체 가격대 (facts 아코디언은 caller가 추가) ──
-    const tc = body.trend_context || {};
-    let tcSec = null;
-    if (tc.monthly || tc.weekly || tc.daily || tc.note) {
-      const cell = (ko, v) => el('div', { className: 'cv-tc-cell' }, [
-        el('span', { className: 'cv-tc-k' }, [ko]),
-        el('span', { className: 'cv-tc-v ' + (v === 'up' ? 'bull' : v === 'down' ? 'bear' : '') },
-          [TC_KO[v] || '—']),
-      ]);
-      tcSec = el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['큰 흐름 (월·주·일)']),
-        el('div', { className: 'cv-tc' }, [
-          cell('월', tc.monthly), cell('주', tc.weekly), cell('일', tc.daily),
-          tc.alignment ? el('span', { className: 'ca-chip ' +
-            (tc.alignment === 'aligned_up' ? 'bull' : tc.alignment === 'aligned_down' ? 'bear' : 'warn') },
-            [ALIGN_KO[tc.alignment] || tc.alignment]) : null,
-        ].filter(Boolean)),
-        tc.note ? el('div', { className: 'ca-desc' }, [tc.note]) : null,
-      ].filter(Boolean));
-    }
-
-    const ax = body.axes || {};
-    const notes = body.axis_notes || {};
-    let axSec = null;
-    if (Object.values(ax).some(v => v != null)) {
-      axSec = el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, ['4축 한눈 (50=중립)']),
-        el('div', { className: 'fa-axes' }, Object.keys(CHART_AXIS_KO).map(k => {
-          const v = ax[k];
-          return el('div', { className: 'fa-axis' }, [
-            el('span', { className: 'fa-axis-name' }, [CHART_AXIS_KO[k]]),
-            el('div', { className: 'fa-bar' }, [
-              el('i', { className: (v != null ? _axisCls(v) : ''), style: 'width:' + (v != null ? v : 0) + '%' }, []),
-            ]),
-            notes[k] ? el('span', { className: 'fa-axis-note' }, [notes[k]]) : null,
-          ].filter(Boolean));
-        })),
-      ]);
-    }
-
-    // 셋업 — framework(룰북 내부 ID)는 렌더하지 않는다
-    const su = body.setup || {};
-    const setupSec = (su.name || su.plain) ? el('div', { className: 'ca-section' }, [
-      el('div', { className: 'ca-h' }, ['현재 셋업']),
-      su.name ? el('div', { className: 'cv-setup' }, [
-        el('span', { className: 'cv-setup-name' }, [su.name])]) : null,
-      su.plain ? el('div', { className: 'ca-desc' }, [su.plain]) : null,
-    ].filter(Boolean)) : null;
-
-    const rps = (body.risk_patterns || []).filter(r => r.active);
-    const drCount = (body.drivers || []).length, rkCount = (body.risks || []).length;
-    const evAcc = accordion('근거 (강세 신호 ' + drCount + ' · 위험 신호 ' + rkCount + ')', [
-      tcSec, axSec, setupSec,
-      drCount ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, [svgIco('thumbs-up'), ' 기회 · 강세 신호']),
-        cappedList(body.drivers, 3, 'na-list na-pos'),
-      ]) : null,
-      rkCount ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, [svgIco('triangle-alert'), ' 위험 신호']),
-        cappedList(body.risks, 3, 'na-list na-neg'),
-      ]) : null,
-      rps.length ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, [svgIco('flag'), ' 함정 패턴 경고']),
-        el('div', { className: 'fa-flags' }, rps.map(r =>
-          el('div', { className: 'fl' }, [svgIco('flag'), (r.plain || r.pattern)]))),
-      ]) : null,
-      (body.reassess_when && body.reassess_when.length) ? el('div', { className: 'ca-section' }, [
-        el('div', { className: 'ca-h' }, [svgIco('eye'), ' 지켜볼 트리거']),
-        cappedList(body.reassess_when, 3, 'na-list'),
-      ]) : null,
-    ]);
-    if (evAcc) pane.appendChild(evAcc);
-
-    const sc = body.scenarios || {};
-    const scAcc = accordion('시나리오 (상승 / 기본 / 하락)', [
-      sc.bull ? el('div', { className: 'cv-scn bull' }, [el('b', {}, ['상승 ']), sc.bull]) : null,
-      sc.base ? el('div', { className: 'cv-scn base' }, [el('b', {}, ['기본 ']), sc.base]) : null,
-      sc.bear ? el('div', { className: 'cv-scn bear' }, [el('b', {}, ['하락 ']), sc.bear]) : null,
-    ]);
-    if (scAcc) pane.appendChild(scAcc);
-
-    const lvKids = [];
-    (lv.resistances || []).forEach(r => lvKids.push(el('div', { className: 'ca-level' }, [
-      el('span', { className: 'lv-r' }, ['저항 ' + fmtNum(r.price) + (r.tests ? ' (' + r.tests + '터치)' : '')]),
-      estTag(r),
-      r.why ? el('span', { className: 'ca-muted' }, [r.why]) : null,
-    ].filter(Boolean))));
-    (lv.supports || []).forEach(s => lvKids.push(el('div', { className: 'ca-level' }, [
-      el('span', { className: 'lv-s' }, ['지지 ' + fmtNum(s.price) + (s.tests ? ' (' + s.tests + '터치)' : '')]),
-      estTag(s),
-      s.why ? el('span', { className: 'ca-muted' }, [s.why]) : null,
-    ].filter(Boolean))));
-    if (lv.entry_zone) lvKids.push(el('div', { className: 'cv-lvrow' }, [
-      el('b', {}, ['진입존 ']), lv.entry_zone]));
-    if (lv.invalidation) lvKids.push(el('div', { className: 'cv-lvrow warn' }, [
-      el('b', {}, ['무효화(손절) ']), lv.invalidation]));
-    if ((lv.targets || []).length) lvKids.push(el('div', { className: 'cv-lvrow' }, [
-      el('b', {}, ['목표 ']),
-      // targets may be plain strings or validated {price,...} objects (P0-B)
-      (lv.targets || []).map(t => (t && typeof t === 'object')
-        ? fmtNum(t.price) + (t.llm_only ? '(추정)' : '')
-        : t).join(' → ')]));
-    const lvAcc = accordion('전체 가격대 (지지·저항·진입·목표)', lvKids);
-    if (lvAcc) pane.appendChild(lvAcc);
-
-    // P0-A: draw the verdict-curated S/R levels onto the chart (유지 — 잘 만든 기능).
-    // Same closure → just set state + redraw.
-    chartState.srLevels = srFromVerdict(body.levels);
-    drawVisibleWindow();
-  }
-
   function renderChartFacts(pane, data) {
     if (data.error) {
       pane.appendChild(el('div', { className: 'ca-empty' }, ['facts 오류: ' + data.error]));
@@ -4928,9 +4816,9 @@ renderAll();
     const start = Math.max(0, end - win);
     const slice = all.slice(start, end);
     const every = Math.max(1, Math.ceil(slice.length / 7));
-    // S/R lines come from the 📈 verdict (chartState.srLevels), set by
-    // renderChartVerdict. Empty until a chart analysis runs → chart stays clean
-    // (P0-A). drawChart clips off-screen levels itself.
+    // S/R lines come from the stored 종합 result (chartState.srLevels), set by
+    // renderAnalysis. Empty until one exists → chart stays clean. drawChart
+    // clips off-screen levels itself.
     drawChart(canvas, slice, chartState.style,
       { dates: true, dateMode: cfg.dateMode, labelEvery: every,
         srLevels: chartState.srLevels });
@@ -5282,10 +5170,12 @@ window.deleteHolding = async function (stock) {
     if (e.key === 'Escape' && !modal.hidden) closeModal();
   });
 
-  window.openAddModal = function () {
+  // rec: a universe search result — the toolbar search lands here preselected
+  window.openAddModal = function (rec) {
     reset();
     modal.hidden = false;
-    setTimeout(() => searchEl.focus(), 30);
+    if (rec) choose(rec);
+    else setTimeout(() => searchEl.focus(), 30);
   };
 })();
 
@@ -5487,95 +5377,69 @@ window.deleteHolding = async function (stock) {
   [tradePrice, tradeQty, editAvg, editQty].forEach(inp =>
     inp.addEventListener('input', updatePreview));
 
+  const _json = (obj) => ({ method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(obj) });
+
   async function submit() {
     if (!currentStock) return;
-    const oldAvg = currentStock.avgCost != null ? currentStock.avgCost : 0;
     const oldQty = currentStock.qty != null ? currentStock.qty : 0;
-
-    let body = { symbol_id: currentStock.symbolId };
-    let noteText = '';
 
     if (mode === 'buy' || mode === 'sell') {
       const p = parseFloat(tradePrice.value);
       const dq = parseFloat(tradeQty.value);
       if (!isFinite(p) || p <= 0) { setStatus('가격을 입력하세요.', 'err'); return; }
       if (!isFinite(dq) || dq <= 0) { setStatus('수량을 입력하세요.', 'err'); return; }
-
-      // trade context → backend auto-adjusts 예수금 (buy: −p·dq, sell: +p·dq)
-      body.trade_side = mode;
-      body.trade_price = p;
-      body.trade_qty = dq;
-
-      if (mode === 'buy') {
-        const newQty = oldQty + dq;
-        body.avg_cost = (oldAvg * oldQty + p * dq) / newQty;
-        body.qty = newQty;
-      } else {
-        const newQty = oldQty - dq;
+      let after = null;   // full sellout only: 'keep' (관심 유지) | 'delete' (완전 제거)
+      if (mode === 'sell') {
         if (oldQty <= 0) { setStatus('보유 수량이 없습니다.', 'err'); return; }
-        if (newQty < 0) { setStatus('보유 수량보다 많이 매도할 수 없습니다.', 'err'); return; }
-        if (newQty === 0) {
-          // 전량 매도 — 사용자에게 처리 방법 확인
-          const choice = await confirmFullSellout(currentStock.name);
-          if (choice === 'cancel') { setStatus('취소됨', ''); return; }
-          if (choice === 'delete') {
-            // dashboard에서 완전 제거 (DELETE API)
-            submitBtn.disabled = true;
-            setStatus('제거중…', '');
-            try {
-              // credit the final sale proceeds to 예수금 before removing
-              const r = await fetch(
-                API.removeHolding(currentStock.symbolId) +
-                  '?sell_price=' + encodeURIComponent(p) +
-                  '&sell_qty=' + encodeURIComponent(dq),
-                { method: 'DELETE' });
-              const d = await r.json();
-              if (!r.ok || !d.ok) {
-                setStatus('제거 실패: ' + (d.detail || r.statusText), 'err');
-                return;
-              }
-              setStatus('제거 완료', 'ok');
-              await renderAll();
-              setTimeout(() => { modal.hidden = true; }, 500);
-            } catch (e) {
-              setStatus('제거 실패: ' + e.message, 'err');
-            } finally { submitBtn.disabled = false; }
-            return;
-          }
-          // 'keep' → 관심종목으로 유지 (qty=null upsert)
-          body.avg_cost = null;
-          body.qty = null;
-        } else {
-          body.avg_cost = oldAvg;
-          body.qty = newQty;
+        if (dq > oldQty) { setStatus('보유 수량보다 많이 매도할 수 없습니다.', 'err'); return; }
+        if (dq === oldQty) {
+          after = await confirmFullSellout(currentStock.name);
+          if (after === 'cancel') { setStatus('취소됨', ''); return; }
         }
       }
-      noteText = tradeNote.value.trim();
-    } else { // edit
-      const a = parseFloat(editAvg.value);
-      const q = parseFloat(editQty.value);
-      body.avg_cost = (editAvg.value === '' || !isFinite(a)) ? null : a;
-      body.qty = (editQty.value === '' || !isFinite(q)) ? null : q;
-      noteText = editNote.value.trim();
-      const nameText = editName.value.trim();
-      // only send name if user actually changed it from current
-      if (nameText && nameText !== currentStock.name) body.name = nameText;
+      submitBtn.disabled = true;
+      setStatus('기록중…', '');
+      try {
+        // the one door for money: trade row + holdings + cash + plan, one transaction
+        const d = await S.api(API.trades(), _json({
+          symbol_id: currentStock.symbolId, side: mode, qty: dq, price: p,
+          note: tradeNote.value.trim(),
+        }));
+        if (after === 'delete') {
+          await S.api(API.removeHolding(currentStock.symbolId), { method: 'DELETE' });
+        } else if (after === 'keep') {   // direct edit: clear the avg, stay as a watch row
+          await S.api(API.addHolding(), _json(
+            { symbol_id: currentStock.symbolId, avg_cost: null, qty: null }));
+        }
+        const cands = d.plan_candidates || [];
+        setStatus(cands.length
+          ? '기록 완료 · 겹치는 계획 ' + cands.length + '개는 전이하지 않았습니다 — 계획 노트에서 정리하세요'
+          : (d.plan ? '기록 완료 · 계획 #' + d.plan.plan_id + ' → ' + d.plan.status : '기록 완료'), 'ok');
+        await renderAll();
+        setTimeout(() => { modal.hidden = true; }, cands.length ? 2000 : 500);
+      } catch (e) {
+        setStatus('실패: ' + e.message, 'err');
+      } finally { submitBtn.disabled = false; }
+      return;
     }
-    if (noteText) body.note = noteText;
 
+    // edit — a direct correction; never touches cash
+    const a = parseFloat(editAvg.value);
+    const q = parseFloat(editQty.value);
+    const body = {
+      symbol_id: currentStock.symbolId,
+      avg_cost: (editAvg.value === '' || !isFinite(a)) ? null : a,
+      qty: (editQty.value === '' || !isFinite(q)) ? null : q,
+    };
+    const noteText = editNote.value.trim();
+    if (noteText) body.note = noteText;
+    const nameText = editName.value.trim();
+    if (nameText && nameText !== currentStock.name) body.name = nameText;   // only when changed
     submitBtn.disabled = true;
     setStatus('저장중…', '');
     try {
-      const r = await fetch(API.addHolding(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const d = await r.json();
-      if (!r.ok || !d.ok) {
-        setStatus('실패: ' + (d.detail || r.statusText), 'err');
-        return;
-      }
+      await S.api(API.addHolding(), _json(body));
       setStatus('저장 완료', 'ok');
       await renderAll();
       setTimeout(() => { modal.hidden = true; }, 500);

@@ -27,6 +27,7 @@ from ..market.pipeline import gap_filler
 from ..portfolio import service
 from ..portfolio.store import (
     account_store, balance_store, holding_store, plan_store, snapshot_store,
+    trade_store,
 )
 from ..core.paths import split_symbol
 from ..universe import search as uni_search
@@ -178,13 +179,6 @@ class HoldingUpsert(BaseModel):
     qty: Optional[float] = None
     note: Optional[str] = None
     name: Optional[str] = None               # display-name override (종목명 교체)
-    # Optional trade context — when present, the matching currency cash
-    # balance (예수금) is adjusted automatically: buy → −(price·qty),
-    # sell → +(price·qty). Omitted on plain add / direct-edit, which must
-    # NOT touch cash. Fees/taxes are not modelled (gross notional only).
-    trade_side: Optional[str] = None        # 'buy' | 'sell'
-    trade_price: Optional[float] = None
-    trade_qty: Optional[float] = None
 
 
 def _currency_of(symbol_id: str) -> str:
@@ -202,6 +196,8 @@ def _currency_of(symbol_id: str) -> str:
 def add_holding(account_id: str, body: HoldingUpsert,
                 background: BackgroundTasks,
                 _: str = Depends(require_account)) -> dict:
+    """Add or directly edit a holding. Never touches cash — a trade goes
+    through POST /trades, the one door for anything that moves money."""
     if ":" not in body.symbol_id:
         raise HTTPException(400, "symbol_id must be 'MARKET:CODE'")
     if uni_search.get(body.symbol_id) is None:
@@ -213,44 +209,18 @@ def add_holding(account_id: str, body: HoldingUpsert,
     )
     # Map the symbol into themes off the request path (may make an LLM call).
     background.add_task(ensure_theme_mapping, body.symbol_id)
-
-    # Auto-adjust cash balance on a recorded trade. The backend computes the
-    # notional itself (it does not trust a client-supplied delta).
-    cash_balance: Optional[float] = None
-    cash_currency: Optional[str] = None
-    side = (body.trade_side or "").lower()
-    if side in ("buy", "sell") \
-            and body.trade_price is not None and body.trade_qty is not None \
-            and body.trade_price > 0 and body.trade_qty > 0:
-        notional = body.trade_price * body.trade_qty
-        delta = -notional if side == "buy" else notional
-        cash_currency = _currency_of(body.symbol_id)
-        cash_balance = balance_store.adjust(account_id, cash_currency, delta)
-
-    return {"ok": True, "backfill_bars": backfill_bars,
-            "cash_currency": cash_currency, "cash_balance": cash_balance}
+    return {"ok": True, "backfill_bars": backfill_bars}
 
 
 @router.delete("/{account_id}/holdings/{symbol_id:path}")
 def remove_holding(account_id: str, symbol_id: str,
-                   sell_price: Optional[float] = None,
-                   sell_qty: Optional[float] = None,
                    _: str = Depends(require_account)) -> dict:
-    # If this removal is the tail of a full sellout, credit the sale proceeds
-    # to the matching currency balance before dropping the holding.
-    cash_balance: Optional[float] = None
-    cash_currency: Optional[str] = None
-    if sell_price is not None and sell_qty is not None \
-            and sell_price > 0 and sell_qty > 0:
-        cash_currency = _currency_of(symbol_id)
-        cash_balance = balance_store.adjust(
-            account_id, cash_currency, sell_price * sell_qty)
+    """Delete only. A sellout is recorded through POST /trades first."""
     n = holding_store.remove(account_id, symbol_id)
     if n and symbol_id not in holding_store.all_symbol_ids():
         from ..market.store import theme_store
         theme_store.drop(symbol_id)
-    return {"ok": n > 0, "deleted": n,
-            "cash_currency": cash_currency, "cash_balance": cash_balance}
+    return {"ok": n > 0, "deleted": n}
 
 
 class HoldingsReorder(BaseModel):
@@ -262,6 +232,58 @@ def reorder_holdings(account_id: str, body: HoldingsReorder,
                      _: str = Depends(require_account)) -> dict:
     return {"ok": True,
             "reordered": holding_store.reorder(account_id, body.order)}
+
+
+# ── trades (거래 기록) ────────────────────────────────────────────────
+# The one door for money: writes the trade row and, in the same transaction,
+# holdings (qty · weighted avg), cash and the linked plan's status (§3.1).
+
+class TradeBody(BaseModel):
+    symbol_id: str
+    side: str                                # 'buy' | 'sell'
+    qty: float
+    price: float
+    fee: float = 0.0
+    traded_at: Optional[int] = None          # epoch seconds; default now
+    plan_id: Optional[int] = None
+    note: Optional[str] = None
+
+
+@router.post("/{account_id}/trades")
+def record_trade(account_id: str, body: TradeBody,
+                 background: BackgroundTasks,
+                 _: str = Depends(require_account)) -> dict:
+    symbol_id = (body.symbol_id or "").strip()
+    if ":" not in symbol_id:
+        raise HTTPException(400, "symbol_id must be 'MARKET:CODE'")
+    meta = uni_search.get(symbol_id)
+    if meta is None:
+        raise HTTPException(404, f"symbol not in universe: {symbol_id}")
+    try:
+        out = trade_store.record(
+            account_id, symbol_id=symbol_id, side=(body.side or "").lower(),
+            qty=body.qty, price=body.price, fee=body.fee,
+            currency=_currency_of(symbol_id),
+            name=meta.get("name_kr") or meta.get("name_en") or symbol_id,
+            traded_at=body.traded_at, plan_id=body.plan_id,
+            note=(body.note or "").strip() or None)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if body.side == "buy" and out["holding"]["qty"] == body.qty:
+        # a freshly opened position: same background work as POST /holdings
+        background.add_task(gap_filler.fill_one, symbol_id)
+        background.add_task(ensure_theme_mapping, symbol_id)
+    out["ok"] = True
+    return out
+
+
+@router.get("/{account_id}/trades")
+def list_trades(account_id: str, limit: int = 200,
+                _: str = Depends(require_account)) -> dict:
+    return {"account_id": account_id,
+            "trades": trade_store.list_by_account(account_id, limit)}
 
 
 # ── balances ─────────────────────────────────────────────────────────
@@ -296,7 +318,7 @@ def get_snapshots(account_id: str, currency: str = "KRW", days: int = 90,
 
 # ── plans (매매 계획 노트) ────────────────────────────────────────────
 # Intent only. Nothing here writes to holdings — an executed plan is recorded
-# through the normal buy/sell path and the note is deleted.
+# through POST /trades, which is what moves plan.status (§3.1).
 
 class PlanBody(BaseModel):
     symbol_id: str

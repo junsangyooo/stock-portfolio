@@ -1,8 +1,8 @@
 """plans (plan_id) — 매매 계획 노트, 계좌 단위.
 
 A plan is intent, not a position: nothing here ever touches `holdings`. When a
-plan is actually executed the user records the trade through the normal buy /
-sell path and deletes the note.
+plan is actually executed the user records the trade (POST /trades) and that
+trade row moves `status` — armed → entered → done (trade_store).
 
 Every query is scoped by account_id as well as plan_id. `require_account`
 already gates the routes; this is the second lock, so a wrong id cannot read
@@ -27,6 +27,7 @@ def _row(r) -> dict:
         "price": float(r["price"]),
         "qty": float(r["qty"]),
         "note": r["note"] or "",
+        "status": r["status"],
         "created_at": r["created_at"],
         "updated_at": r["updated_at"],
     }

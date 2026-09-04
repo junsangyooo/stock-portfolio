@@ -2,10 +2,10 @@
 
 Covers:
   - balance_store.adjust: signed delta, row autocreate, overdraft allowed
-  - POST /api/accounts/{id}/holdings with trade context → cash deducted (buy)
-    / credited (sell), currency resolved from symbol_id
-  - DELETE .../holdings/{sid}?sell_price&sell_qty → final sellout credits cash
-  - plain add / direct-edit (no trade context) → cash untouched
+  - POST /api/accounts/{id}/trades → cash deducted (buy) / credited (sell),
+    currency resolved from symbol_id, overdraft allowed
+  - POST /holdings (plain add / direct edit) and DELETE /holdings never touch
+    cash — money moves through POST /trades only
 
 The SQLite DB is redirected to a tmp file so tests never touch data/.
 """
@@ -44,6 +44,12 @@ def client(tmp_path, monkeypatch):
     return TestClient(app)
 
 
+def _trade(client, **kw):
+    body = {"symbol_id": "KR:005930", "side": "buy", "qty": 10, "price": 70000}
+    body.update(kw)
+    return client.post("/api/accounts/acc1/trades", json=body)
+
+
 # ── store-level ──────────────────────────────────────────────────────
 
 def test_adjust_creates_row_and_sums(tmp_path, monkeypatch):
@@ -62,11 +68,7 @@ def test_adjust_creates_row_and_sums(tmp_path, monkeypatch):
 
 def test_buy_deducts_cash(client):
     balance_store.set_many("acc1", {"KRW": 1_000_000})
-    r = client.post("/api/accounts/acc1/holdings", json={
-        "symbol_id": "KR:005930",
-        "avg_cost": 70000, "qty": 10,
-        "trade_side": "buy", "trade_price": 70000, "trade_qty": 10,
-    })
+    r = _trade(client)
     assert r.status_code == 200, r.text
     d = r.json()
     assert d["cash_currency"] == "KRW"
@@ -74,16 +76,18 @@ def test_buy_deducts_cash(client):
     assert balance_store.get_all("acc1")["KRW"] == 300_000
 
 
+def test_buy_overdraft_allowed(client):
+    r = _trade(client)
+    assert r.status_code == 200, r.text
+    assert balance_store.get_all("acc1")["KRW"] == -700_000
+
+
 # ── sell credits cash ────────────────────────────────────────────────
 
 def test_sell_credits_cash(client):
     balance_store.set_many("acc1", {"KRW": 300_000})
     holding_store.upsert("acc1", "KR:005930", avg_cost=70000, qty=10)
-    r = client.post("/api/accounts/acc1/holdings", json={
-        "symbol_id": "KR:005930",
-        "avg_cost": 70000, "qty": 6,   # sold 4
-        "trade_side": "sell", "trade_price": 80000, "trade_qty": 4,
-    })
+    r = _trade(client, side="sell", qty=4, price=80000)
     assert r.status_code == 200, r.text
     assert r.json()["cash_balance"] == 300_000 + 320_000
     assert balance_store.get_all("acc1")["KRW"] == 620_000
@@ -93,11 +97,7 @@ def test_sell_credits_cash(client):
 
 def test_us_trade_uses_usd(client):
     balance_store.set_many("acc1", {"USD": 5000})
-    r = client.post("/api/accounts/acc1/holdings", json={
-        "symbol_id": "US:AAPL",
-        "avg_cost": 200, "qty": 5,
-        "trade_side": "buy", "trade_price": 200, "trade_qty": 5,
-    })
+    r = _trade(client, symbol_id="US:AAPL", qty=5, price=200)
     d = r.json()
     assert d["cash_currency"] == "USD"
     assert d["cash_balance"] == 5000 - 1000
@@ -105,51 +105,51 @@ def test_us_trade_uses_usd(client):
     assert "KRW" not in balance_store.get_all("acc1")
 
 
-# ── no trade context → cash untouched (plain add / edit) ─────────────
+# ── holdings routes never touch cash (plain add / edit / delete) ─────
 
 def test_plain_add_does_not_touch_cash(client):
     balance_store.set_many("acc1", {"KRW": 500_000})
     r = client.post("/api/accounts/acc1/holdings", json={
         "symbol_id": "KR:005930", "avg_cost": 70000, "qty": 10,
     })
-    d = r.json()
-    assert d["cash_currency"] is None and d["cash_balance"] is None
+    assert r.status_code == 200, r.text
+    assert "cash_balance" not in r.json()
     assert balance_store.get_all("acc1")["KRW"] == 500_000
+
+
+def test_watch_add_without_qty_works_on_fresh_book(client):
+    r = client.post("/api/accounts/acc1/holdings", json={"symbol_id": "KR:005930"})
+    assert r.status_code == 200, r.text
+    assert holding_store.list_by_account("acc1")[0]["qty"] == 0
 
 
 def test_edit_mode_does_not_touch_cash(client):
     balance_store.set_many("acc1", {"KRW": 500_000})
     holding_store.upsert("acc1", "KR:005930", avg_cost=70000, qty=10)
-    # direct edit overrides avg/qty, no trade_side
     r = client.post("/api/accounts/acc1/holdings", json={
         "symbol_id": "KR:005930", "avg_cost": 65000, "qty": 12,
     })
-    assert r.json()["cash_balance"] is None
+    assert r.status_code == 200, r.text
     assert balance_store.get_all("acc1")["KRW"] == 500_000
 
 
-# ── full sellout via DELETE with sell params credits cash ────────────
-
-def test_full_sellout_delete_credits_cash(client):
+def test_full_sellout_is_trade_then_delete(client):
     balance_store.set_many("acc1", {"KRW": 100_000})
     holding_store.upsert("acc1", "KR:005930", avg_cost=70000, qty=5)
-    r = client.delete(
-        "/api/accounts/acc1/holdings/KR:005930"
-        "?sell_price=80000&sell_qty=5")
+    r = _trade(client, side="sell", qty=5, price=80000)
     assert r.status_code == 200, r.text
-    d = r.json()
-    assert d["deleted"] == 1
-    assert d["cash_balance"] == 100_000 + 400_000
+    assert r.json()["cash_balance"] == 100_000 + 400_000
+    r = client.delete("/api/accounts/acc1/holdings/KR:005930")
+    assert r.status_code == 200, r.text
+    assert r.json()["deleted"] == 1
     assert balance_store.get_all("acc1")["KRW"] == 500_000
-    # holding gone
     assert holding_store.list_by_account("acc1") == []
 
 
-def test_delete_without_sell_params_keeps_cash(client):
+def test_delete_keeps_cash(client):
     balance_store.set_many("acc1", {"KRW": 100_000})
     holding_store.upsert("acc1", "KR:005930", avg_cost=70000, qty=5)
-    r = client.delete("/api/accounts/acc1/holdings/KR:005930")
-    d = r.json()
-    assert d["deleted"] == 1
-    assert d["cash_currency"] is None
+    r = client.delete("/api/accounts/acc1/holdings/KR:005930"
+                      "?sell_price=80000&sell_qty=5")   # ignored: delete only deletes
+    assert r.json()["deleted"] == 1
     assert balance_store.get_all("acc1")["KRW"] == 100_000
