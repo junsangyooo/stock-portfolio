@@ -1,16 +1,15 @@
 """/api/accounts — account-aware portfolio CRUD + per-account PIN auth.
 
-Auth model: each account has an optional 6-digit PIN (pin_hash). Hitting a
-protected route requires a valid session cookie (pdash_a_{id}); you get one
-by POSTing the PIN to /api/accounts/{id}/auth. The cookie lives for
-security.SESSION_TTL. Accounts with no PIN set are open (used only
-transiently before a PIN is assigned).
+Auth model: every account has a 6-digit PIN (pin_hash); creating one requires
+it. Hitting a protected route requires a valid session cookie (pdash_a_{id});
+you get one by POSTing the PIN to /api/accounts/{id}/auth. The cookie lives
+for security.SESSION_TTL. A book without a PIN is closed (403, no cookie) —
+never "open until assigned".
 
-Two gates stack. The server-wide /api middleware (dashboard_web.server) needs
-SOME account session for anything but the account list and POST /{id}/auth;
-`require_account` then narrows a per-account route to THAT account's session.
-So creating an account requires already holding one — the very first account
-of a fresh deployment is seeded directly in SQLite, not through the UI.
+Two gates stack. The server-wide /api middleware (dashboard_web.server) opens
+only the account list, account creation and POST /{id}/auth without a
+session; `require_account` then narrows a per-account route to THAT
+account's session.
 """
 from __future__ import annotations
 
