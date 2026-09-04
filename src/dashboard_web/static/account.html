@@ -63,7 +63,7 @@ body {
   color: var(--bg);
   font-weight: 700;
 }
-.header .title { color: var(--fg); font-weight: 700; letter-spacing: 2px; }
+.header .title { color: var(--fg); font-weight: 700; }
 .header .clock { color: var(--cyan); font-family: 'Press Start 2P'; font-size: 16px; }
 
 a { color: inherit; text-decoration: none; }
@@ -675,13 +675,6 @@ a { color: inherit; text-decoration: none; }
 }
 .modal-close:hover { color: var(--red); border-color: var(--red); }
 
-/* Lucide inline icon — 폰트 크기·색을 그대로 상속 (sprite는 <body> 직후) */
-.lci {
-  width: 1.05em;
-  height: 1.05em;
-  vertical-align: -0.18em;
-  flex: none;
-}
 
 .modal-body {
   flex: 1;
@@ -1389,202 +1382,6 @@ a { color: inherit; text-decoration: none; }
   .ex-chart { min-height: 220px; }
 }
 
-/* STOCK CARD GRID */
-.stock-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.stock-card {
-  background: var(--panel);
-  border: var(--border-w) solid var(--line);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  padding: 14px 16px;
-  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
-}
-.stock-card:hover {
-  box-shadow: var(--shadow-md);
-  border-color: var(--line-strong);
-  transform: translateY(-1px);
-}
-
-.sc-head {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 10px;
-  margin-bottom: 10px;
-}
-.sc-name-block { flex: 1; min-width: 0; }
-.sc-name-block { display: flex; flex-direction: column; gap: 2px; }
-.sc-name { font-size: 14px; font-weight: 700; color: var(--fg); letter-spacing: 1px; }
-.sc-code { font-size: 10px; color: var(--dim); letter-spacing: 2px; }
-.sc-price-block { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-.sc-price { font-family: 'Press Start 2P'; font-size: 18px; color: var(--fg); letter-spacing: 1px; }
-.sc-price.up { color: var(--green); text-shadow: 0 0 10px rgba(var(--green-rgb), 0.4); }
-.sc-price.down { color: var(--red); text-shadow: 0 0 10px rgba(var(--red-rgb), 0.4); }
-.sc-delta { font-size: 10px; color: var(--dim); }
-.sc-delta.up { color: var(--green); }
-.sc-delta.down { color: var(--red); }
-
-.sc-meta {
-  display: flex;
-  align-items: flex-end;
-  gap: 14px;
-  margin-bottom: 12px;
-  font-size: 11px;
-}
-.sc-meta .cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.sc-meta .k { color: var(--dim); font-size: 9px; letter-spacing: 1px; }
-.sc-meta .v { color: var(--fg); font-size: 12px; white-space: nowrap; }
-.sc-meta .v.up { color: var(--green); }
-.sc-meta .v.down { color: var(--red); }
-.sc-meta .v.dim { color: var(--dim); }
-.sc-meta .actions {
-  margin-left: auto;
-  display: flex;
-  gap: 4px;
-}
-.sc-action-buy, .sc-action-sell {
-  background: transparent;
-  border: 1px solid;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  padding: 5px 10px;
-  cursor: pointer;
-  letter-spacing: 1px;
-  font-weight: 700;
-}
-.sc-action-buy { color: var(--green); border-color: var(--green); }
-.sc-action-buy:hover { background: rgba(var(--green-rgb), 0.08); }
-.sc-action-sell { color: var(--red); border-color: var(--red); }
-.sc-action-sell:hover { background: rgba(var(--red-rgb), 0.08); }
-/* Featured buy = watchlist entry, prompt to acquire */
-.sc-action-buy.featured {
-  background: var(--green); color: var(--bg);
-  padding: 6px 14px;
-}
-.sc-action-buy.featured:hover {
-  background: var(--green); opacity: 0.85;
-}
-
-/* WATCHLIST CARD — qty is null/0 (관심종목, 매도 후 유지 또는 신규 추가) */
-.stock-card.watchlist {
-  background: linear-gradient(180deg,
-    var(--panel) 0%,
-    rgba(var(--yellow-rgb), 0.04) 100%);
-  border-color: rgba(var(--yellow-rgb), 0.35);
-}
-.stock-card.watchlist .sc-price-block .sc-price,
-.stock-card.watchlist .sc-price-block .sc-delta { opacity: 0.9; }
-.stock-card.watchlist .sc-meta [data-kind="avg"] .v,
-.stock-card.watchlist .sc-meta [data-kind="qty"] .v,
-.stock-card.watchlist .sc-meta [data-kind="pnl"] .v { color: var(--muted); }
-.sc-watchlist-badge {
-  display: inline-block;
-  padding: 1px 6px;
-  background: rgba(var(--yellow-rgb), 0.12);
-  color: var(--yellow);
-  border: 1px solid var(--yellow);
-  font-size: 9px;
-  letter-spacing: 1.5px;
-  font-weight: 700;
-  margin-top: 2px;
-  align-self: flex-start;   /* .sc-name-block is a column flex — without this
-                               the badge stretches to the full card width */
-  white-space: nowrap;
-}
-
-/* ── Level 0 종합 배지: 종목당 판단 1개 (label 5단계 + 신선도) ── */
-.sc-verdict-badge {
-  display: inline-block; padding: 1px 6px; border: 1px solid var(--dim);
-  border-radius: 3px; color: var(--dim); font-size: 9px; letter-spacing: 1px;
-  font-weight: 700; margin-top: 2px; align-self: flex-start; white-space: nowrap;
-}
-.sc-verdict-badge.act-strong_buy  { color: var(--green);  border-color: var(--green); }
-.sc-verdict-badge.act-buy         { color: var(--cyan);   border-color: var(--cyan); }
-.sc-verdict-badge.act-neutral     { color: var(--yellow); border-color: var(--yellow); }
-.sc-verdict-badge.act-sell        { color: var(--orange); border-color: var(--orange); }
-.sc-verdict-badge.act-strong_sell { color: var(--red);    border-color: var(--red); }
-.sc-verdict-badge.stale { opacity: 0.45; }   /* 30일+ → 흐리게 = "믿지 말라" 신호 */
-.sc-verdict-badge.running { color: var(--cyan); border-color: var(--cyan); opacity: 0.8; }
-/* The `display` above outranks the UA sheet's [hidden]{display:none}, so the
-   placeholder badge rendered as an empty 1px box until a verdict loaded. */
-.sc-verdict-badge[hidden] { display: none; }
-
-.sc-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 116px;
-  gap: 12px;
-}
-
-.sc-chart-wrap { display: flex; flex-direction: column; gap: 6px; }
-
-.sc-chart-toggles {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.seg {
-  display: inline-flex;
-  border: 1px solid var(--line);
-}
-.seg button {
-  background: transparent;
-  border: none;
-  color: var(--dim);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  padding: 3px 8px;
-  letter-spacing: 1px;
-  cursor: pointer;
-  border-right: 1px solid var(--line);
-}
-.seg button:last-child { border-right: none; }
-.seg button.active {
-  background: var(--cyan);
-  color: var(--bg);
-  font-weight: 700;
-}
-.seg button:hover:not(.active) { color: var(--fg); }
-
-.sc-chart { width: 100%; height: 260px; display: block; background: rgba(var(--grid-rgb), 0.3); border: 1px solid var(--grid); }
-
-.sc-actions {
-  display: grid;
-  grid-template-columns: 1fr;
-  grid-auto-rows: 1fr;
-  gap: 6px;
-  align-content: stretch;
-}
-.sc-action {
-  background: transparent;
-  border: 1px solid var(--line);
-  color: var(--purple);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  letter-spacing: 1px;
-  padding: 6px 4px;
-  cursor: pointer;
-  text-align: center;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 0;
-}
-.sc-action:hover { background: rgba(var(--purple-rgb), 0.08); border-color: var(--purple); }
-.sc-action .ico { font-size: 13px; line-height: 1; }
-.sc-action .name { color: var(--purple); font-weight: 700; font-size: 10px; letter-spacing: 1px; }
-/* 통합 분석 버튼 (버튼 4개 → 1개): 차트 옆 컬럼을 채우는 세로형 */
-.sc-action-analysis { flex-direction: column; gap: 8px; }
-.sc-action-analysis .ico { font-size: 20px; }
 
 /* MOBILE */
 @media (max-width: 900px) {
@@ -1772,7 +1569,6 @@ body.chat-open { padding-right: 388px; }
   <symbol id="i-brain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 18V5"/><path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4"/><path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5"/><path d="M17.997 5.125a4 4 0 0 1 2.526 5.77"/><path d="M18 18a4 4 0 0 0 2-7.464"/><path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517"/><path d="M6 18a4 4 0 0 1-2-7.464"/><path d="M6.003 5.125a4 4 0 0 0-2.526 5.77"/></symbol>
   <symbol id="i-trending-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/></symbol>
   <symbol id="i-chart-column" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></symbol>
-  <symbol id="i-newspaper" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18h-5"/><path d="M18 14h-8"/><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2"/><rect width="8" height="4" x="10" y="6" rx="1"/></symbol>
   <symbol id="i-refresh-cw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></symbol>
   <symbol id="i-pencil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
@@ -1784,7 +1580,6 @@ body.chat-open { padding-right: 388px; }
   <symbol id="i-triangle-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
   <symbol id="i-flag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528"/></symbol>
   <symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></symbol>
-  <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
   <symbol id="i-wallet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></symbol>
 </svg>
 
@@ -2293,48 +2088,7 @@ const API = {
 // ─────────────────────────────────────────────────────────────
 // SAFE DOM HELPERS — same pattern as index.html (no innerHTML on data)
 // ─────────────────────────────────────────────────────────────
-function el(tag, props, children) {
-  const e = document.createElement(tag);
-  if (props) {
-    for (const k in props) {
-      const val = props[k];
-      // null/undefined attribute values are skipped — otherwise
-      // setAttribute('disabled', null) would stringify to "null" and
-      // wrongly mark the element disabled. Callers can pass null to mean
-      // "omit this attribute".
-      if (val == null && k !== 'className' && k !== 'style' && k !== 'dataset'
-          && !(k.startsWith('on'))) continue;
-      if (k === 'className') e.className = val;
-      else if (k === 'style') e.setAttribute('style', val);
-      else if (k === 'dataset') {
-        for (const d in val) e.dataset[d] = val[d];
-      } else if (k.startsWith('on') && typeof val === 'function') {
-        e.addEventListener(k.slice(2).toLowerCase(), val);
-      } else {
-        e.setAttribute(k, val);
-      }
-    }
-  }
-  if (children) {
-    for (const c of children) {
-      if (c == null) continue;
-      e.appendChild(typeof c === 'string' || typeof c === 'number'
-        ? document.createTextNode(String(c)) : c);
-    }
-  }
-  return e;
-}
-function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
-// Lucide sprite instance — <svg class="lci"><use href="#i-name"/></svg>
-function svgIco(name) {
-  const NS = 'http://www.w3.org/2000/svg';
-  const s = document.createElementNS(NS, 'svg');
-  s.setAttribute('class', 'lci');
-  const u = document.createElementNS(NS, 'use');
-  u.setAttribute('href', '#i-' + name);
-  s.appendChild(u);
-  return s;
-}
+const { el, clear, svgIco } = S;   // canonical definitions live in shared.js
 
 // ─────────────────────────────────────────────────────────────
 // ANALYSIS UX HELPERS — 위계/신선도/내부어 제거 공통 사전·헬퍼.
@@ -2433,40 +2187,16 @@ window._setAnalysisBadge = function (symbolId, entry) {
 // ─────────────────────────────────────────────────────────────
 // THEME COLOR ACCESSOR — single source for canvas/SVG fills.
 // CSS uses var(--xxx) directly; <canvas>/<svg> can't, so they read the
-// same tokens here. Tokens are injected once per page load (server reads
-// static/theme.json), so caching is safe for the page lifetime.
+// same tokens through S.designColor / S.designRgba (shared.js).
 // ─────────────────────────────────────────────────────────────
-const _themeCache = {};
-function themeColor(token) {
-  if (!(token in _themeCache)) {
-    const v = getComputedStyle(document.documentElement)
-      .getPropertyValue('--' + token).trim();
-    _themeCache[token] = v || '#888';
-  }
-  return _themeCache[token];
-}
-function themeRgba(token, alpha) {
-  const key = 'rgb:' + token;
-  if (!(key in _themeCache)) {
-    _themeCache[key] = getComputedStyle(document.documentElement)
-      .getPropertyValue('--' + token + '-rgb').trim();
-  }
-  const rgb = _themeCache[key];
-  return rgb ? 'rgba(' + rgb + ', ' + alpha + ')' : 'rgba(136,136,136,' + alpha + ')';
-}
 
 // ─────────────────────────────────────────────────────────────
 // CLOCK (KST)
 // ─────────────────────────────────────────────────────────────
 const KST_OFFSET_MS = 9 * 3600 * 1000;
-function pad(n) { return n < 10 ? '0'+n : ''+n; }
-function fmtClock() {
-  const d = new Date(Date.now() + KST_OFFSET_MS);
-  return pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ':' + pad(d.getUTCSeconds()) + ' KST';
-}
 const clockEl = document.getElementById('clock');
-setInterval(() => { clockEl.textContent = fmtClock(); }, 1000);
-clockEl.textContent = fmtClock();
+setInterval(() => { clockEl.textContent = S.kstClock() + ' KST'; }, 1000);
+clockEl.textContent = S.kstClock() + ' KST';
 
 // ─────────────────────────────────────────────────────────────
 // LIVE DATA — fetched from /api/accounts/{id} + /api/market/*
@@ -2696,7 +2426,7 @@ function drawChart(canvas, candles, style, opts) {
   ctx.clearRect(0, 0, w, h);
 
   if (!candles.length) {
-    ctx.fillStyle = themeColor('dim');
+    ctx.fillStyle = S.designColor('dim');
     ctx.font = '11px JetBrains Mono';
     ctx.fillText('데이터 없음', (w / 2) - 30, h / 2);
     return;
@@ -2717,8 +2447,8 @@ function drawChart(canvas, candles, style, opts) {
   const yOf = v => PAD_T + (1 - (v - lo) / (hi - lo)) * plotH;
 
   // y gridlines + price labels
-  ctx.strokeStyle = themeRgba('dim', 0.18);
-  ctx.fillStyle = themeColor('dim');
+  ctx.strokeStyle = S.designRgba('dim', 0.18);
+  ctx.fillStyle = S.designColor('dim');
   ctx.font = '9px JetBrains Mono';
   ctx.lineWidth = 1;
   for (let i = 0; i <= 4; i++) {
@@ -2736,8 +2466,8 @@ function drawChart(canvas, candles, style, opts) {
   if (showDates) {
     const mode = opts.dateMode || 'MD';
     const every = opts.labelEvery || Math.max(1, Math.ceil(candles.length / 8));
-    ctx.fillStyle = themeColor('dim');
-    ctx.strokeStyle = themeRgba('dim', 0.10);
+    ctx.fillStyle = S.designColor('dim');
+    ctx.strokeStyle = S.designRgba('dim', 0.10);
     ctx.font = '9px JetBrains Mono';
     for (let i = 0; i < candles.length; i += every) {
       const x = PAD_L + (i + 0.5) * slot;
@@ -2749,7 +2479,7 @@ function drawChart(canvas, candles, style, opts) {
   }
 
   if (style === 'line') {
-    ctx.strokeStyle = themeColor('cyan');
+    ctx.strokeStyle = S.designColor('cyan');
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     candles.forEach((c, i) => {
@@ -2762,14 +2492,14 @@ function drawChart(canvas, candles, style, opts) {
     const last = candles[candles.length - 1];
     const xL = PAD_L + (candles.length - 0.5) * slot;
     const yL = yOf(last.close);
-    ctx.fillStyle = themeColor('cyan');
+    ctx.fillStyle = S.designColor('cyan');
     ctx.beginPath(); ctx.arc(xL, yL, 3, 0, Math.PI * 2); ctx.fill();
   } else {
     const bw = Math.max(1, slot * 0.6);
     candles.forEach((c, i) => {
       const x = PAD_L + (i + 0.5) * slot;
       const isUp = c.close >= c.open;
-      const color = isUp ? themeColor('green') : themeColor('red');
+      const color = isUp ? S.designColor('green') : S.designColor('red');
       ctx.strokeStyle = color;
       ctx.fillStyle = color;
       ctx.beginPath();
@@ -2780,7 +2510,7 @@ function drawChart(canvas, candles, style, opts) {
       const top = Math.min(yo, yc);
       const bh = Math.max(1, Math.abs(yc - yo));
       if (isUp) {
-        ctx.fillStyle = themeRgba('green', 0.5);
+        ctx.fillStyle = S.designRgba('green', 0.5);
         ctx.fillRect(x - bw / 2, top, bw, bh);
         ctx.strokeRect(x - bw / 2, top, bw, bh);
       } else {
@@ -2797,7 +2527,7 @@ function drawChart(canvas, candles, style, opts) {
     opts.srLevels.forEach(lv => {
       if (lv.price < lo || lv.price > hi) return;   // skip off-screen levels
       const y = yOf(lv.price);
-      const col = lv.kind === 'r' ? themeColor('red') : themeColor('green');
+      const col = lv.kind === 'r' ? S.designColor('red') : S.designColor('green');
       ctx.strokeStyle = col;
       ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(w - PAD_R, y); ctx.stroke();
       ctx.fillStyle = col;
@@ -2822,7 +2552,7 @@ function drawSparklineSvg(values, currentPrice) {
     const ln = document.createElementNS(_SVG, 'line');
     ln.setAttribute('x1', '0'); ln.setAttribute('x2', '80');
     ln.setAttribute('y1', '12'); ln.setAttribute('y2', '12');
-    ln.setAttribute('stroke', themeRgba('dim', 0.3));
+    ln.setAttribute('stroke', S.designRgba('dim', 0.3));
     ln.setAttribute('stroke-width', '1');
     ln.setAttribute('stroke-dasharray', '2,2');
     svg.appendChild(ln);
@@ -2841,11 +2571,11 @@ function drawSparklineSvg(values, currentPrice) {
   });
   // direction-based color: green if last >= first, red otherwise
   const isUp = values[values.length - 1] >= values[0];
-  const color = isUp ? themeColor('green') : themeColor('red');
+  const color = isUp ? S.designColor('green') : S.designColor('red');
   // area fill (subtle)
   const fill = document.createElementNS(_SVG, 'path');
   fill.setAttribute('d', dPath + 'L' + w + ',' + h + ' L0,' + h + ' Z');
-  fill.setAttribute('fill', isUp ? themeRgba('green', 0.12) : themeRgba('red', 0.12));
+  fill.setAttribute('fill', isUp ? S.designRgba('green', 0.12) : S.designRgba('red', 0.12));
   fill.setAttribute('stroke', 'none');
   svg.appendChild(fill);
   // line
@@ -4002,8 +3732,8 @@ renderAll();
     const py = v => PAD_T + (1 - (v - lo) / (hi - lo)) * plotH;
 
     // y grid
-    ctx.strokeStyle = themeRgba('dim', 0.18);
-    ctx.fillStyle = themeColor('dim');
+    ctx.strokeStyle = S.designRgba('dim', 0.18);
+    ctx.fillStyle = S.designColor('dim');
     ctx.font = '10px JetBrains Mono';
     for (let i = 0; i <= 5; i++) {
       const v = lo + (hi - lo) * i / 5;
@@ -4014,13 +3744,13 @@ renderAll();
 
     // baseline (start value)
     const yBase = py(snapshots[0].total_assets);
-    ctx.strokeStyle = themeColor('dim');
+    ctx.strokeStyle = S.designColor('dim');
     ctx.setLineDash([3, 3]);
     ctx.beginPath(); ctx.moveTo(PAD_L, yBase); ctx.lineTo(w - PAD_R, yBase); ctx.stroke();
     ctx.setLineDash([]);
 
     // X axis dates (first, mid, last)
-    ctx.fillStyle = themeColor('dim');
+    ctx.fillStyle = S.designColor('dim');
     ctx.fillText(snapshots[0].date, PAD_L, h - 8);
     if (snapshots.length >= 3) {
       const m = snapshots[Math.floor(snapshots.length / 2)];
@@ -4029,8 +3759,8 @@ renderAll();
     ctx.fillText(snapshots[snapshots.length - 1].date, w - PAD_R - 60, h - 8);
 
     // line + fill
-    const color = isUp ? themeColor('green') : themeColor('red');
-    const fill = isUp ? themeRgba('green', 0.18) : themeRgba('red', 0.18);
+    const color = isUp ? S.designColor('green') : S.designColor('red');
+    const fill = isUp ? S.designRgba('green', 0.18) : S.designRgba('red', 0.18);
     ctx.fillStyle = fill;
     ctx.beginPath();
     ctx.moveTo(px(0), yBase);

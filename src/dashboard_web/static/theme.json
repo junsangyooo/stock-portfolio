@@ -1,6 +1,6 @@
 {
   "name": "beige-graphite-v1",
-  "description": "Beige(#F5EFE0) + Dark Gray(#1A1A1A) 라이트 테마. 경계를 '선'이 아니라 '면 대비 + 그림자'로 표현. colors는 --xxx + --xxx-rgb 로, tokens는 --xxx 로 server가 주입. 이 JSON만 고치면 전체 디자인(색·모서리·그림자·간격)이 한 번에 바뀜.",
+  "description": "Beige(#F5EFE0) + Dark Gray(#1A1A1A) 라이트 테마. 경계를 '선'이 아니라 '면 대비 + 그림자'로 표현. colors는 --xxx + --xxx-rgb 로, tokens는 --xxx 로 server가 주입. 이 JSON만 고치면 전체 디자인(색·모서리·그림자·간격)이 한 번에 바뀜. themes는 뉴스 분야별 색·아이콘(id = research/news/themes.json의 theme_id): window.__THEME_TOKENS로 주입되어 S.newsThemeColor/newsThemeIcon이 읽는다.",
   "colors": {
     "bg":          "#F5EFE0",
     "panel":       "#FBF7EC",
@@ -27,5 +27,30 @@
     "shadow-md":    "0 4px 14px rgba(26,26,26,0.12)",
     "shadow-lg":    "0 14px 40px rgba(26,26,26,0.20)",
     "ring":         "0 0 0 2px rgba(31,111,120,0.30)"
+  },
+  "themes": {
+    "battery":            { "color": "#2E7D4F", "icon": "battery-charging" },
+    "ai_sw":              { "color": "#6B4FA8", "icon": "bot" },
+    "bio":                { "color": "#0F766E", "icon": "dna" },
+    "semiconductor":      { "color": "#1D4ED8", "icon": "cpu" },
+    "robotics":           { "color": "#B5446E", "icon": "biceps-flexed" },
+    "space":              { "color": "#4C51BF", "icon": "rocket" },
+    "fintech":            { "color": "#A97A0B", "icon": "landmark" },
+    "shipbuilding":       { "color": "#1F6F78", "icon": "ship" },
+    "adv_manufacturing":  { "color": "#C1600F", "icon": "printer" },
+    "macro":              { "color": "#5B6472", "icon": "globe" },
+    "ev":                 { "color": "#0E7490", "icon": "car" },
+    "materials_raw":      { "color": "#7C3F1D", "icon": "pickaxe" },
+    "grid_ess":           { "color": "#047857", "icon": "zap" },
+    "equipment":          { "color": "#475569", "icon": "wrench" },
+    "datacenter_power":   { "color": "#4338CA", "icon": "server" },
+    "defense":            { "color": "#374151", "icon": "shield" },
+    "regulation_fda":     { "color": "#9D174D", "icon": "clipboard-check" },
+    "regulation_fin":     { "color": "#854D0E", "icon": "scale" },
+    "energy":             { "color": "#B45309", "icon": "flame" },
+    "steel":              { "color": "#57534E", "icon": "factory" },
+    "game_entertainment": { "color": "#7E22CE", "icon": "gamepad-2" },
+    "consumer_retail":    { "color": "#BE123C", "icon": "shopping-cart" },
+    "renewable_nuclear":  { "color": "#166534", "icon": "atom" }
   }
 }

@@ -59,3 +59,36 @@ class TestApiGate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestQuantSessionOnSharedData(unittest.TestCase):
+    """A quant login is a login too: its cookie opens the shared data but
+    never the portfolio ledger. The token '{account}|{issued}|{sig}' names
+    its own account and the signature covers it, so the gate needs no DB."""
+
+    def setUp(self):
+        from src.api.quant import COOKIE_NAME
+        self.c = TestClient(app)
+        self.q = {COOKIE_NAME: security.make_session_token("robo")}
+
+    def test_opens_shared_data(self):
+        for path in ("/api/analysis/summary?symbols=KR:005930",
+                     "/api/universe/search?q=zzz"):
+            r = self.c.get(path, cookies=self.q)
+            self.assertNotEqual(r.status_code, 403, path)
+
+    def test_still_refused_on_the_ledger(self):
+        r = self.c.get("/api/accounts/junisa", cookies=self.q)
+        self.assertIn(r.status_code, (403, 404))
+        self.assertNotEqual(r.status_code, 200)
+
+    def test_swapped_account_is_a_forgery(self):
+        from src.api.quant import COOKIE_NAME
+        acct, issued, sig = security.make_session_token("robo").split("|")
+        forged = {COOKIE_NAME: f"junisa|{issued}|{sig}"}
+        r = self.c.get("/api/analysis/summary?symbols=KR:005930", cookies=forged)
+        self.assertEqual(r.status_code, 403)
+        self.assertFalse(security.token_is_valid(f"junisa|{issued}|{sig}"))
+        self.assertTrue(security.token_is_valid(f"{acct}|{issued}|{sig}"))
+        self.assertFalse(security.token_is_valid(None))
+        self.assertFalse(security.token_is_valid("garbage"))

@@ -69,3 +69,96 @@ def test_quant_page_not_served_on_portfolio_host(client):
         r = client.get(path, headers={"host": PORTFOLIO_HOST})
         assert tag not in r.text, path
     assert tag in client.get("/q", headers={"host": QUANT_HOST}).text
+
+
+# ── U2: shared floor ─────────────────────────────────────────────────────
+SHARED_JS = STATIC / "shared.js"
+SHARED_CSS = STATIC / "shared.css"
+THEME = STATIC / "theme.json"
+NEWS_THEMES = Path(server.__file__).resolve().parents[1] / "research" / "news" / "themes.json"
+SCREEN_FILES = ("landing.html", "account.html", "quant.html", "shared.js", "shared.css")
+
+# Every name the injected fragment exports (ui-02-architecture §4). Each must
+# be defined exactly once across the fragment and the three pages.
+SHARED_NAMES = (
+    "el", "clear", "svgIco", "timeAgo", "kstClock",
+    "money", "ccyMoney", "pct", "signCls",
+    "designColor", "designRgba", "newsThemeColor", "newsThemeIcon",
+    "srcName", "newsCard", "newsGrid", "toast", "api",
+)
+
+# A colour literal in a VALUE position: after ':' / '=' / '(' / ',' or an
+# opening quote. Anchoring on the value keeps '#account-tabs' (a CSS id whose
+# first letters happen to be hex) and '#i-lock' (a sprite reference) out —
+# the negative lookahead refuses a hex run that continues into a word.
+_HEX_VALUE = re.compile(r"[:=(,'\"`]\s*#[0-9a-fA-F]{3,8}(?![\w-])")
+_RAW_RGBA = re.compile(r"\brgba?\(\s*\d")
+
+
+def test_no_color_literals():
+    bad = []
+    for name in SCREEN_FILES:
+        for i, line in enumerate((STATIC / name).read_text().splitlines(), 1):
+            if _HEX_VALUE.search(line) or _RAW_RGBA.search(line):
+                bad.append(f"{name}:{i}: {line.strip()}")
+    assert not bad, "colour literals outside theme.json:\n" + "\n".join(bad)
+
+
+def test_every_news_theme_has_a_token():
+    """themes.json is the taxonomy, theme.json the design tokens — two files
+    that can drift. Drift is allowed to exist but not to be silent."""
+    import json
+    ids = [t["theme_id"] for t in json.loads(NEWS_THEMES.read_text())["themes"]]
+    tokens = json.loads(THEME.read_text())["themes"]
+    missing = [i for i in ids if i not in tokens]
+    assert not missing, f"news themes without a colour/icon token: {missing}"
+    for tid in ids:
+        assert re.fullmatch(r"#[0-9a-fA-F]{6}", tokens[tid]["color"]), tid
+        assert tokens[tid]["icon"], tid
+
+
+def test_every_theme_icon_in_sprite():
+    """A <use href="#i-x"> with no <symbol> renders as nothing, silently."""
+    import json
+    sprite = SHARED_JS.read_text()
+    icons = {v["icon"] for v in json.loads(THEME.read_text())["themes"].values()}
+    icons |= {"newspaper", "lock"}   # fallback icon + the account-tab lock
+    missing = sorted(i for i in icons if f'id="i-{i}"' not in sprite)
+    assert not missing, f"icons referenced but absent from the sprite: {missing}"
+
+
+def test_shared_names_defined_once():
+    dup, none = [], []
+    for name in SHARED_NAMES:
+        pat = re.compile(
+            rf"^(?:async\s+)?function\s+{name}\s*\(|^(?:const|let|var)\s+{name}\s*=",
+            re.MULTILINE)
+        hits = {f: len(pat.findall((STATIC / f).read_text()))
+                for f in SCREEN_FILES if f.endswith((".js", ".html"))}
+        total = sum(hits.values())
+        if total > 1:
+            dup.append(f"{name}: {hits}")
+        elif total == 0:
+            none.append(name)
+        assert re.search(rf"\b{name}\b", SHARED_JS.read_text()), f"{name} not in shared.js"
+    assert not dup, "shared names defined more than once:\n" + "\n".join(dup)
+    assert not none, f"shared names never defined: {none}"
+    exported = re.search(r"window\.S\s*=\s*\{([^}]*)\}", SHARED_JS.read_text())
+    assert exported, "shared.js must export window.S = { ... }"
+    names = {n.strip() for n in exported.group(1).split(",") if n.strip()}
+    assert set(SHARED_NAMES) <= names, set(SHARED_NAMES) - names
+
+
+def test_shared_fragments_injected_in_order(client):
+    """<head>: theme tokens → shared.css → shared.js → the page's own
+    <style>/<script>. CSS coming later is cascade intent; JS coming later is
+    the reason the fragment lives under one namespace (S.*)."""
+    for path, host in (("/", PORTFOLIO_HOST), ("/a/x", PORTFOLIO_HOST), ("/q", QUANT_HOST)):
+        body = client.get(path, headers={"host": host}).text
+        marks = ['id="theme-vars"', "window.__THEME_TOKENS", 'id="shared-css"',
+                 'id="shared-js"', "@import url("]
+        pos = [body.find(m) for m in marks]
+        assert all(p >= 0 for p in pos), (path, dict(zip(marks, pos)))
+        assert pos == sorted(pos), (path, dict(zip(marks, pos)))
+    src = Path(server.__file__).read_text()
+    assert "app.mount(" not in src, "no /static mount — fragments are injected"
