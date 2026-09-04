@@ -162,3 +162,26 @@ def test_shared_fragments_injected_in_order(client):
         assert pos == sorted(pos), (path, dict(zip(marks, pos)))
     src = Path(server.__file__).read_text()
     assert "app.mount(" not in src, "no /static mount — fragments are injected"
+
+
+def test_shared_names_not_called_bare():
+    """A page reaches a shared helper either through `S.name` or by
+    destructuring it from S. A bare `name(` with neither is a ReferenceError
+    at render time (landing's 오늘의 핵심 broke this way)."""
+    bad = []
+    for f in SCREEN_FILES:
+        if not f.endswith(".html"):
+            continue
+        src = (STATIC / f).read_text()
+        pulled = set()
+        for m in re.finditer(r"const\s*\{([^}]*)\}\s*=\s*S\b", src):
+            pulled |= {n.strip() for n in m.group(1).split(",") if n.strip()}
+        for name in SHARED_NAMES:
+            if name in pulled:
+                continue
+            if re.search(rf"(?:function\s+{name}\s*\(|(?:const|let|var)\s+{name}\s*=)", src):
+                continue  # page-local definition (e.g. a closure-scoped api())
+            for i, line in enumerate(src.splitlines(), 1):
+                if re.search(rf"(?<![\w.$]){name}\s*\(", line):
+                    bad.append(f"{f}:{i}: {line.strip()}")
+    assert not bad, "shared helpers called without S. or destructure:\n" + "\n".join(bad)

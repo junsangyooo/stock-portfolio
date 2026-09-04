@@ -420,7 +420,7 @@ function renderTopNews(items) {
         style: `flex:none; font-size:9px; padding:0 5px; border:1px solid ${c}; color:${c}; letter-spacing:1px;`,
       }, [(n.themes || []).map(t => t.kr).join('·') || n.theme_kr || '']),
       el('span', { className:'t' }, [n.title || '']),
-      el('span', { className:'m' }, [srcName(n.source) + ' · ' + S.itemTime(n)]),
+      el('span', { className:'m' }, [S.srcName(n.source) + ' · ' + S.itemTime(n)]),
     ]));
   }
 }
