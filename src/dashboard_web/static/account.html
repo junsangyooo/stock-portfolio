@@ -3057,7 +3057,9 @@ window.openTradeHistory = async function () {
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', onEsc);
 
+  let seq = 0;   // two quick filter changes race; only the latest answer may render
   async function load() {
+    const mine = ++seq;
     clear(list);
     list.appendChild(el('div', { className: 'ca-empty' }, ['불러오는 중…']));
     const q = { since: since.value, until: until.value };
@@ -3065,6 +3067,7 @@ window.openTradeHistory = async function () {
     let rows;
     try { rows = (await S.api(API.trades(q))).trades || []; }   // a 400 (bad date) is toasted by S.api
     catch (_) {
+    if (mine !== seq) return;
       clear(list);
       list.appendChild(el('div', { className: 'ca-empty' }, ['거래 이력을 불러오지 못했습니다.']));
       return;

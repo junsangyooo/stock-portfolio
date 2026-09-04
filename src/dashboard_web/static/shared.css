@@ -18,6 +18,9 @@ h2 { font-size: var(--h2); letter-spacing: 1.5px; }
 h3 { font-size: var(--h3); letter-spacing: 1px; }
 img { max-width: 100%; height: auto; }
 button, input, select, textarea { font-family: inherit; }
+/* Every button is a touch target: 24px floor (WCAG 2.5.8), 44px on coarse pointers. */
+button { min-height: 24px; min-width: 24px; }
+@media (pointer: coarse) { button { min-height: 44px; min-width: 44px; } }
 
 /* ── a11y ── */
 .sr-only {
