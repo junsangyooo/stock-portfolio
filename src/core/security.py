@@ -24,6 +24,7 @@ _secret_cache: bytes | None = None
 
 COOKIE_PREFIX = "pdash_a_"
 SESSION_TTL = 30 * 86400   # 30 days — cookie lifetime and token expiry
+NO_PIN = "PIN을 먼저 설정하세요"   # a book without a PIN is closed, not open
 
 
 def _secret() -> bytes:
@@ -63,6 +64,13 @@ def make_session_token(account_id: str) -> str:
     payload = f"{account_id}|{int(time.time())}"
     sig = hmac.new(_secret(), payload.encode(), hashlib.sha256).hexdigest()
     return f"{payload}|{sig}"
+
+
+def set_session_cookie(response, name: str, account_id: str) -> None:
+    """Issue the session cookie `name` for `account_id` on `response`."""
+    response.set_cookie(name, make_session_token(account_id),
+                        httponly=True, samesite="lax", secure=True, path="/",
+                        max_age=SESSION_TTL)
 
 
 def verify_session_token(account_id: str, token: str | None) -> bool:

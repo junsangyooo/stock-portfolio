@@ -6,30 +6,17 @@ with a minimal env — the URL is read from the secrets .env file instead.
 from __future__ import annotations
 
 import logging
-import os
-import re
 import time
-from pathlib import Path
 
 import httpx
+
+from .. import secrets
 
 log = logging.getLogger(__name__)
 
 
 def _url() -> str | None:
-    u = os.getenv("DISCORD_WEBHOOK_URL")
-    if u:
-        return u
-    # File fallback for non-systemd contexts (e.g. cron has a minimal env).
-    # Local mac keeps secrets in ~/.claude/secrets; Oracle in ~/dotclaude/secrets.
-    for env in (Path.home() / ".claude" / "secrets" / ".env",
-                Path.home() / "dotclaude" / "secrets" / ".env"):
-        if env.exists():
-            for line in env.read_text().splitlines():
-                m = re.match(r"\s*DISCORD_WEBHOOK_URL\s*=\s*(\S+)", line)
-                if m:
-                    return m.group(1).strip()
-    return None
+    return secrets.get("DISCORD_WEBHOOK_URL")
 
 
 def send(text: str, username: str = "portfolio-dashboard") -> bool:

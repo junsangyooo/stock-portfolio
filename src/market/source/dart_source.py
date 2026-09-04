@@ -30,12 +30,10 @@ API key: env DART_API_KEY (or DART_PERSONAL_API_KEY); falls back to parsing
 from __future__ import annotations
 
 import json
-import os
-import re
-from pathlib import Path
 from typing import Dict, List, Optional
 
 from .base import FinancialRow
+from ...core import secrets
 from ...core.paths import DART_CORP_CODES, split_symbol
 
 # reprt_code → (period suffix, ordered list for "latest N")
@@ -65,19 +63,7 @@ _ACCOUNT_RULES = [
 
 
 def _api_key() -> Optional[str]:
-    key = os.getenv("DART_API_KEY") or os.getenv("DART_PERSONAL_API_KEY")
-    if key:
-        return key.strip()
-    # File fallback for non-systemd contexts (e.g. cron has a minimal env).
-    # Local mac keeps secrets in ~/.claude/secrets; Oracle in ~/dotclaude/secrets.
-    for env in (Path.home() / ".claude" / "secrets" / ".env",
-                Path.home() / "dotclaude" / "secrets" / ".env"):
-        if env.exists():
-            for line in env.read_text().splitlines():
-                m = re.match(r"\s*DART_(?:PERSONAL_)?API_KEY\s*=\s*(\S+)", line)
-                if m:
-                    return m.group(1).strip()
-    return None
+    return secrets.get("DART_API_KEY") or secrets.get("DART_PERSONAL_API_KEY")
 
 
 def _parse_amount(raw) -> Optional[float]:

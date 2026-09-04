@@ -37,16 +37,7 @@ router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 _COOKIE_PREFIX = security.COOKIE_PREFIX
 
 
-_NO_PIN = "PIN을 먼저 설정하세요"
-
-
-def _set_session_cookie(response: Response, account_id: str) -> None:
-    response.set_cookie(
-        _COOKIE_PREFIX + account_id,
-        security.make_session_token(account_id),
-        httponly=True, samesite="lax", secure=True, path="/",
-        max_age=security.SESSION_TTL,
-    )
+_NO_PIN = security.NO_PIN
 
 
 def require_account(account_id: str, request: Request) -> str:
@@ -133,7 +124,7 @@ def auth_account(account_id: str, body: PinBody, response: Response) -> dict:
         raise HTTPException(403, _NO_PIN)      # nothing to prove → nothing issued
     if not security.verify_pin(account_id, body.pin, stored):
         raise HTTPException(403, "PIN이 일치하지 않습니다")
-    _set_session_cookie(response, account_id)
+    security.set_session_cookie(response, _COOKIE_PREFIX + account_id, account_id)
     return {"ok": True}
 
 

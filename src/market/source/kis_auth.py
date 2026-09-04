@@ -33,12 +33,13 @@ import os
 import threading
 import time
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 import requests
 
+from ...core import secrets
 from ...core.paths import QUANT_DIR
+from ...core.ratelimit import TokenBucket
 
 REAL_URL = "https://openapi.koreainvestment.com:9443"
 PAPER_URL = "https://openapivts.koreainvestment.com:29443"
@@ -58,29 +59,13 @@ class KisError(RuntimeError):
         self.payload = payload or {}
 
 
-def _env(name: str) -> Optional[str]:
-    v = os.environ.get(name)
-    if v:
-        return v
-    # local CLI fallback: parse the secrets file (same approach as dart_source)
-    p = Path.home() / ".claude" / "secrets" / ".env"
-    if not p.exists():
-        p = Path.home() / "dotclaude" / "secrets" / ".env"
-    if p.exists():
-        for line in p.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line.startswith(f"{name}="):
-                return line.split("=", 1)[1].strip().strip('"').strip("'")
-    return None
-
-
 def creds() -> dict:
     c = {
-        "app_key": _env("KIS_APP_KEY"),
-        "app_secret": _env("KIS_APP_SECRET"),
-        "cano": _env("KIS_ACCOUNT_NO"),
-        "prdt": _env("KIS_ACCOUNT_PRODUCT_CODE") or "01",
-        "real": (_env("KIS_IS_REAL") or "").lower() in ("1", "true", "y", "yes"),
+        "app_key": secrets.get("KIS_APP_KEY"),
+        "app_secret": secrets.get("KIS_APP_SECRET"),
+        "cano": secrets.get("KIS_ACCOUNT_NO"),
+        "prdt": secrets.get("KIS_ACCOUNT_PRODUCT_CODE") or "01",
+        "real": (secrets.get("KIS_IS_REAL") or "").lower() in ("1", "true", "y", "yes"),
     }
     missing = [k for k in ("app_key", "app_secret", "cano") if not c[k]]
     if missing:
@@ -140,27 +125,7 @@ def token(force: bool = False) -> str:
 
 # ── rate limiter ─────────────────────────────────────────────────────────
 
-class _Bucket:
-    def __init__(self, rate: float, burst: float):
-        self.rate, self.burst = rate, burst
-        self.level = burst
-        self.t = time.monotonic()
-        self.lock = threading.Lock()
-
-    def take(self) -> None:
-        while True:
-            with self.lock:
-                now = time.monotonic()
-                self.level = min(self.burst, self.level + (now - self.t) * self.rate)
-                self.t = now
-                if self.level >= 1.0:
-                    self.level -= 1.0
-                    return
-                wait = (1.0 - self.level) / self.rate
-            time.sleep(wait)
-
-
-_bucket = _Bucket(_RATE, _BURST)
+_bucket = TokenBucket(_RATE, _BURST)
 
 
 # ── request ──────────────────────────────────────────────────────────────
