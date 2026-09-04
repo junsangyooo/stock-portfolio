@@ -4,272 +4,256 @@
 <meta charset="utf-8">
 <title>portfolio-dashboard · 홈</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1 15 8 8 15 1 8z' fill='silver'/%3E%3C/svg%3E">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Press+Start+2P&display=swap');
-/* Color tokens injected by server from static/theme.json. */
+/* Colour, spacing and type tokens are injected by the server from
+   static/theme.json; shared.css sets the base font, headings and the .btn
+   family. Mobile-first: the rules outside @media are the phone layout,
+   600px adds the desktop chrome, 900px the two-column body. */
 * { box-sizing:border-box; margin:0; padding:0; }
+[hidden] { display:none !important; }   /* beats the display:flex below */
 body {
-  background:var(--bg); color:var(--fg);
-  font-family:'JetBrains Mono', monospace;
-  font-size:12px; line-height:1.45; min-height:100vh; padding:8px;
+  font-family:'JetBrains Mono', monospace; min-height:100vh;
   background-image:
     linear-gradient(rgba(var(--grid-rgb), 0.4) 1px, transparent 1px),
     linear-gradient(90deg, rgba(var(--grid-rgb), 0.4) 1px, transparent 1px);
   background-size:24px 24px;
 }
 a { color:inherit; text-decoration:none; }
+.wrap { max-width:1400px; margin:0 auto; }
 
 /* ── TOPBAR (sticky) ──────────────────────────────────────── */
 .topbar-wrap {
   position:sticky; top:0; z-index:50;
   background:var(--bg);
-  margin:-8px -8px 8px;
-  padding:8px 8px 0;
+  padding:var(--space-1) var(--space-1) 0;
   border-bottom:1px solid var(--line);
 }
 .header {
   display:flex; justify-content:space-between; align-items:center;
-  padding:8px 12px; background:var(--panel);
+  gap:var(--space-2);
+  padding:var(--space-2); background:var(--panel);
   border:var(--border-w) solid var(--line);
   border-radius:var(--radius-md) var(--radius-md) 0 0;
   box-shadow:var(--shadow-sm);
-  margin-bottom:0;
 }
-.header .left { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
-.header .title { color:var(--fg); font-weight:700; }
-.header .clock { color:var(--cyan); font-family:'Press Start 2P'; font-size:16px; }
-#account-tabs { display:flex; gap:6px; flex-wrap:wrap; }
+.header .left { display:flex; gap:var(--space-2); align-items:center; flex-wrap:wrap; }
+.header .title { font-size:var(--text-xs); letter-spacing:1px; }
+.header .clock { color:var(--cyan); font-family:'Press Start 2P'; font-size:var(--text-sm); flex:none; }
+#account-tabs { display:flex; gap:var(--space-2); flex-wrap:wrap; }
 
-.pill {
-  padding:2px 10px; border:1px solid var(--cyan);
-  border-radius:var(--radius-sm); color:var(--cyan);
-  font-size:10px; letter-spacing:1px; cursor:pointer;
-  text-decoration:none; font-family:inherit;
-  background:transparent;
-}
-.pill.dashed { border-style:dashed; }
+/* account tabs: .btn-sm in the accent colour */
+.btn.acct { color:var(--cyan); border-color:var(--cyan); }
+.btn.dashed { border-style:dashed; }
 
-/* CATEGORY chip bar */
+/* CATEGORY chip bar — one horizontally scrolling row on phones */
 .cat-bar {
-  display:flex; flex-wrap:wrap; gap:6px; align-items:center;
-  padding:8px 12px; background:var(--panel);
+  display:flex; flex-wrap:nowrap; overflow-x:auto; gap:var(--space-1); align-items:center;
+  scrollbar-width:none; -webkit-overflow-scrolling:touch;
+  padding:var(--space-1) var(--space-2); background:var(--panel);
   border:var(--border-w) solid var(--line); border-top:none;
   border-radius:0 0 var(--radius-md) var(--radius-md);
   box-shadow:var(--shadow-sm);
-  margin-bottom:8px;
 }
+.cat-bar::-webkit-scrollbar { display:none; }
 .cat-bar .cat-label {
-  font-size:10px; letter-spacing:2px; color:var(--dim);
-  margin-right:8px; text-transform:uppercase;
+  display:none;
+  font-size:var(--text-xs); letter-spacing:2px; color:var(--dim);
+  margin-right:var(--space-2); text-transform:uppercase;
 }
-.chip {
-  display:inline-flex; align-items:center; gap:5px;
-  padding:3px 10px; border:1px solid var(--line-strong);
-  border-radius:var(--radius-sm);
-  color:var(--dim); font-size:11px; cursor:pointer;
-  background:transparent; font-family:inherit;
-  transition:background 0.1s, color 0.1s, border-color 0.1s;
-}
-.chip:hover { color:var(--fg); border-color:var(--dim); }
+.cat-bar .chip { flex:none; }
 .chip.on {
   background:rgba(var(--cyan-rgb), 0.15); color:var(--cyan);
   border-color:var(--cyan);
 }
-.chip.reset {
-  color:var(--muted); margin-left:auto;
-  border-style:dashed;
-}
+.chip.reset { color:var(--muted); border-style:dashed; }
 
-/* ── MAIN GRID (news + social) ──────────────────────────── */
-.main-grid {
-  display:grid; grid-template-columns: 2fr 1fr; gap:8px;
+/* ── MAIN (news + social) ──────────────────────────────── */
+main {
+  display:grid; grid-template-columns:1fr; gap:var(--space-2);
+  padding:var(--space-2) var(--space-1) var(--space-1);
 }
-@media (max-width: 900px) { .main-grid { grid-template-columns:1fr; } }
 
 .panel {
   background:var(--panel); border:var(--border-w) solid var(--line);
   border-radius:var(--radius-md); box-shadow:var(--shadow-sm);
-  padding:14px 16px;
+  padding:var(--space-3);
 }
 .panel-title {
-  font-size:10px; letter-spacing:2px; color:var(--dim);
-  margin-bottom:12px; text-transform:uppercase;
+  margin-bottom:var(--space-3);
   display:flex; justify-content:space-between; align-items:center;
 }
-.panel-title .tag { color:var(--cyan); font-size:10px; }
+.panel-title h2 {
+  font-size:var(--text-xs); letter-spacing:2px; color:var(--dim);
+  font-weight:400; text-transform:uppercase;
+}
+.panel-title .tag { color:var(--cyan); font-size:var(--text-xs); }
 
 
 /* 오늘의 요약 — per-theme digest overviews, collapsible (state in localStorage) */
 .today-sum {
-  margin-bottom:12px; border:1px solid var(--line);
+  margin-bottom:var(--space-3); border:1px solid var(--line);
   border-radius:var(--radius-sm); background:var(--elevated);
 }
 .today-sum-head {
-  display:flex; align-items:center; gap:8px; padding:8px 10px;
-  cursor:pointer; user-select:none;
-  font-size:10px; letter-spacing:2px; color:var(--cyan);
+  display:flex; align-items:center; gap:var(--space-2); width:100%;
+  padding:var(--space-2) var(--space-3); background:none; border:0;
+  cursor:pointer; user-select:none; text-align:left; font-family:inherit;
+  font-size:var(--text-xs); letter-spacing:2px; color:var(--cyan);
   text-transform:uppercase;
 }
 .today-sum-head:hover { color:var(--fg); }
-.today-sum-head .caret { font-size:8px; transition:transform 0.12s; }
+.today-sum-head .caret { font-size:var(--text-xs); transition:transform 0.12s; }
 .today-sum-head .n { margin-left:auto; color:var(--dim); letter-spacing:1px; }
 .today-sum.collapsed .caret { transform:rotate(-90deg); }
 .today-sum.collapsed .today-sum-body { display:none; }
 .today-sum-body {
-  padding:0 10px 10px; display:flex; flex-direction:column; gap:9px;
+  padding:0 var(--space-3) var(--space-3); display:flex; flex-direction:column; gap:var(--space-2);
 }
-.sum-theme { display:flex; gap:8px; align-items:flex-start; }
+/* stack the theme label above its bullets; 600px puts it in a column */
+.sum-theme { display:flex; flex-direction:column; gap:var(--space-1); align-items:flex-start; }
 .sum-theme .lbl {
-  flex:none; width:76px; margin-top:1px;
-  font-size:9px; padding:2px 4px; text-align:center;
+  flex:none;
+  font-size:var(--text-xs); padding:2px var(--space-2); text-align:center;
   border:1px solid; border-radius:2px; letter-spacing:0.5px;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
-.sum-theme ul { margin:0; padding:0; list-style:none; min-width:0; }
+.sum-theme ul { list-style:none; min-width:0; }
 .sum-theme li {
-  position:relative; padding-left:11px;
-  font-size:11px; color:var(--fg); line-height:1.55;
+  position:relative; padding-left:var(--space-3);
+  font-size:var(--text-sm); color:var(--fg);
 }
 .sum-theme li::before {
   content:'·'; position:absolute; left:2px; color:var(--dim);
 }
 
 /* 오늘의 핵심 — digest-starred articles pinned above the grid */
-.top-news { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+.top-news { display:flex; flex-direction:column; gap:var(--space-2); margin-bottom:var(--space-3); }
 .top-news-title {
-  font-size:10px; letter-spacing:2px; color:var(--yellow);
+  font-size:var(--text-xs); letter-spacing:2px; color:var(--yellow);
   text-transform:uppercase;
 }
+/* the headline wraps on phones instead of truncating to nothing */
 .top-news-item {
-  display:flex; align-items:center; gap:8px;
+  display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-2);
   border:1px solid rgba(var(--yellow-rgb), 0.45);
   background:rgba(var(--yellow-rgb), 0.06);
-  border-radius:var(--radius-sm); padding:6px 10px;
+  border-radius:var(--radius-sm); padding:var(--space-2) var(--space-3);
   cursor:pointer; transition:border-color 0.1s, background 0.1s;
 }
 .top-news-item:hover {
   border-color:var(--yellow); background:rgba(var(--yellow-rgb), 0.12);
 }
-.top-news-item .stars { color:var(--yellow); font-size:10px; flex:none; }
-.top-news-item .t {
-  font-size:11px; font-weight:700; color:var(--fg);
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;
+.top-news-item .stars { color:var(--yellow); font-size:var(--text-xs); flex:none; }
+.top-news-item .theme {
+  flex:none; font-size:var(--text-xs); padding:0 var(--space-1);
+  border:1px solid; letter-spacing:1px;
 }
-.top-news-item .m { color:var(--dim); font-size:10px; flex:none; margin-left:auto; }
+.top-news-item .t {
+  font-size:var(--text-sm); font-weight:700; color:var(--fg); min-width:0;
+  overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+}
+.top-news-item .m { color:var(--dim); font-size:var(--text-xs); flex:none; width:100%; }
 
 /* SOCIAL LIST */
-.social-list { display:flex; flex-direction:column; gap:8px; }
+.social-list { display:flex; flex-direction:column; gap:var(--space-2); }
 .social-item {
-  border-left:2px solid var(--line); padding:8px 10px;
+  display:block;
+  border-left:2px solid var(--line); padding:var(--space-3);
   background:var(--elevated);
   border-radius:0 var(--radius-sm) var(--radius-sm) 0;
   box-shadow:var(--shadow-sm);
-  font-size:11px;
+  font-size:var(--text-sm);
   transition:border-color 0.1s, box-shadow 0.1s;
 }
 .social-item:hover { border-left-color:var(--cyan); box-shadow:var(--shadow-md); }
 .social-head {
   display:flex; justify-content:space-between; align-items:center;
-  margin-bottom:4px;
+  margin-bottom:var(--space-1);
 }
 .social-author {
-  font-weight:700; color:var(--cyan); font-size:11px;
-  display:flex; align-items:center; gap:6px;
+  font-weight:700; color:var(--cyan); font-size:var(--text-sm);
+  display:flex; align-items:center; gap:var(--space-2);
 }
 .social-author .avatar {
   width:18px; height:18px; border-radius:50%;
   background:linear-gradient(135deg, var(--cyan), var(--purple));
   display:inline-flex; align-items:center; justify-content:center;
-  color:var(--bg); font-size:9px; font-weight:700;
+  color:var(--bg); font-size:var(--text-xs); font-weight:700;
 }
-.social-time { color:var(--dim); font-size:10px; }
-.social-text { color:var(--fg); line-height:1.4; }
+.social-time { color:var(--dim); font-size:var(--text-xs); }
+.social-text { color:var(--fg); }
 .social-foot {
-  margin-top:4px; color:var(--muted); font-size:10px;
-  display:flex; gap:10px;
+  margin-top:var(--space-1); color:var(--muted); font-size:var(--text-xs);
+  display:flex; gap:var(--space-3);
 }
 
-
-/* ── MOBILE (<=640px) ─────────────────────────────────────
-   Desktop keeps the card grid; phones get a dense scan list. The sticky
-   chrome is the scarce resource here — the chip bar goes to one
-   horizontally scrolling row and the header collapses to a single line. */
-@media (max-width: 640px) {
-  body { padding:4px; }
-  .topbar-wrap { margin:-4px -4px 6px; padding:4px 4px 0; }
-
-  .header { padding:6px 8px; gap:8px; }
-  .header .left { gap:8px; }
-  .header .title { font-size:10px; letter-spacing:1px; }
-  .header .clock { font-size:11px; flex:none; }
-  .pill { padding:5px 9px; font-size:9px; }
-
-  .cat-bar {
-    flex-wrap:nowrap; overflow-x:auto; padding:5px 8px; gap:5px;
-    scrollbar-width:none; -webkit-overflow-scrolling:touch;
-  }
-  .cat-bar::-webkit-scrollbar { display:none; }
-  .cat-bar .cat-label { display:none; }
-  .chip { flex:none; min-height:32px; padding:6px 11px; }
-  .chip.reset { margin-left:0; }
-
-  .panel { padding:10px 10px; }
-
-  /* 오늘의 요약 — stack the theme label above its bullets */
-  .sum-theme { flex-direction:column; gap:3px; }
-  .sum-theme .lbl { width:auto; align-self:flex-start; padding:2px 8px; }
-
-  /* 오늘의 핵심 — let the headline wrap instead of truncating to nothing */
-  .top-news-item { flex-wrap:wrap; padding:8px 10px; }
-  .top-news-item .t {
-    white-space:normal; display:-webkit-box; -webkit-line-clamp:2;
-    -webkit-box-orient:vertical;
-  }
-  .top-news-item .m { margin-left:0; width:100%; }
-
-
-  .social-item { padding:10px; }
+/* ── ≥600px: desktop chrome — full header, wrapping chip bar, card list ── */
+@media (min-width: 600px) {
+  .topbar-wrap { padding:var(--space-2) var(--space-2) 0; }
+  .header { padding:var(--space-2) var(--space-3); }
+  .header .left { gap:var(--space-3); }
+  .header .title { font-size:var(--text-md); letter-spacing:2px; }
+  .header .clock { font-size:var(--text-lg); }
+  .cat-bar { flex-wrap:wrap; overflow-x:visible; padding:var(--space-2) var(--space-3); gap:var(--space-2); }
+  .cat-bar .cat-label { display:inline; }
+  .chip.reset { margin-left:auto; }
+  main { padding:var(--space-2); }
+  .panel { padding:var(--space-4); }
+  .sum-theme { flex-direction:row; gap:var(--space-2); }
+  .sum-theme .lbl { width:76px; padding:2px var(--space-1); }
+  .top-news-item { flex-wrap:nowrap; }
+  .top-news-item .t { display:block; white-space:nowrap; text-overflow:ellipsis; }
+  .top-news-item .m { width:auto; margin-left:auto; }
+  .social-item { padding:var(--space-2) var(--space-3); }
+}
+/* ── ≥900px: news beside social ── */
+@media (min-width: 900px) {
+  main { grid-template-columns:2fr 1fr; }
 }
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main">본문으로 건너뛰기</a>
+<h1 class="sr-only">홈 · 뉴스와 소셜</h1>
 <div class="topbar-wrap">
-  <div class="header">
-    <div class="left">
-      <a class="title" href="/">◆ PORTFOLIO</a>
-      <span id="account-tabs"></span>
-      <button id="btn-new-account" class="pill dashed">＋ 계좌 추가</button>
+  <div class="wrap">
+    <div class="header">
+      <div class="left">
+        <a class="title" href="/">◆ PORTFOLIO</a>
+        <span id="account-tabs"></span>
+        <button id="btn-new-account" type="button" class="btn btn-sm acct dashed">＋ 계좌 추가</button>
+      </div>
+      <div class="clock" id="clock">--:--:--</div>
     </div>
-    <div class="clock" id="clock">--:--:--</div>
-  </div>
-  <div class="cat-bar" id="cat-bar">
-    <span class="cat-label">분야</span>
-    <!-- chips injected by JS -->
+    <div class="cat-bar" id="cat-bar" role="group" aria-label="분야 필터">
+      <span class="cat-label">분야</span>
+      <!-- chips injected by JS -->
+    </div>
   </div>
 </div>
 
-<div class="main-grid">
+<main id="main" class="wrap">
   <!-- LEFT: news -->
-  <div class="panel">
+  <section class="panel" aria-labelledby="news-h">
     <div class="panel-title">
-      <span>뉴스</span>
+      <h2 id="news-h">뉴스</h2>
       <span class="tag" id="news-count">— 건</span>
     </div>
-    <div class="today-sum" id="today-sum" style="display:none;"></div>
-    <div class="top-news" id="top-news" style="display:none;"></div>
+    <div class="today-sum" id="today-sum" hidden></div>
+    <div class="top-news" id="top-news" hidden></div>
     <div class="news-grid" id="news-grid"></div>
-  </div>
+  </section>
 
   <!-- RIGHT: social -->
-  <div class="panel">
+  <section class="panel" aria-labelledby="social-h">
     <div class="panel-title">
-      <span>소셜</span>
+      <h2 id="social-h">소셜</h2>
       <span class="tag" id="social-count">— 건</span>
     </div>
     <div class="social-list" id="social-list"></div>
-  </div>
-</div>
+  </section>
+</main>
 
 
 <script>
@@ -278,8 +262,9 @@ a { color:inherit; text-decoration:none; }
 // ─────────────────────────────────────────────────────────
 const { el, clear, svgIco } = S;
 const clockEl = document.getElementById('clock');
-setInterval(() => { clockEl.textContent = S.kstClock() + ' KST'; }, 1000);
-clockEl.textContent = S.kstClock() + ' KST';
+function tickClock() { clockEl.textContent = S.kstClock() + ' KST'; }
+tickClock();
+S.whenVisible(tickClock, 1000);   // sleeps while the tab is hidden
 
 // ─────────────────────────────────────────────────────────
 // account tabs (sticky topbar)
@@ -292,14 +277,14 @@ async function renderAccountTabs() {
     const accs = (d && d.accounts) || [];
     if (accs.length === 0) {
       tabsEl.appendChild(el('span',
-        { style: 'color:var(--dim); font-size:10px; letter-spacing:1px;' },
+        { style: 'color:var(--dim); font-size:var(--text-xs); letter-spacing:1px;' },
         ['(계좌 없음 — ＋ 계좌 추가)']));
       return;
     }
     for (const a of accs) {
       // public list carries identity only (no assets); show a lock if PIN-gated
       const tab = el('a', {
-        className: 'pill',
+        className: 'btn btn-sm acct',
         href: '/a/' + encodeURIComponent(a.account_id),
         title: (a.broker || '') + ' · ' + (a.account_type || '') +
                (a.has_pin ? ' · 비밀번호 필요' : ''),
@@ -308,7 +293,7 @@ async function renderAccountTabs() {
     }
   } catch (_) {
     tabsEl.appendChild(el('span',
-      { style: 'color:var(--red); font-size:10px;' }, ['계좌 로드 실패']));
+      { style: 'color:var(--red); font-size:var(--text-xs);' }, ['계좌 로드 실패']));
   }
 }
 renderAccountTabs();
@@ -336,6 +321,7 @@ function _filtered(arr) {
   return arr.filter(x =>
     (x.themes || [{ id: x.theme }]).some(t => activeCats.has(t.id)));
 }
+function renderAll() { renderCatBar(); renderSummary(); renderNews(); renderSocial(); }
 
 function renderCatBar() {
   const bar = document.getElementById('cat-bar');
@@ -343,18 +329,21 @@ function renderCatBar() {
   for (const th of FEED.themes) {
     const on = activeCats.has(th.id);
     bar.appendChild(el('button', {
-      className: 'chip' + (on ? ' on' : ''),
+      type: 'button',
+      className: 'btn btn-sm chip' + (on ? ' on' : ''),
+      'aria-pressed': on ? 'true' : 'false',
       onClick: () => {
         if (activeCats.has(th.id)) activeCats.delete(th.id);
         else activeCats.add(th.id);
-        renderCatBar(); renderSummary(); renderNews(); renderSocial();
+        renderAll();
       },
     }, [svgIco(S.newsThemeIcon(th.id)), th.name_kr]));
   }
   if (activeCats.size > 0) {
     bar.appendChild(el('button', {
-      className: 'chip reset',
-      onClick: () => { activeCats.clear(); renderCatBar(); renderSummary(); renderNews(); renderSocial(); },
+      type: 'button',
+      className: 'btn btn-sm chip reset',
+      onClick: () => { activeCats.clear(); renderAll(); },
     }, ['전체 해제']));
   }
 }
@@ -366,27 +355,32 @@ function renderSummary() {
   clear(box);
   const rows = (FEED.summary || []).filter(
     s => activeCats.size === 0 || activeCats.has(s.theme));
-  if (rows.length === 0) { box.style.display = 'none'; return; }
-  box.style.display = '';
+  if (rows.length === 0) { box.hidden = true; return; }
+  box.hidden = false;
   const collapsed = localStorage.getItem('sumCollapsed') === '1';
   box.className = 'today-sum' + (collapsed ? ' collapsed' : '');
   const lines = rows.reduce((a, s) => a + (s.bullets || []).length, 0);
   // digests may lag a day (dawn batch); show the date so it never reads as today
   const date = rows.map(s => s.date || '').sort().pop() || '';
-  box.appendChild(el('div', {
+  const head = el('button', {
+    type: 'button',
     className: 'today-sum-head',
+    'aria-expanded': collapsed ? 'false' : 'true',
+    'aria-controls': 'today-sum-body',
     onClick: () => {
       const now = !box.classList.contains('collapsed');
       box.classList.toggle('collapsed', now);
+      head.setAttribute('aria-expanded', now ? 'false' : 'true');
       localStorage.setItem('sumCollapsed', now ? '1' : '0');
     },
   }, [
-    el('span', { className:'caret' }, ['▼']),
+    el('span', { className:'caret', 'aria-hidden':'true' }, ['▼']),
     el('span', {}, ['오늘의 요약']),
     el('span', { className:'n' },
       [date.slice(5) + ' · ' + rows.length + '개 분야 · ' + lines + '줄']),
-  ]));
-  const body = el('div', { className:'today-sum-body' }, []);
+  ]);
+  box.appendChild(head);
+  const body = el('div', { className:'today-sum-body', id:'today-sum-body' }, []);
   for (const s of rows) {
     const c = S.newsThemeColor(s.theme);
     body.appendChild(el('div', { className:'sum-theme' }, [
@@ -405,19 +399,19 @@ function renderTopNews(items) {
   const top = items.filter(n => (n.importance || 0) >= 4)
     .sort((a, b) => (b.importance || 0) - (a.importance || 0))
     .slice(0, 6);
-  if (top.length === 0) { box.style.display = 'none'; return; }
-  box.style.display = '';
+  if (top.length === 0) { box.hidden = true; return; }
+  box.hidden = false;
   box.appendChild(el('div', { className:'top-news-title' }, ['★ 오늘의 핵심']));
   for (const n of top) {
     const c = S.newsThemeColor(n.theme);
-    box.appendChild(el('div', {
+    // a real link: keyboard-reachable, opens in a new tab like the news cards
+    box.appendChild(el('a', {
       className: 'top-news-item',
-      onClick: n.url ? () => window.open(n.url, '_blank', 'noopener') : null,
+      href: n.url || null, target: '_blank', rel: 'noopener',
     }, [
       el('span', { className:'stars' }, ['★'.repeat(Math.min(5, n.importance || 0))]),
-      el('span', {
-        style: `flex:none; font-size:9px; padding:0 5px; border:1px solid ${c}; color:${c}; letter-spacing:1px;`,
-      }, [(n.themes || []).map(t => t.kr).join('·') || n.theme_kr || '']),
+      el('span', { className:'theme', style: `border-color:${c}; color:${c};` },
+        [(n.themes || []).map(t => t.kr).join('·') || n.theme_kr || '']),
       el('span', { className:'t' }, [n.title || '']),
       el('span', { className:'m' }, [S.srcName(n.source) + ' · ' + S.itemTime(n)]),
     ]));
@@ -441,15 +435,14 @@ function renderSocial() {
   cnt.textContent = items.length + ' 건';
   if (items.length === 0) {
     list.appendChild(el('div', {
-      style: 'color:var(--dim); font-size:11px; padding:14px; text-align:center;',
+      style: 'color:var(--dim); font-size:var(--text-sm); padding:var(--space-4); text-align:center;',
     }, ['수집된 소셜 없음']));
     return;
   }
   for (const s of items) {
-    const item = el('div', {
+    const item = el('a', {
       className: 'social-item',
-      style: s.url ? 'cursor:pointer;' : null,
-      onClick: s.url ? () => window.open(s.url, '_blank', 'noopener') : null,
+      href: s.url || null, target: '_blank', rel: 'noopener',
     }, [
       el('div', { className:'social-head' }, [
         el('span', { className:'social-author' }, [
@@ -476,7 +469,7 @@ async function loadFeed() {
     FEED.news = []; FEED.social = []; FEED.summary = []; FEED.themes = [];
     S.toast('뉴스 피드를 불러오지 못했습니다', 'err');
   }
-  renderCatBar(); renderSummary(); renderNews(); renderSocial();
+  renderAll();
 }
 loadFeed();
 </script>
