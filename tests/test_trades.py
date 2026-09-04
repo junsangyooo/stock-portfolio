@@ -125,6 +125,22 @@ def test_entry_rationale_written_once(client):
     assert _holding()["entry_plan_id"] == p["plan_id"]
 
 
+def test_reentry_after_full_sell_rewrites_entry_context(client):
+    """A full sell keeps the row at qty 0; the next buy re-opens the position
+    and must carry the new plan's rationale, not the closed-out one's."""
+    p = plan_store.create("alice", symbol_id="KR:005930", name="삼성전자",
+                          side="buy", price=70000, qty=10, note="첫 이유")
+    _trade(client, plan_id=p["plan_id"])
+    _trade(client, side="sell", qty=10, price=71000)
+    assert _holding()["qty"] == 0
+    p2 = plan_store.create("alice", symbol_id="KR:005930", name="삼성전자",
+                           side="buy", price=60000, qty=5, note="두번째 이유")
+    _trade(client, plan_id=p2["plan_id"], qty=5, price=60000)
+    h = _holding()
+    assert h["entry_rationale"] == "두번째 이유"
+    assert h["entry_plan_id"] == p2["plan_id"]
+
+
 # ── validation ────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("bad", [{"qty": 0}, {"qty": -1}, {"price": 0},

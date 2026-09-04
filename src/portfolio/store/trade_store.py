@@ -102,8 +102,10 @@ def record(account_id: str, *, symbol_id: str, side: str, qty: float,
                     raise ValueError("cannot sell more than held")
                 new_qty = max(0.0, old_qty - qty)
                 new_avg = old_avg
-            # entry_* is written when the position opens and left alone after
-            # (COALESCE) — a changed quantity does not change why it was bought.
+            # entry_* is written when the position opens and left alone after —
+            # a changed quantity does not change why it was bought. A full sell
+            # keeps the row at qty 0, so "opens" must win over COALESCE on the
+            # next buy or the closed-out rationale would outlive the position.
             opening = side == "buy" and old_qty <= 0
             c.execute(
                 """
@@ -115,9 +117,11 @@ def record(account_id: str, *, symbol_id: str, side: str, qty: float,
                 ON CONFLICT(account_id, symbol_id) DO UPDATE SET
                   qty=excluded.qty, avg_cost=excluded.avg_cost,
                   currency=COALESCE(holdings.currency, excluded.currency),
-                  entry_plan_id=COALESCE(holdings.entry_plan_id, excluded.entry_plan_id),
-                  entry_rationale=COALESCE(holdings.entry_rationale, excluded.entry_rationale),
-                  opened_at=COALESCE(holdings.opened_at, excluded.opened_at),
+                  entry_plan_id=CASE WHEN excluded.opened_at IS NOT NULL
+                                     THEN excluded.entry_plan_id ELSE holdings.entry_plan_id END,
+                  entry_rationale=CASE WHEN excluded.opened_at IS NOT NULL
+                                     THEN excluded.entry_rationale ELSE holdings.entry_rationale END,
+                  opened_at=COALESCE(excluded.opened_at, holdings.opened_at),
                   updated_at=excluded.updated_at
                 """,
                 (account_id, symbol_id, None, new_qty, new_avg, currency,
