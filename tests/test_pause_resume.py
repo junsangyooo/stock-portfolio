@@ -273,3 +273,57 @@ def test_api_pause_resume_round_trip(client, monkeypatch, sent):
     assert client.post("/api/quant/resume" + q, json={"pin": PIN}).status_code == 400
     st = client.get("/api/quant/state" + q).json()
     assert st["paused_at"] is None and st["last_resume"] == r.json()["report"]
+
+
+# ── pause lands while a cycle is running ─────────────────────────────────
+
+def test_pause_between_plan_creation_and_arming_skips_the_broker(monkeypatch, sent, rearm):
+    """A cycle runs for hours. A pause that lands after the plan is written
+    but before its entry watch is registered must still mean "no new
+    entries": the plan is kept (unarmed, NULL watch id) and resume re-judges
+    it with the rest."""
+    monkeypatch.setattr(cycle_job, "_phase0_data", lambda: {"ok": True})
+    monkeypatch.setattr(execute, "reconcile", lambda aid, cid: {})
+    monkeypatch.setattr(execute, "execute_orders", lambda *a, **k: [])
+    monkeypatch.setattr(execute, "cancel_conditionals", lambda *a, **k: None)
+    monkeypatch.setattr(cycle_job.session, "run_main", lambda aid, cid, focus: ("s" * 12, ""))
+    monkeypatch.setattr(cycle_job.session, "run_explorers",
+                        lambda aid, cid, sid, on_holdings_done: ({}, {}))
+    monkeypatch.setattr(cycle_job.session, "run_allocation", lambda aid, cid, **k: {
+        "orders": [], "rejected": [], "plans": [{
+            "symbol_id": "KR:005930", "name": "삼성전자", "side": "buy", "qty": 3,
+            "price": 70000, "rationale": "근거", "source": "discover",
+            "conditions": {"entry": {"kind": "below", "price": 70000},
+                           "stop": {"kind": "below", "price": 60000},
+                           "take_profit": {"kind": "above", "price": 80000}}}]})
+    real_create = plans.create
+
+    def create_then_pause(*a, **k):
+        pid = real_create(*a, **k)
+        store.pause("robo")                     # the operator, mid-cycle
+        return pid
+    monkeypatch.setattr(cycle_job.plan_ledger, "create", create_then_pause)
+
+    assert cycle_job.run_account("robo", "morning") == 0
+    cyc = store.last_cycle("robo")
+    assert cyc["status"] == "ok"                # no broker call blew the cycle up
+    assert rearm == []
+    (p,) = plans.active("robo")
+    assert p["status"] == "armed" and p["conditional_order_id"] is None
+    assert p["cycle_id"] == cyc["cycle_id"]
+    skips = [e for e in store.journal_recent("robo", cycle_id=cyc["cycle_id"])
+             if e["kind"] == "paused_skip"]
+    assert [e["payload"]["plan_id"] for e in skips] == [p["plan_id"]]
+
+    # resume: rule 5 keeps it and registers the watch it never got
+    monkeypatch.setattr(broker, "quote", lambda sid: 72000.0)
+    rep = execute.resume_account("robo")
+    assert rep["kept"] == [p["plan_id"]] and rearm == ["KR:005930"]
+    assert plans.get(p["plan_id"])["conditional_order_id"] == "C-new"
+    # ...and rule 3 abandons it when the stop was hit meanwhile
+    store.pause("robo")
+    monkeypatch.setattr(broker, "quote", lambda sid: 59000.0)
+    plans.set_conditional(p["plan_id"], None)
+    rep = execute.resume_account("robo")
+    assert rep["thesis_broken"] == [p["plan_id"]]
+    assert plans.get(p["plan_id"])["status"] == "abandoned"
