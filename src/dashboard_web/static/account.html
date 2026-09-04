@@ -490,6 +490,8 @@ a { color: inherit; text-decoration: none; }
 }
 .plan-row .p-acts button.edit:hover { color: var(--yellow); border-color: var(--yellow); }
 .plan-row .p-acts button.del:hover  { color: var(--red);    border-color: var(--red); }
+.plan-row.closed { opacity: 0.45; }
+.plan-row.closed:hover { opacity: 1; }
 .plan-empty { padding: 24px 10px; text-align: center; color: var(--dim); font-size: 11px; }
 @media (max-width: 720px) {
   .plan-form { grid-template-columns: 1fr 1fr; }
@@ -1247,7 +1249,7 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: 1px;
   color: var(--dim);
 }
-.pm-form input, .pm-form textarea {
+.pm-form input, .pm-form textarea, .pm-form select {
   background: var(--bg);
   border: 1px solid var(--line);
   color: var(--fg);
@@ -1257,7 +1259,8 @@ a { color: inherit; text-decoration: none; }
   outline: none;
   width: 100%;
 }
-.pm-form input:focus, .pm-form textarea:focus { border-color: var(--yellow); }
+.pm-form input:focus, .pm-form textarea:focus, .pm-form select:focus { border-color: var(--yellow); }
+.pm-form label[hidden] { display: none; }
 .pm-form textarea { resize: vertical; min-height: 32px; max-height: 80px; }
 
 .pm-preview {
@@ -1876,6 +1879,10 @@ body.chat-open { padding-right: 388px; }
           <span>메모 (선택)</span>
           <textarea id="pm-trade-note" rows="1" placeholder="키움 / 한투 등 어디서 거래했는지"></textarea>
         </label>
+        <label class="full" id="pm-trade-plan-wrap" hidden>
+          <span>연결할 계획 (같은 종목에 계획이 여럿)</span>
+          <select id="pm-trade-plan"></select>
+        </label>
       </div>
 
       <!-- direct edit form -->
@@ -2290,8 +2297,10 @@ function showPinGate() {
         body: JSON.stringify({ pin }),
       });
       if (r.status === 403) {
+        // wrong PIN, or a hand-edited row with none — the server says which
+        const d = await r.json().catch(() => ({}));
         status.style.color = 'var(--red)';
-        status.textContent = 'PIN이 일치하지 않습니다';
+        status.textContent = d.detail || 'PIN이 일치하지 않습니다';
         input.value = ''; input.focus(); btn.disabled = false;
         return;
       }
@@ -2559,7 +2568,7 @@ function renderCard(stock) {
     ]),
     el('div', { className: 'cell', dataset: { kind: 'qty' } }, [
       el('span', { className: 'k' }, ['수량']),
-      el('span', { className: 'v ' + (stock.qty == null ? 'dim' : '') },
+      el('span', { className: 'v ' + (Number(stock.qty) > 0 ? '' : 'dim') },
         [fmtQty(stock.qty)]),
     ]),
     el('div', { className: 'cell', dataset: { kind: 'pnl' } }, [
@@ -2678,7 +2687,7 @@ function renderCard(stock) {
     }
     if (qtyEl) {
       qtyEl.textContent = fmtQty(stock.qty);
-      qtyEl.className = 'v' + (stock.qty == null ? ' dim' : '');
+      qtyEl.className = 'v' + (Number(stock.qty) > 0 ? '' : ' dim');
     }
 
     if (pnlEl) {
@@ -2800,7 +2809,7 @@ async function renderAll() {
     grid.appendChild(card);
     if (card._redraw) _redrawCallbacks.push(card._redraw);
   });
-  const heldCount = STOCKS.filter(s => s.qty != null).length;
+  const heldCount = STOCKS.filter(s => Number(s.qty) > 0).length;   // watch rows sit at qty 0
   document.getElementById('portfolio-count').textContent =
     heldCount + ' 보유 · ' + STOCKS.length + ' 추적';
 
@@ -2852,8 +2861,7 @@ async function runSearch(q) {
   clear(searchDropdown);
   searchDropdown.appendChild(el('div', { className: 'search-empty' }, ['검색중…']));
   try {
-    const r = await fetch(API.search(q));
-    const d = await r.json();
+    const d = await S.api(API.search(q));
     clear(searchDropdown);
     const results = d.results || [];
     if (!results.length) {
@@ -3309,7 +3317,7 @@ window.openTradeHistory = async function () {
     clear(resultsEl);
     resultsEl.appendChild(el('div', { className: 'search-empty' }, ['검색중…']));
     try {
-      const d = await (await fetch(API.search(q))).json();
+      const d = await S.api(API.search(q));
       clear(resultsEl);
       const results = d.results || [];
       if (!results.length) {
@@ -3374,7 +3382,8 @@ window.openTradeHistory = async function () {
     plans.forEach(plan => {
       const ccy = ccyOf(plan.symbol_id);
       const ix = plan.symbol_id.indexOf(':');
-      const row = el('div', { className: 'plan-row' }, [
+      const active = !plan.status || plan.status === 'armed' || plan.status === 'entered';
+      const row = el('div', { className: 'plan-row' + (active ? '' : ' closed') }, [
         el('div', {}, [
           el('div', { className: 'p-name' }, [plan.name]),
           el('div', { className: 'p-code' }, [
@@ -3393,6 +3402,14 @@ window.openTradeHistory = async function () {
       editBtn.addEventListener('click', () => startEdit(plan));
       const delBtn = el('button', { className: 'del' }, ['삭제']);
       delBtn.addEventListener('click', () => remove(plan));
+      if (active) {   // hand-close a plan the trade flow did not (or could not) transition
+        const doneBtn = el('button', { className: 'edit' }, ['완료']);
+        doneBtn.addEventListener('click', () => setPlanStatus(plan, 'done'));
+        const dropBtn = el('button', { className: 'del' }, ['포기']);
+        dropBtn.addEventListener('click', () => setPlanStatus(plan, 'abandoned'));
+        acts.appendChild(doneBtn);
+        acts.appendChild(dropBtn);
+      }
       acts.appendChild(editBtn);
       acts.appendChild(delBtn);
       if (plan.note) row.appendChild(el('div', { className: 'p-note' }, [plan.note]));
@@ -3402,7 +3419,7 @@ window.openTradeHistory = async function () {
 
   async function load() {
     try {
-      const d = await (await fetch(API.plans())).json();
+      const d = await S.api(API.plans());
       plans = d.plans || [];
       render();
     } catch (e) {
@@ -3423,12 +3440,10 @@ window.openTradeHistory = async function () {
     submitBtn.disabled = true;
     try {
       const url = editingId ? API.plan(editingId) : API.plans();
-      const r = await fetch(url, {
+      await S.api(url, {
         method: editingId ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' }, body: body,
       });
-      const d = await r.json().catch(() => null);
-      if (!r.ok) throw new Error((d && d.detail) || r.status);
       resetForm();
       await load();
       setStatus('저장했습니다.', 'ok');
@@ -3439,12 +3454,27 @@ window.openTradeHistory = async function () {
     }
   }
 
+  async function setPlanStatus(plan, status) {
+    if (status === 'abandoned' &&
+        !await S.confirmModal({ title: '계획 포기', body: plan.name + ' 계획을 포기 처리합니다.',
+                                danger: true, confirmLabel: '포기' })) return;
+    try {
+      await S.api(API.plan(plan.plan_id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (editingId === plan.plan_id) resetForm();
+      await load();
+    } catch (e) {
+      setStatus('상태 변경 실패: ' + e.message, 'err');
+    }
+  }
+
   async function remove(plan) {
     if (!await S.confirmModal({ title: '계획 삭제', body: plan.name + ' 계획을 삭제합니다.',
                                 danger: true, confirmLabel: '삭제' })) return;
     try {
-      const r = await fetch(API.plan(plan.plan_id), { method: 'DELETE' });
-      if (!r.ok) throw new Error(r.status);
+      await S.api(API.plan(plan.plan_id), { method: 'DELETE' });
       if (editingId === plan.plan_id) resetForm();
       await load();
     } catch (e) {
@@ -3765,7 +3795,7 @@ window.openTradeHistory = async function () {
     if (!currentStock || currentStock.symbolId !== sym) return;
     if (sec != null) return watchAnalysisJob(pane, sym, mkt, code, { resumeSec: sec });
     try {
-      const vd = await (await fetch(API.analysisResult(mkt, code))).json();
+      const vd = await S.api(API.analysisResult(mkt, code));
       if (!currentStock || currentStock.symbolId !== sym) return;
       _analysisLoadedSym = sym;
       clear(pane);
@@ -4064,7 +4094,7 @@ window.openTradeHistory = async function () {
     clear(pane);
     pane.appendChild(el('div', { className: 'ca-empty' }, ['지표 불러오는 중…']));
     try {
-      const facts = await (await fetch(API.chartAnalysis(sym))).json();
+      const facts = await S.api(API.chartAnalysis(sym));
       if (!currentStock || currentStock.symbolId !== sym) return;
       _chartLoadedSym = sym;
       clear(pane);
@@ -4087,7 +4117,7 @@ window.openTradeHistory = async function () {
     clear(pane);
     pane.appendChild(el('div', { className: 'ca-empty' }, ['연결된 뉴스 불러오는 중…']));
     try {
-      const sig = await (await fetch(API.newsSignals(mkt, code))).json();
+      const sig = await S.api(API.newsSignals(mkt, code));
       if (!currentStock || currentStock.symbolId !== sym) return;
       _newsLoadedSym = sym;
       clear(pane);
@@ -4162,7 +4192,7 @@ window.openTradeHistory = async function () {
     clear(pane);
     pane.appendChild(el('div', { className: 'ca-empty' }, ['재무 데이터 불러오는 중…']));
     try {
-      const facts = await (await fetch(API.fundamentalFacts(mkt, code))).json();
+      const facts = await S.api(API.fundamentalFacts(mkt, code));
       if (!currentStock || currentStock.symbolId !== sym) return;
       _finLoadedSym = sym;
       clear(pane);
@@ -4640,7 +4670,7 @@ window.openTradeHistory = async function () {
       stock.avgCost == null ? 'dim' : ''));
     metaRow.appendChild(pair('수량',
       fmtQty(stock.qty),
-      stock.qty == null ? 'dim' : ''));
+      Number(stock.qty) > 0 ? '' : 'dim'));
 
     let pnlStr = '—', pnlCls = 'dim';
     if (stock.price != null && stock.avgCost != null && stock.qty != null) {
@@ -4652,9 +4682,9 @@ window.openTradeHistory = async function () {
     }
     metaRow.appendChild(pair('평가손익', pnlStr, pnlCls));
     metaRow.appendChild(pair('평가금액',
-      (stock.qty != null && stock.price != null)
+      (Number(stock.qty) > 0 && stock.price != null)
         ? fmtPrice(stock.price * stock.qty, stock.currency) : '—',
-      (stock.qty == null || stock.price == null) ? 'dim' : ''));
+      (Number(stock.qty) > 0 && stock.price != null) ? '' : 'dim'));
     metaRow.appendChild(pair('시장', stock.market));
     metaRow.appendChild(pair('통화', stock.currency));
   }
@@ -4725,20 +4755,13 @@ window.deleteHolding = async function (stock) {
       body: label + ' 을(를) 포트폴리오에서 제거할까요?\n\n(히스토리 데이터는 디스크에 보존됩니다.)',
       danger: true, confirmLabel: '제거' })) return;
   try {
-    const r = await fetch(API.removeHolding(stock.symbolId),
-                          { method: 'DELETE' });
-    const d = await r.json();
-    if (!r.ok || !d.ok) {
-      alert('제거 실패: ' + (d.detail || r.statusText));
-      return;
-    }
+    const d = await S.api(API.removeHolding(stock.symbolId), { method: 'DELETE' });
+    if (!d.ok) { S.toast('제거 실패: 이미 없는 종목입니다', 'err'); return; }
     // close expand modal if it was showing this stock
     const ex = document.getElementById('expand-modal');
     if (ex && !ex.hidden) ex.hidden = true;
     await renderAll();
-  } catch (e) {
-    alert('제거 실패: ' + e.message);
-  }
+  } catch (e) { /* S.api toasted */ }
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -4789,8 +4812,7 @@ window.deleteHolding = async function (stock) {
     clear(resultsEl);
     resultsEl.appendChild(el('div', { className: 'search-empty' }, ['검색중…']));
     try {
-      const r = await fetch(API.search(q));
-      const d = await r.json();
+      const d = await S.api(API.search(q));
       clear(resultsEl);
       const results = d.results || [];
       if (!results.length) {
@@ -4824,8 +4846,7 @@ window.deleteHolding = async function (stock) {
     searchEl.value = '';
     // fetch current quote so user can sanity-check
     try {
-      const qr = await fetch(API.quotes(r.symbol_id));
-      const qd = await qr.json();
+      const qd = await S.api(API.quotes(r.symbol_id));
       const q = qd.quotes && qd.quotes[r.symbol_id];
       if (q && q.price != null) {
         selected.price = q.price;
@@ -4883,16 +4904,12 @@ window.deleteHolding = async function (stock) {
     submitBtn.disabled = true; watchBtn.disabled = true;
     setStatus('추가중 (히스토리 backfill 진행…)', '');
     try {
-      const r = await fetch(API.addHolding(), {
+      const d = await S.api(API.addHolding(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const d = await r.json();
-      if (!r.ok || !d.ok) {
-        setStatus('추가 실패: ' + (d.detail || r.statusText), 'err');
-        return;
-      }
+      if (!d.ok) { setStatus('추가 실패: ' + (d.detail || '알 수 없는 오류'), 'err'); return; }
       setStatus('추가 완료 · ' + (d.backfill_bars ?? 0) + ' 일봉 backfill', 'ok');
       await renderAll();
       setTimeout(() => { modal.hidden = true; reset(); }, 600);
@@ -4946,6 +4963,8 @@ window.deleteHolding = async function (stock) {
   const tradePrice = document.getElementById('pm-trade-price');
   const tradeQty = document.getElementById('pm-trade-qty');
   const tradeNote = document.getElementById('pm-trade-note');
+  const tradePlanWrap = document.getElementById('pm-trade-plan-wrap');
+  const tradePlan = document.getElementById('pm-trade-plan');
   const editName = document.getElementById('pm-edit-name');
   const editAvg = document.getElementById('pm-edit-avg');
   const editQty = document.getElementById('pm-edit-qty');
@@ -5038,12 +5057,43 @@ window.deleteHolding = async function (stock) {
     });
   }
 
+  // Which plans a trade of `side` could transition (mirrors the server's match):
+  // buy → armed buy plans; sell → armed sell plans or anything already entered.
+  let symbolPlans = [];   // this symbol's plans, fetched once per modal open
+  function planMatches(p, side) {
+    return side === 'buy' ? (p.side === 'buy' && p.status === 'armed')
+      : ((p.side === 'sell' && p.status === 'armed') || p.status === 'entered');
+  }
+  function renderPlanPicker() {
+    const cands = (mode === 'buy' || mode === 'sell')
+      ? symbolPlans.filter(p => planMatches(p, mode)) : [];
+    tradePlanWrap.hidden = cands.length < 2;   // one match: the server picks it itself
+    if (tradePlanWrap.hidden) return;
+    const ccy = currentStock.currency || 'KRW';
+    tradePlan.replaceChildren(el('option', { value: '' }, ['연결 안 함']));
+    cands.forEach(p => {
+      const note = p.note ? ' · ' + (p.note.length > 24 ? p.note.slice(0, 24) + '…' : p.note) : '';
+      tradePlan.appendChild(el('option', { value: String(p.plan_id) }, [
+        '#' + p.plan_id + ' · ' + (p.side === 'buy' ? '매수' : '매도') + ' · ' +
+        fmtPrice(p.price, ccy) + ' · ' + fmtQty(p.qty) + '주' + note]));
+    });
+  }
+  async function loadSymbolPlans(sym) {
+    symbolPlans = [];
+    tradePlanWrap.hidden = true;
+    const d = await S.api(API.plans());
+    if (!currentStock || currentStock.symbolId !== sym) return;
+    symbolPlans = (d.plans || []).filter(p => p.symbol_id === sym);
+    renderPlanPicker();
+  }
+
   function setMode(newMode) {
     mode = newMode;
     tabsEl.querySelectorAll('button').forEach(b =>
       b.classList.toggle('active', b.dataset.mode === mode));
     formTrade.hidden = (mode === 'edit');
     formEdit.hidden  = (mode !== 'edit');
+    renderPlanPicker();
 
     if (mode === 'buy') {
       modeIco.textContent = '＋';
@@ -5135,8 +5185,8 @@ window.deleteHolding = async function (stock) {
       let after = null;   // full sellout only: 'keep' (관심 유지) | 'delete' (완전 제거)
       if (mode === 'sell') {
         if (oldQty <= 0) { setStatus('보유 수량이 없습니다.', 'err'); return; }
-        if (dq > oldQty) { setStatus('보유 수량보다 많이 매도할 수 없습니다.', 'err'); return; }
-        if (dq === oldQty) {
+        if (dq > oldQty + 1e-9) { setStatus('보유 수량보다 많이 매도할 수 없습니다.', 'err'); return; }
+        if (Math.abs(dq - oldQty) < 1e-9) {          // float dust: 0.1+0.2 shares is a full sell
           after = await confirmFullSellout(currentStock.name);
           if (after === 'cancel') { setStatus('취소됨', ''); return; }
         }
@@ -5144,18 +5194,15 @@ window.deleteHolding = async function (stock) {
       submitBtn.disabled = true;
       setStatus('기록중…', '');
       try {
-        // the one door for money: trade row + holdings + cash + plan, one transaction
-        const d = await S.api(API.trades(), _json({
+        // the one door for money: trade row + holdings + cash + plan, one transaction.
+        // A full sell leaves a qty-0 watch row (memo kept) unless remove_when_flat.
+        const body = {
           symbol_id: currentStock.symbolId, side: mode, qty: dq, price: p,
-          note: tradeNote.value.trim(),
-        }));
-        if (after === 'delete') {
-          await S.api(API.removeHolding(currentStock.symbolId), { method: 'DELETE' });
-        } else if (after === 'keep') {   // direct edit: clear the avg, stay as a watch row
-          await S.api(API.addHolding(), _json(
-            { symbol_id: currentStock.symbolId, avg_cost: null, qty: null }));
-        }
-        const cands = d.plan_candidates || [];
+          note: tradeNote.value.trim(), remove_when_flat: after === 'delete',
+        };
+        if (!tradePlanWrap.hidden) body.plan_id = Number(tradePlan.value) || null;
+        const d = await S.api(API.trades(), _json(body));
+        const cands = d.plan_candidates || [];   // unreachable once the picker is shown; kept as a fallback
         setStatus(cands.length
           ? '기록 완료 · 겹치는 계획 ' + cands.length + '개는 전이하지 않았습니다 — 계획 노트에서 정리하세요'
           : (d.plan ? '기록 완료 · 계획 #' + d.plan.plan_id + ' → ' + d.plan.status : '기록 완료'), 'ok');
@@ -5231,6 +5278,7 @@ window.deleteHolding = async function (stock) {
 
     setMode(initialMode || 'buy');
     modal.hidden = false;
+    loadSymbolPlans(stock.symbolId).catch(() => {});   // S.api already toasted
     setTimeout(() => {
       if (mode === 'edit') editAvg.focus();
       else tradePrice.focus();
@@ -5281,8 +5329,7 @@ window.deleteHolding = async function (stock) {
   async function load() {
     setStatus('');
     try {
-      const r = await fetch(API.balances());
-      const d = await r.json();
+      const d = await S.api(API.balances());
       renderForm(d.balances || {});
     } catch (e) {
       renderForm({});
@@ -5299,16 +5346,12 @@ window.deleteHolding = async function (stock) {
     submitBtn.disabled = true;
     setStatus('저장중…', '');
     try {
-      const r = await fetch(API.balances(), {
+      const d = await S.api(API.balances(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ balances }),
       });
-      const d = await r.json();
-      if (!r.ok || !d.ok) {
-        setStatus('실패: ' + (d.detail || r.statusText), 'err');
-        return;
-      }
+      if (!d.ok) { setStatus('실패: ' + (d.detail || '알 수 없는 오류'), 'err'); return; }
       setStatus('저장 완료', 'ok');
       await renderAll();
       setTimeout(() => { modal.hidden = true; }, 500);
@@ -5348,8 +5391,7 @@ window.deleteHolding = async function (stock) {
 
   async function renderTabs() {
     try {
-      const r = await fetch(API.listAccounts());
-      const d = await r.json();
+      const d = await S.api(API.listAccounts());
       const accs = (d && d.accounts) || [];
       clear(tabsEl);
       if (accs.length === 0) {
@@ -5453,7 +5495,7 @@ window.deleteHolding = async function (stock) {
     });
     const inpPin = el('input', {
       id: 'na-pin', type: 'password', inputmode: 'numeric', maxlength: '6',
-      autocomplete: 'new-password', placeholder: '숫자 6자리',
+      autocomplete: 'new-password', placeholder: '비밀번호 숫자 6자리 (필수)', required: true,
       style: 'width:100%; padding:6px 8px; letter-spacing:6px; text-align:center; background:var(--bg); color:var(--fg); border:1px solid var(--line); font-family:inherit;',
     });
     inpPin.addEventListener('input', () => {
@@ -5491,10 +5533,15 @@ window.deleteHolding = async function (stock) {
           broker: inpBroker.value.trim() || null,
           base_currency: selCcy.value,
           note: inpNote.value.trim() || null,
-          pin: pinVal || null,
+          pin: pinVal,
         };
         if (!body.account_id || !body.name) {
           status.textContent = '계좌 ID와 표시명은 필수입니다.';
+          status.style.color = 'var(--red)';
+          return;
+        }
+        if (!/^\d{6}$/.test(pinVal)) {              // a book is never open — the PIN is set here
+          status.textContent = '비밀번호는 숫자 6자리가 필수입니다.';
           status.style.color = 'var(--red)';
           return;
         }
@@ -5512,25 +5559,18 @@ window.deleteHolding = async function (stock) {
         status.textContent = '저장중…';
         status.style.color = 'var(--dim)';
         try {
-          const r = await fetch(API.createAccount(), {
+          await S.api(API.createAccount(), {
             method: 'POST',
             headers: {'Content-Type':'application/json'},
             body: JSON.stringify(body),
           });
-          const d = await r.json();
-          if (!r.ok) {
-            status.textContent = '실패: ' + (d.detail || r.statusText);
-            status.style.color = 'var(--red)';
-            btnSave.disabled = false;
-            return;
-          }
           status.textContent = '완료. 새 계좌로 이동…';
           status.style.color = 'var(--green)';
           setTimeout(() => {
             location.href = '/a/' + encodeURIComponent(body.account_id);
           }, 600);
         } catch (e) {
-          status.textContent = '네트워크 오류: ' + e.message;
+          status.textContent = '실패: ' + e.message;
           status.style.color = 'var(--red)';
           btnSave.disabled = false;
         }
@@ -5817,10 +5857,7 @@ window.deleteHolding = async function (stock) {
       btn.disabled = true;
       btn.textContent = '담는 중…';
       try {
-        const r = await fetch(API.plans(), Object.assign(
-          { body: JSON.stringify(plan) }, JSON_POST));
-        const d = await r.json().catch(() => null);
-        if (!r.ok) throw new Error((d && d.detail) || r.status);
+        await S.api(API.plans(), Object.assign({ body: JSON.stringify(plan) }, JSON_POST));
         btn.textContent = '✓ 노트에 담김';
         btn.classList.add('done');
       } catch (e) {

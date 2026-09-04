@@ -24,7 +24,6 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from src.api.quant import COOKIE_NAME as _QUANT_COOKIE
 from src.core import security
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -74,11 +73,12 @@ async def api_session_gate(request: Request, call_next):
             and not path.startswith(_SELF_GATED_PREFIX)
             and (request.method, path) not in _OPEN_API):
         is_pin_post = request.method == "POST" and path.endswith("/auth")
-        # A quant login opens the shared data too. Its token names its own
-        # account and the HMAC covers it, so no quant.db lookup is needed —
-        # the ledger routes stay behind require_account / require_quant.
+        # A quant login opens the shared data too: its token names its own
+        # account and the HMAC covers it, so no quant.db lookup is needed.
+        # The ledgers stay behind require_account / require_quant, which are
+        # closed while a book has no PIN — a token is never the only lock.
         has_session = (security.has_any_session(request.cookies)
-                       or security.token_is_valid(request.cookies.get(_QUANT_COOKIE)))
+                       or security.token_is_valid(request.cookies.get(security.QUANT_COOKIE)))
         if not is_pin_post and not has_session:
             return JSONResponse({"detail": "PIN required"}, status_code=403)
     return await call_next(request)
@@ -141,14 +141,15 @@ def _theme_style_tag() -> str:
 
 
 def _fragment_tag(name: str, open_tag: str, close_tag: str) -> str:
-    """One shared fragment (shared.css / shared.js) as an inline tag. Same
-    policy as theme.json: no fallback copy — a missing fragment is logged and
-    the page is served without it."""
+    """One shared fragment (shared.css / shared.js) as an inline tag. No
+    fallback copy, and no page without it either: every page's first line is
+    `const { el, … } = S`, so a missing fragment is a blank screen — a 500 is
+    what the deploy health check can see."""
     try:
         return open_tag + "\n" + (STATIC / name).read_text() + "\n" + close_tag
     except OSError as exc:
-        logging.error("%s unusable, serving without it: %s", name, exc)
-        return ""
+        logging.error("%s unusable: %s", name, exc)
+        raise HTTPException(status_code=500, detail=f"{name} missing") from exc
 
 
 def _shared_css_tag() -> str:

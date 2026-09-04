@@ -16,6 +16,10 @@ from typing import List, Optional
 from .db import connect
 
 SIDES = ("buy", "sell")
+# What a person may set by hand (PATCH). entered/done normally arrive through
+# a trade row; they are allowed here for the case the trade could not pick a
+# plan. stopped/expired are quant vocabulary — a human just abandons.
+HUMAN_STATUSES = ("armed", "entered", "done", "abandoned")
 
 
 def _row(r) -> dict:
@@ -64,7 +68,7 @@ def create(account_id: str, *, symbol_id: str, name: str, side: str,
 def update(account_id: str, plan_id: int, **fields) -> Optional[dict]:
     """Patch the named columns. Returns None when the plan is not this
     account's (or is gone), so the route can answer 404 without a second read."""
-    allowed = ("symbol_id", "name", "side", "price", "qty", "note")
+    allowed = ("symbol_id", "name", "side", "price", "qty", "note", "status")
     sets, args = [], []
     for k in allowed:
         if k in fields and fields[k] is not None:

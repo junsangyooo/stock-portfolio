@@ -112,7 +112,7 @@ function ccyMoney(v, ccy) {
                        : Number(v).toLocaleString('ko-KR',
            { maximumFractionDigits: 0 }) + '원';
 }
-const pct = v => (v == null || isNaN(v)) ? '—'
+const pct = v => (v == null || !isFinite(v)) ? '—'   // prev_close 0 → Infinity, not '+Infinity%'
   : (v >= 0 ? '+' : '') + Number(v).toFixed(2) + '%';
 const signCls = v => v == null ? '' : (v >= 0 ? 'pos' : 'neg');
 
@@ -134,19 +134,24 @@ function toast(msg, kind) {
 // fetch wrapper for absolute /api paths. Non-2xx → toast + throw, so a
 // caller that forgets its catch still shows the failure; a network failure
 // (fetch itself throws) is toasted too, or it would render as "no data".
-// 403 goes to the page's own PIN gate when it has set S.onForbidden.
+// A 403 opens the page's PIN gate (S.onForbidden) only when the server says
+// the session is missing (detail === 'PIN required', or no detail at all).
+// Any other 403 is a real answer — wrong step-up PIN, "PIN을 먼저 설정하세요" —
+// and is thrown with its detail so the caller shows it inline.
 async function api(path, opts) {
   let r;
   try { r = await fetch(path, opts); }
-  catch (e) { toast('네트워크 오류 — ' + path.split('?')[0], 'err'); throw e; }
+  catch (e) { toast('네트워크 오류', 'err'); throw e; }   // no path: 25 cards, one toast (dedupe by text)
   const body = await r.json().catch(() => ({}));
   if (!r.ok) {
-    if (r.status === 403 && typeof window.S.onForbidden === 'function') {
+    const detail = body.detail;
+    if (r.status === 403 && (!detail || detail === 'PIN required')
+        && typeof window.S.onForbidden === 'function') {
       window.S.onForbidden();
       throw new Error('PIN required');
     }
-    const msg = r.status === 403 ? '로그인이 필요합니다'
-      : (body.detail || ('HTTP ' + r.status));
+    const msg = (r.status === 403 && !detail) ? '로그인이 필요합니다'
+      : (detail || ('HTTP ' + r.status));
     toast(msg, 'err');
     throw new Error(msg);
   }

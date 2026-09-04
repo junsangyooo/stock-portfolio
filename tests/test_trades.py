@@ -59,7 +59,7 @@ def test_buy_creates_holding_and_moves_cash(client):
     d = r.json()
     h = _holding()
     assert h["qty"] == 10 and h["avg_cost"] == 70000
-    assert d["holding"] == {"qty": 10, "avg_cost": 70000}
+    assert d["holding"] == {"qty": 10, "avg_cost": 70000, "removed": False}
     assert d["cash_currency"] == "KRW"
     assert d["cash_balance"] == 1_000_000 - 700_000 - 500
     assert balance_store.get_all("alice")["KRW"] == 299_500
@@ -171,11 +171,32 @@ def test_full_sell_moves_entered_plan_to_done_partial_keeps(client):
     p = _plan()
     _trade(client, qty=10)                                   # → entered
     d = _trade(client, side="sell", qty=4, price=80000).json()
-    assert d["plan"] is None
+    # the partial exit is linked to the plan (its history), status unchanged
+    assert d["plan"]["status"] == "entered" and d["trade"]["plan_id"] == p["plan_id"]
     assert plan_store.get("alice", p["plan_id"])["status"] == "entered"
     d = _trade(client, side="sell", qty=6, price=80000).json()
     assert d["plan"]["status"] == "done"
     assert plan_store.get("alice", p["plan_id"])["status"] == "done"
+    assert [t["plan_id"] for t in trade_store.list_by_account("alice")] == [p["plan_id"]] * 3
+
+
+def test_explicit_plan_must_take_the_trade(client):
+    """An explicit plan_id is checked with the same predicate as the auto
+    match: an armed BUY plan is not closed by a sell."""
+    p = _plan()                                                # armed buy
+    holding_store.upsert("alice", "KR:005930", avg_cost=70000, qty=10)
+    r = _trade(client, side="sell", qty=10, price=80000, plan_id=p["plan_id"])
+    assert r.status_code == 400 and "does not take" in r.text
+    assert plan_store.get("alice", p["plan_id"])["status"] == "armed"
+    assert trade_store.list_by_account("alice") == []          # nothing written
+
+
+def test_float_dust_sell_is_flat(client):
+    holding_store.upsert("alice", "US:AAPL", avg_cost=100, qty=0.1 + 0.2)   # 0.30000000000000004
+    r = _trade(client, symbol_id="US:AAPL", side="sell", qty=0.3, price=200,
+               remove_when_flat=True)
+    assert r.status_code == 200, r.text
+    assert r.json()["holding"] == {"qty": 0, "avg_cost": None, "removed": True}
 
 
 def test_sell_plan_done_on_full_sell(client):
@@ -262,3 +283,93 @@ def test_every_account_route_requires_account():
         if require_account not in deps:
             missing.append(f"{sorted(route.methods)} {route.path}")
     assert not missing, missing
+
+
+# ── flat position · sort order · unknown cost ─────────────────────────
+
+def test_full_sell_keeps_a_watch_row_with_note_and_no_avg(client):
+    holding_store.upsert("alice", "KR:005930", avg_cost=70000, qty=5,
+                         note="배당 목적")
+    r = _trade(client, side="sell", qty=5, price=80000)
+    assert r.status_code == 200, r.text
+    assert r.json()["holding"] == {"qty": 0, "avg_cost": None, "removed": False}
+    h = _holding()
+    assert h["qty"] == 0 and h["avg_cost"] is None and h["note"] == "배당 목적"
+
+
+def test_remove_when_flat_is_ignored_unless_flat(client):
+    holding_store.upsert("alice", "KR:005930", avg_cost=70000, qty=5)
+    r = _trade(client, side="sell", qty=2, price=80000, remove_when_flat=True)
+    assert r.status_code == 200, r.text
+    assert r.json()["holding"] == {"qty": 3, "avg_cost": 70000, "removed": False}
+    assert _holding()["qty"] == 3
+
+
+def test_remove_when_flat_drops_the_row(client):
+    holding_store.upsert("alice", "KR:005930", avg_cost=70000, qty=5)
+    r = _trade(client, side="sell", qty=5, price=80000, remove_when_flat=True)
+    assert r.status_code == 200, r.text
+    assert r.json()["holding"]["removed"] is True
+    assert holding_store.list_by_account("alice") == []
+    # the trade row itself is kept — the ledger remembers what the book forgot
+    assert len(trade_store.list_by_account("alice")) == 1
+
+
+def test_trade_opened_holding_sorts_after_existing_cards(client):
+    holding_store.upsert("alice", "KR:000660", avg_cost=1, qty=1)
+    holding_store.reorder("alice", ["KR:000660"])          # sort_order 1..N
+    assert _trade(client).status_code == 200
+    order = [h["symbol_id"] for h in holding_store.list_by_account("alice")]
+    assert order == ["KR:000660", "KR:005930"]
+
+
+def test_buy_onto_unknown_cost_starts_at_the_buy_price(client):
+    holding_store.upsert("alice", "KR:005930", avg_cost=None, qty=10)   # cost unknown
+    r = _trade(client, qty=10, price=70000)
+    assert r.status_code == 200, r.text
+    assert _holding()["avg_cost"] == 70000        # not 35000 (old shares at 0)
+
+
+def test_side_case_is_normalised_everywhere(client, monkeypatch):
+    filled = []
+    monkeypatch.setattr(portfolio_api.gap_filler, "fill_one",
+                        lambda sid: filled.append(sid))
+    r = _trade(client, side="BUY")
+    assert r.status_code == 200, r.text
+    assert trade_store.list_by_account("alice")[0]["side"] == "buy"
+    assert filled == ["KR:005930"]                # fresh-position tail ran
+
+
+def test_record_holds_the_write_lock_from_the_first_read(tmp_path, monkeypatch):
+    """BEGIN IMMEDIATE: a second writer cannot slip between the holdings
+    read and the write. Simulated by an outside connection that already
+    holds the reserved lock — record() must wait/fail, never read past it."""
+    import sqlite3
+    monkeypatch.setattr(pdb, "DB_PATH", str(tmp_path / "lock.db"))
+    monkeypatch.setattr(pdb, "_initialized", False)
+    account_store.create("alice", "alice", "GENERAL")
+    holding_store.upsert("alice", "KR:005930", avg_cost=70000, qty=10)
+    other = sqlite3.connect(pdb.DB_PATH)
+    other.execute("BEGIN IMMEDIATE")
+    real_connect = sqlite3.connect
+    monkeypatch.setattr(sqlite3, "connect",
+                        lambda path, **kw: real_connect(path, **{**kw, "timeout": 0.2}))
+    with pytest.raises(sqlite3.OperationalError):
+        trade_store.record("alice", symbol_id="KR:005930", side="sell",
+                           qty=10, price=80000, currency="KRW")
+    other.rollback()
+    assert _holding()["qty"] == 10 and "KRW" not in balance_store.get_all("alice")
+
+
+# ── plan status by hand ────────────────────────────────────────────────
+
+def test_plan_status_patch_for_the_persons_own_exits(client):
+    pid = plan_store.create("alice", symbol_id="KR:005930", name="n", side="buy",
+                            price=70000, qty=10, note="")["plan_id"]
+    r = client.patch(f"/api/accounts/alice/plans/{pid}", json={"status": "abandoned"},
+                     cookies=_cookie())
+    assert r.status_code == 200, r.text
+    assert r.json()["plan"]["status"] == "abandoned"
+    r = client.patch(f"/api/accounts/alice/plans/{pid}", json={"status": "stopped"},
+                     cookies=_cookie())
+    assert r.status_code == 400                    # quant vocabulary, not a person's

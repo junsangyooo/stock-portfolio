@@ -8,6 +8,7 @@ set -euo pipefail
 HOST="oracle-instance"
 SERVICE="${1:-}"
 HEALTH_URL="http://127.0.0.1:8888/api/accounts"
+PAGE_URL="http://127.0.0.1:8888/"          # served page = theme + shared fragments injected
 
 fail() { echo "[deploy] FAIL: $*" >&2; exit 1; }
 
@@ -47,9 +48,9 @@ if [ -n "$SERVICE" ]; then
   case "$SERVICE" in
     dashboard*)
       echo "[deploy] health check..."
-      ssh "$HOST" "for i in \$(seq 1 10); do curl -sf -o /dev/null $HEALTH_URL && exit 0; sleep 2; done; exit 1" \
+      ssh "$HOST" "for i in \$(seq 1 10); do curl -sf -o /dev/null $HEALTH_URL && curl -sf -o /dev/null $PAGE_URL && exit 0; sleep 2; done; exit 1" \
         || fail "health check failed after restart — rollback: $ROLLBACK"
-      echo "[deploy] health OK ($HEALTH_URL -> 200)"
+      echo "[deploy] health OK ($HEALTH_URL, $PAGE_URL -> 200)"
       ;;
   esac
 fi

@@ -168,6 +168,16 @@ def test_shared_fragments_injected_in_order(client):
     assert "app.mount(" not in src, "no /static mount — fragments are injected"
 
 
+def test_missing_fragment_is_a_500_not_a_blank_page(client, monkeypatch, tmp_path):
+    """Every page's first line is `const { el, … } = S`, so a page served
+    without shared.js renders nothing. That must fail where the deploy health
+    check (which now also fetches /) can see it, not as a 200."""
+    monkeypatch.setattr(server, "STATIC", tmp_path)          # no fragments here
+    (tmp_path / "landing.html").write_text("<html><head><meta charset=utf-8></head></html>")
+    r = client.get("/", headers={"host": PORTFOLIO_HOST})
+    assert r.status_code == 500 and "shared.css" in r.text
+
+
 def test_shared_names_not_called_bare():
     """A page reaches a shared helper either through `S.name` or by
     destructuring it from S. A bare `name(` with neither is a ReferenceError
@@ -235,10 +245,18 @@ def test_account_page_reads_current_engine_schema():
 
 
 def test_account_page_trade_flow_uses_trades_route():
+    """One request per trade: a full sell sends remove_when_flat instead of a
+    follow-up DELETE / POST /holdings (the second call used to wipe the memo)."""
     src = ACCOUNT.read_text()
     assert "/trades'" in src
     for gone in ("trade_side", "trade_price", "trade_qty", "sell_price=", "sell_qty="):
         assert gone not in src, gone
+    body = src[src.index("async function submit() {\n    if (!currentStock) return;"):]
+    body = body[:body.index("// edit — a direct correction")]
+    assert "remove_when_flat: after === 'delete'" in body
+    assert "plan_id" in body
+    for gone in ("API.removeHolding(", "API.addHolding("):
+        assert gone not in body, gone
 
 
 # ── U4: quant cockpit ────────────────────────────────────────────────────
@@ -360,23 +378,30 @@ def test_pages_route_403_to_their_own_pin_gate():
 
 
 def test_no_native_confirm():
+    """No native dialogs: confirm() → S.confirmModal, alert() → S.toast.
+    (A blocking dialog also freezes browser automation.)"""
     bad = []
     for f in PAGES:
         for i, line in enumerate((STATIC / f).read_text().splitlines(), 1):
-            if re.search(r"\bconfirm\(", line):
+            if re.search(r"(?<![\w.])(confirm|alert)\(", line):
                 bad.append(f"{f}:{i}: {line.strip()}")
-    assert not bad, "native confirm() — use S.confirmModal:\n" + "\n".join(bad)
+    assert not bad, "native dialog — use S.confirmModal / S.toast:\n" + "\n".join(bad)
     js = SHARED_JS.read_text()
     for needle in ("role: 'dialog'", "'Escape'", "cancel.focus()"):
         assert needle in js, needle
 
 
 def test_quant_page_blocks_on_pin_setup():
+    """A PIN-less book is closed server-side (403 'PIN을 먼저 설정하세요');
+    the page turns that answer into the operator instruction, never a form —
+    a form on a public host would let the first caller own the order book."""
     src = QUANT.read_text()
-    assert "qapi('/pin'" in src
-    assert re.search(r"\.no_pin\b", src), "the /auth answer's no_pin is read"
-    assert re.search(r"\.has_pin\b", src), "the /state answer's has_pin is read"
-    assert "showPinSetup" in src
+    assert "showPinSetup" in src and "src.quant.pin" in src
+    assert re.search(r"d\.detail === NO_PIN", src), "the gate routes the no-PIN answer"
+    assert re.search(r"e\.message === NO_PIN", src), "qapi routes the no-PIN answer"
+    setup = src[src.index("function showPinSetup"):src.index("// ── generic modal")]
+    assert "qapi('/pin'" not in setup and "input" not in setup, "no first-PIN form"
+    assert "no_pin" not in src, "/auth no longer answers no_pin — it answers 403"
 
 
 def test_el_attribute_objects_use_the_canonical_keys():
@@ -397,15 +422,37 @@ def test_every_page_has_a_favicon():
 
 
 def test_ohlcv_and_analysis_fetches_fail_loudly():
-    """A swallowed fetch failure renders as 'no data'. Every read that used to
-    return [] / null silently now goes through S.api (toast + throw)."""
+    """A swallowed fetch failure renders as 'no data'. Every account-page read
+    goes through S.api (toast + throw, 403 → PIN gate); the only bare fetches
+    left are the PIN/auth POSTs, the summary loader (handles 403 itself) and
+    the analysis job poller."""
     src = ACCOUNT.read_text()
     for call in ("API.ohlcv(", "API.quotes(need", "API.analysisSummary(",
                  "API.analysisStatus(", "API.snapshots(", "API.reorderHoldings(",
-                 "API.marketRefresh("):
+                 "API.marketRefresh(", "API.plans(", "API.analysisResult(",
+                 "API.chartAnalysis(", "API.newsSignals(", "API.fundamentalFacts(",
+                 "API.balances(", "API.listAccounts(", "API.search("):
         assert re.search(r"S\.api\(\s*" + re.escape(call), src), call
+        assert not re.search(r"\bfetch\(\s*" + re.escape(call), src), "bare " + call
     js = SHARED_JS.read_text()
     assert "네트워크 오류" in js, "S.api toasts a network failure, not only a non-2xx"
+
+
+def test_403_gate_only_on_pin_required():
+    """Only a session-missing 403 ('PIN required') opens the PIN gate; a wrong
+    step-up PIN or 'PIN을 먼저 설정하세요' is a real answer and must reach the
+    caller inline. OHLCV failures are toasted, never cached as []."""
+    js = SHARED_JS.read_text()
+    m = re.search(r"async function api\(.*?\n\}", js, re.DOTALL)
+    assert m, "shared.js defines api()"
+    body = m.group(0)
+    assert body.index("'PIN required'") < body.index("onForbidden()"), \
+        "api() checks detail === 'PIN required' before calling onForbidden"
+    src = QUANT.read_text()
+    bars = re.search(r"async function bars\(.*?\n\}", src, re.DOTALL).group(0)
+    assert "OHLCV.set(key, [])" not in bars
+    assert "fetch(" not in bars and "S.api(" in bars
+    assert "OHLCV.clear()" in src, "↻ refetches bars"
 
 
 def test_a11y_floor():

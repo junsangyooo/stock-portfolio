@@ -84,6 +84,12 @@ def verify_session_token(account_id: str, token: str | None) -> bool:
         return False
 
 
+# quant's own cookie. Not the portfolio prefix: different logins on different
+# origins, and sharing the prefix would make one look like the other. Defined
+# here so server.py can name it without importing the quant package.
+QUANT_COOKIE = "pdash_q"
+
+
 def token_is_valid(token: str | None) -> bool:
     """Self-describing check: the account id is inside the token and the
     signature covers it, so no lookup is needed to trust it. This is how the

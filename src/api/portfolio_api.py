@@ -37,6 +37,9 @@ router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 _COOKIE_PREFIX = security.COOKIE_PREFIX
 
 
+_NO_PIN = "PIN을 먼저 설정하세요"
+
+
 def _set_session_cookie(response: Response, account_id: str) -> None:
     response.set_cookie(
         _COOKIE_PREFIX + account_id,
@@ -48,12 +51,13 @@ def _set_session_cookie(response: Response, account_id: str) -> None:
 
 def require_account(account_id: str, request: Request) -> str:
     """Dependency guarding per-account routes. 404 if the account doesn't
-    exist; 403 if it has a PIN but the request lacks a valid session cookie.
-    Accounts with no PIN set are treated as open."""
+    exist; 403 if the request lacks a valid session cookie. A book without a
+    PIN is closed, not open — a PIN is set the moment the account is created,
+    so "no PIN" only ever means a hand-edited row."""
     if not account_store.get(account_id):
         raise HTTPException(404, f"account not found: {account_id}")
     if not account_store.get_pin_hash(account_id):
-        return account_id  # no PIN yet → open
+        raise HTTPException(403, _NO_PIN)
     token = request.cookies.get(_COOKIE_PREFIX + account_id)
     if not security.verify_session_token(account_id, token):
         # 403, never 401 — the PIN gate is the app's own, and a 401 turns it
@@ -71,7 +75,7 @@ class AccountCreate(BaseModel):
     broker: Optional[str] = None
     base_currency: str = "KRW"
     note: Optional[str] = None
-    pin: Optional[str] = None        # 6-digit; set once at creation
+    pin: str                         # 6-digit; set once at creation — a book is never open
 
 
 class AccountUpdate(BaseModel):
@@ -108,15 +112,14 @@ def list_accounts() -> dict:
 def create_account(body: AccountCreate) -> dict:
     if account_store.get(body.account_id):
         raise HTTPException(409, f"account exists: {body.account_id}")
-    if body.pin is not None and not security.is_valid_pin_format(body.pin):
+    if not security.is_valid_pin_format(body.pin):
         raise HTTPException(400, "PIN must be exactly 6 digits")
     account_store.create(
         body.account_id, body.name, body.account_type,
         broker=body.broker, base_currency=body.base_currency, note=body.note,
     )
-    if body.pin:
-        account_store.set_pin_hash(
-            body.account_id, security.hash_pin(body.account_id, body.pin))
+    account_store.set_pin_hash(
+        body.account_id, security.hash_pin(body.account_id, body.pin))
     return {"ok": True, "account_id": body.account_id}
 
 
@@ -126,10 +129,12 @@ def auth_account(account_id: str, body: PinBody, response: Response) -> dict:
     if not acct:
         raise HTTPException(404, f"account not found: {account_id}")
     stored = account_store.get_pin_hash(account_id)
-    if stored and not security.verify_pin(account_id, body.pin, stored):
+    if not stored:
+        raise HTTPException(403, _NO_PIN)      # nothing to prove → nothing issued
+    if not security.verify_pin(account_id, body.pin, stored):
         raise HTTPException(403, "PIN이 일치하지 않습니다")
     _set_session_cookie(response, account_id)
-    return {"ok": True, "no_pin": not stored}
+    return {"ok": True}
 
 
 @router.get("/{account_id}")
@@ -215,11 +220,10 @@ def add_holding(account_id: str, body: HoldingUpsert,
 @router.delete("/{account_id}/holdings/{symbol_id:path}")
 def remove_holding(account_id: str, symbol_id: str,
                    _: str = Depends(require_account)) -> dict:
-    """Delete only. A sellout is recorded through POST /trades first."""
+    """Delete only. A sellout is recorded through POST /trades first. The
+    symbol's theme mapping (market.db) stays: it is a fact about the symbol,
+    and the other book may still hold it (ops notes §4)."""
     n = holding_store.remove(account_id, symbol_id)
-    if n and symbol_id not in holding_store.all_symbol_ids():
-        from ..market.store import theme_store
-        theme_store.drop(symbol_id)
     return {"ok": n > 0, "deleted": n}
 
 
@@ -247,6 +251,7 @@ class TradeBody(BaseModel):
     traded_at: Optional[int] = None          # epoch seconds; default now
     plan_id: Optional[int] = None
     note: Optional[str] = None
+    remove_when_flat: bool = False           # sell-out: drop the row, not keep a watch row
 
 
 @router.post("/{account_id}/trades")
@@ -259,19 +264,21 @@ def record_trade(account_id: str, body: TradeBody,
     meta = uni_search.get(symbol_id)
     if meta is None:
         raise HTTPException(404, f"symbol not in universe: {symbol_id}")
+    side = (body.side or "").lower()
     try:
         out = trade_store.record(
-            account_id, symbol_id=symbol_id, side=(body.side or "").lower(),
+            account_id, symbol_id=symbol_id, side=side,
             qty=body.qty, price=body.price, fee=body.fee,
             currency=_currency_of(symbol_id),
             name=meta.get("name_kr") or meta.get("name_en") or symbol_id,
             traded_at=body.traded_at, plan_id=body.plan_id,
-            note=(body.note or "").strip() or None)
+            note=(body.note or "").strip() or None,
+            remove_when_flat=body.remove_when_flat)
     except LookupError as e:
         raise HTTPException(404, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
-    if body.side == "buy" and out["holding"]["qty"] == body.qty:
+    if side == "buy" and out["holding"]["qty"] == body.qty:
         # a freshly opened position: same background work as POST /holdings
         background.add_task(gap_filler.fill_one, symbol_id)
         background.add_task(ensure_theme_mapping, symbol_id)
@@ -336,6 +343,10 @@ class PlanPatch(BaseModel):
     price: Optional[float] = None
     qty: Optional[float] = None
     note: Optional[str] = None
+    # The person's own exits: a trade row moves armed → entered → done, but
+    # "changed my mind" (abandoned) and a close the trade could not attribute
+    # (two plans matched) have no trade to ride on.
+    status: Optional[str] = None
 
 
 def _clean_plan(side: Optional[str], price: Optional[float],
@@ -374,6 +385,9 @@ def create_plan(account_id: str, body: PlanBody,
 def update_plan(account_id: str, plan_id: int, body: PlanPatch,
                 _: str = Depends(require_account)) -> dict:
     _clean_plan(body.side, body.price, body.qty)
+    if body.status is not None and body.status not in plan_store.HUMAN_STATUSES:
+        raise HTTPException(400, "status must be one of "
+                            + ", ".join(plan_store.HUMAN_STATUSES))
     plan = plan_store.update(account_id, plan_id, **body.model_dump())
     if plan is None:
         raise HTTPException(404, "plan not found")

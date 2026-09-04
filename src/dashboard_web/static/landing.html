@@ -288,8 +288,7 @@ async function renderAccountTabs() {
   const tabsEl = document.getElementById('account-tabs');
   clear(tabsEl);
   try {
-    const r = await fetch('/api/accounts');
-    const d = await r.json();
+    const d = await S.api('/api/accounts');
     const accs = (d && d.accounts) || [];
     if (accs.length === 0) {
       tabsEl.appendChild(el('span',
@@ -317,8 +316,7 @@ renderAccountTabs();
 // + 계좌 추가 — landing 페이지에서는 첫 계좌 페이지로 이동(모달은 account.html에 있음)
 document.getElementById('btn-new-account').addEventListener('click', async () => {
   try {
-    const r = await fetch('/api/accounts');
-    const d = await r.json();
+    const d = await S.api('/api/accounts');
     const first = d.accounts && d.accounts[0];
     const goto = first ? first.account_id : 'junisa';
     location.href = '/a/' + encodeURIComponent(goto) + '?new=1';
@@ -469,8 +467,7 @@ function renderSocial() {
 
 async function loadFeed() {
   try {
-    const r = await fetch('/api/analysis/news/feed?limit=80');
-    const d = await r.json();
+    const d = await S.api('/api/analysis/news/feed?limit=80');
     FEED.news = d.news || [];
     FEED.social = d.social || [];
     FEED.summary = d.summary || [];

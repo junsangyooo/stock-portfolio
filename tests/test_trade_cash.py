@@ -1,7 +1,6 @@
 """Auto-adjust 예수금 (cash balance) on recorded buy/sell trades.
 
 Covers:
-  - balance_store.adjust: signed delta, row autocreate, overdraft allowed
   - POST /api/accounts/{id}/trades → cash deducted (buy) / credited (sell),
     currency resolved from symbol_id, overdraft allowed
   - POST /holdings (plain add / direct edit) and DELETE /holdings never touch
@@ -48,20 +47,6 @@ def _trade(client, **kw):
     body = {"symbol_id": "KR:005930", "side": "buy", "qty": 10, "price": 70000}
     body.update(kw)
     return client.post("/api/accounts/acc1/trades", json=body)
-
-
-# ── store-level ──────────────────────────────────────────────────────
-
-def test_adjust_creates_row_and_sums(tmp_path, monkeypatch):
-    monkeypatch.setattr(pdb, "DB_PATH", str(tmp_path / "s.db"))
-    monkeypatch.setattr(pdb, "_initialized", False)
-    account_store.create("a", "n", "GENERAL")
-    assert balance_store.adjust("a", "KRW", 1000.0) == 1000.0
-    assert balance_store.adjust("a", "KRW", -250.0) == 750.0
-    # overdraft allowed (no block)
-    assert balance_store.adjust("a", "KRW", -2000.0) == -1250.0
-    # zero delta is a no-op returning current
-    assert balance_store.adjust("a", "KRW", 0.0) == -1250.0
 
 
 # ── buy deducts cash ─────────────────────────────────────────────────
@@ -133,15 +118,13 @@ def test_edit_mode_does_not_touch_cash(client):
     assert balance_store.get_all("acc1")["KRW"] == 500_000
 
 
-def test_full_sellout_is_trade_then_delete(client):
+def test_full_sellout_removes_in_the_same_request(client):
     balance_store.set_many("acc1", {"KRW": 100_000})
     holding_store.upsert("acc1", "KR:005930", avg_cost=70000, qty=5)
-    r = _trade(client, side="sell", qty=5, price=80000)
+    r = _trade(client, side="sell", qty=5, price=80000, remove_when_flat=True)
     assert r.status_code == 200, r.text
     assert r.json()["cash_balance"] == 100_000 + 400_000
-    r = client.delete("/api/accounts/acc1/holdings/KR:005930")
-    assert r.status_code == 200, r.text
-    assert r.json()["deleted"] == 1
+    assert r.json()["holding"] == {"qty": 0, "avg_cost": None, "removed": True}
     assert balance_store.get_all("acc1")["KRW"] == 500_000
     assert holding_store.list_by_account("acc1") == []
 

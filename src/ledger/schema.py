@@ -175,10 +175,12 @@ _ADDED = {
 }
 
 # Before plans.source existed, the quant UI told a human plan apart by a tag
-# it appended to the note. Run once, when the column is first added.
+# it appended to the note; in the human book every plan is the person's.
+# Run once, when the column is first added.
 _BACKFILL = {
     ("plans", "source"):
-        "UPDATE plans SET source = 'user' WHERE note LIKE '%[사용자 작성]%'",
+        "UPDATE plans SET source = 'user' WHERE note LIKE '%[사용자 작성]%'"
+        " OR account_id IN (SELECT account_id FROM accounts WHERE kind = 'human')",
 }
 
 
