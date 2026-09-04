@@ -246,15 +246,17 @@ def test_account_page_reads_current_engine_schema():
 
 
 def test_account_page_trade_flow_uses_trades_route():
-    """One request per trade: a full sell sends remove_when_flat instead of a
-    follow-up DELETE / POST /holdings (the second call used to wipe the memo)."""
+    """One request per trade, and no follow-up DELETE / POST /holdings (the
+    second call used to wipe the memo). A full sell deletes the row on the
+    server (C1) — the page reads holding.removed, it never sends a flag."""
     src = ACCOUNT.read_text()
     assert "/trades'" in src
-    for gone in ("trade_side", "trade_price", "trade_qty", "sell_price=", "sell_qty="):
+    for gone in ("trade_side", "trade_price", "trade_qty", "sell_price=", "sell_qty=",
+                 "remove_when_flat"):
         assert gone not in src, gone
     body = src[src.index("async function submit() {\n    if (!currentStock) return;"):]
     body = body[:body.index("// edit — a direct correction")]
-    assert "remove_when_flat: after === 'delete'" in body
+    assert "d.holding.removed" in body
     assert "plan_id" in body
     for gone in ("API.removeHolding(", "API.addHolding("):
         assert gone not in body, gone
@@ -416,10 +418,13 @@ def test_el_attribute_objects_use_the_canonical_keys():
     assert not bad, "use className: / onClick: in el() props:\n" + "\n".join(bad)
 
 
-def test_every_page_has_a_favicon():
-    for f in PAGES:
-        src = (STATIC / f).read_text()
-        assert re.search(r'<link rel="icon" href="data:image/svg\+xml', src), f
+def test_every_page_has_a_favicon(client):
+    """The icon is injected by server.py (PNG routes, B8) — the served HTML
+    carries it; the page files carry no icon of their own."""
+    for path, host in (("/", PORTFOLIO_HOST), ("/a/x", PORTFOLIO_HOST), ("/q", QUANT_HOST)):
+        body = client.get(path, headers={"host": host}).text
+        assert '<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">' in body, path
+        assert "data:image/svg+xml" not in body, path
 
 
 def test_ohlcv_and_analysis_fetches_fail_loudly():
@@ -520,7 +525,6 @@ def test_theme_has_layout_tokens():
 BREAKPOINTS = {"600", "900", "1100"}   # theme.json bp-sm / bp-md / bp-lg
 
 
-@pytest.mark.xfail(strict=False, reason="HTML agents flip this when the pages move to the three breakpoints")
 def test_breakpoints_are_canonical():
     """var() cannot appear inside @media, so the three bp-* values in
     theme.json are repeated as literals — and only those three."""
@@ -572,7 +576,6 @@ def test_label_dictionary_exported():
     assert re.search(r"window\.S\s*=\s*\{[^}]*\bLABELS\b", js)
 
 
-@pytest.mark.xfail(strict=False, reason="HTML agents flip this once 제거 → 삭제 (S.LABELS.delete) everywhere")
 def test_label_dictionary_used():
     """One verb per action: 삭제, never 제거, in anything a user reads
     (button text, confirmLabel, aria-label, dialog body). Comments are exempt."""
