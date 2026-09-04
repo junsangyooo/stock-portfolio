@@ -327,3 +327,30 @@ def test_pause_between_plan_creation_and_arming_skips_the_broker(monkeypatch, se
     rep = execute.resume_account("robo")
     assert rep["thesis_broken"] == [p["plan_id"]]
     assert plans.get(p["plan_id"])["status"] == "abandoned"
+
+
+def test_paused_execute_orders_skips_buys_but_sends_sells(monkeypatch, sent):
+    """Immediate orders from an allocation: while paused a buy is a new entry
+    and never reaches the broker; a sell is an exit and still goes out."""
+    store.upsert_position("robo", "KR:000660", qty=3, avg_cost=100000,
+                          currency="KRW")
+    store.pause("robo")
+    placed = []
+    monkeypatch.setattr(broker, "place_order",
+                        lambda sid, side, qty, price, order_type:
+                        placed.append((sid, side)) or {"ok": True, "order_no": "O1"})
+    monkeypatch.setattr(broker, "buyable",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("sized a buy")))
+    cid = store.cycle_start("robo", "morning", "KR", dry_run=False)
+    res = execute.execute_orders("robo", cid, [
+        {"symbol_id": "KR:005930", "side": "buy", "qty": 1, "price": 70000,
+         "rationale": "신규"},
+        {"symbol_id": "KR:000660", "side": "sell", "qty": 3, "price": 120000,
+         "rationale": "청산"},
+    ], dry_run=False)
+    assert placed == [("KR:000660", "sell")]
+    assert [r["status"] for r in res] == ["paused_skip", "submitted"]
+    assert execute.went_through(res) == [res[1]]
+    assert [o["side"] for o in store.orders_for_cycle(cid)] == ["sell"]   # no idem row for the buy
+    skips = [e for e in store.journal_recent("robo", cycle_id=cid) if e["kind"] == "paused_skip"]
+    assert len(skips) == 1 and skips[0]["payload"]["symbol_id"] == "KR:005930"
