@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import time
 from threading import Lock
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional
 
 from ...core.paths import QUOTE_DIR, ensure_dirs
 from ..source.base import Quote
@@ -48,9 +48,20 @@ def _flush_locked() -> None:
 
 
 def set_quote(q: Quote) -> None:
+    set_many([q])
+
+
+def set_many(quotes: Iterable[Quote]) -> None:
+    """Store several quotes with ONE disk flush — the refresh path warms
+    every held symbol at once, and a flush per symbol rewrote the whole file
+    N times."""
+    quotes = list(quotes)
+    if not quotes:
+        return
     with _lock:
         _load_disk()
-        _cache[q.symbol_id] = q
+        for q in quotes:
+            _cache[q.symbol_id] = q
         _flush_locked()
 
 

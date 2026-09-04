@@ -32,8 +32,7 @@ def refresh_all() -> dict:
         sids = [r[0] for r in conn.execute(
             "SELECT DISTINCT symbol_id FROM holdings ORDER BY symbol_id")]
     filled = gap_filler.fill_many(sids)
-    fresh = sum(1 for sid in sids
-                if not _quote_payload(sid, max_age_s=10).get("stale"))
+    fresh = sum(1 for q in _warm(sids, max_age_s=10).values() if q is not None)
     return {"ok": True, "symbols": len(sids),
             "filled": filled, "quotes_fresh": fresh}
 
@@ -74,19 +73,30 @@ def get_ohlcv(market: str, code: str, period: str = "day", n: int = 240,
             "bars": ohlcv_store.to_payload(df), "refresh_failed": stale}
 
 
-def _quote_payload(symbol_id: str, max_age_s: int) -> dict:
-    """Cached quote, else fetch-and-store once. Never raises."""
-    q = quote_store.get(symbol_id, max_age_s=max_age_s)
-    if q is None:
-        src = for_symbol(symbol_id)
-        if src is not None:
-            try:
-                q = src.get_quote(symbol_id)
-                if q is not None:
-                    quote_store.set_quote(q)
-            except Exception as e:  # noqa: BLE001 — a dead source must not 500
-                log.warning("quote fetch %s failed: %s", symbol_id, e)
-                q = None
+def _warm(symbol_ids, max_age_s: int) -> dict:
+    """{symbol_id: Quote | None}: cached when fresh enough, else fetched —
+    and every fetched quote stored with one flush. Never raises."""
+    out = {sid: quote_store.get(sid, max_age_s=max_age_s) for sid in symbol_ids}
+    fetched = []
+    for sid, q in out.items():
+        if q is not None:
+            continue
+        src = for_symbol(sid)
+        if src is None:
+            continue
+        try:
+            q = src.get_quote(sid)
+        except Exception as e:  # noqa: BLE001 — a dead source must not 500
+            log.warning("quote fetch %s failed: %s", sid, e)
+            continue
+        if q is not None:
+            out[sid] = q
+            fetched.append(q)
+    quote_store.set_many(fetched)
+    return out
+
+
+def _quote_payload(q) -> dict:
     if q is None:
         return {"price": None, "stale": True}
     return {"price": q.price, "prev_close": q.prev_close, "ts": q.ts,
@@ -97,4 +107,5 @@ def _quote_payload(symbol_id: str, max_age_s: int) -> dict:
 def get_quotes(symbols: str = "", max_age_s: int = 30) -> dict:
     """symbols = comma-separated 'KR:005930,US:AAPL'."""
     ids = [s.strip() for s in symbols.split(",") if s.strip()]
-    return {"quotes": {sid: _quote_payload(sid, max_age_s) for sid in ids}}
+    return {"quotes": {sid: _quote_payload(q)
+                       for sid, q in _warm(ids, max_age_s).items()}}

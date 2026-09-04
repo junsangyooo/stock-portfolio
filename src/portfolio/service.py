@@ -23,6 +23,13 @@ def aggregate(account_id: str, *, spark_n: int = 30) -> dict:
     out_holdings: list[dict] = []
     totals: dict[str, dict] = {}
 
+    # sparklines (last 30 daily closes), one query for the whole account —
+    # best-effort
+    try:
+        sparks = ohlcv_store.read_closes([h["symbol_id"] for h in rows], spark_n)
+    except Exception:
+        sparks = {}
+
     for h in rows:
         sid = h["symbol_id"]
         meta = uni_search.get(sid) or {}
@@ -44,15 +51,6 @@ def aggregate(account_id: str, *, spark_n: int = 30) -> dict:
                 t["pnl"] += (price - avg) * qty
                 t["n_held"] += 1
 
-        # sparkline (last 30 daily closes) — best-effort
-        spark: list[float] = []
-        try:
-            df = ohlcv_store.read(sid, n=spark_n)
-            if not df.empty:
-                spark = [float(v) for v in df["close"].tolist()]
-        except Exception:
-            spark = []
-
         out_holdings.append({
             "symbol_id": sid,
             "market": meta.get("market"),
@@ -71,7 +69,7 @@ def aggregate(account_id: str, *, spark_n: int = 30) -> dict:
             "price": price,
             "prev_close": prev,
             "quote_ts": q.ts if q else None,
-            "spark": spark,
+            "spark": sparks.get(sid, []),
         })
 
     # attach cash balances

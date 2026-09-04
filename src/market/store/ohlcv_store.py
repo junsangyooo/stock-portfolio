@@ -60,6 +60,28 @@ def read(symbol_id: str, n: int = 0) -> pd.DataFrame:
     return df.astype({"ts": "int64", **{c: "float64" for c in COLS[1:]}})
 
 
+def read_closes(symbol_ids: Iterable[str], n: int) -> dict:
+    """{symbol_id: [close, …]} — the newest `n` closes per symbol, ascending,
+    in ONE query. The account page draws a sparkline per holding; a
+    DataFrame per symbol was a connection and a query each."""
+    ids = list(dict.fromkeys(symbol_ids))
+    if not ids or n <= 0:
+        return {}
+    marks = ",".join("?" * len(ids))
+    with connect() as c:
+        rows = c.execute(
+            "SELECT symbol_id, close FROM ("
+            "  SELECT symbol_id, ts, close, "
+            "         ROW_NUMBER() OVER (PARTITION BY symbol_id ORDER BY ts DESC) AS rn "
+            "  FROM ohlcv WHERE close IS NOT NULL AND symbol_id IN (" + marks + ")"
+            ") WHERE rn <= ? ORDER BY symbol_id, ts",
+            (*ids, n)).fetchall()
+    out: dict = {}
+    for sid, close in rows:
+        out.setdefault(sid, []).append(float(close))
+    return out
+
+
 def last_ts(symbol_id: str) -> int:
     """Newest stored bar time, 0 when the symbol has none. Used by the gap
     filler to decide between a 3-year backfill and a short catch-up, so it

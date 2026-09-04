@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timedelta
+from functools import lru_cache
+from pathlib import Path
 from typing import Iterable, Optional
 
 from ...core.kst import KST
@@ -41,16 +43,31 @@ def _as_date(stem: str) -> str:
         if len(stem) == 8 and stem.isdigit() else stem
 
 
-def _read(path) -> Optional[dict]:
+@lru_cache(maxsize=256)
+def _read_at(path: str, mtime_ns: int) -> Optional[dict]:
+    # Keyed by mtime so a rewrite (same path, new mtime) is a miss: a stored
+    # result is ~100KB of chart facts, and summary() for a hundred symbols
+    # would otherwise parse all of it on every badge refresh.
+    p = Path(path)
     try:
-        body = json.loads(path.read_text(encoding="utf-8"))
+        body = json.loads(p.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as e:
         # A truncated write would otherwise read as "not analyzed yet" and
         # blank the symbol with no trace of why.
+        log.error("analysis %s unreadable: %s", p, e)
+        return None
+    body.setdefault("date", _as_date(p.stem))
+    return body
+
+
+def _read(path) -> Optional[dict]:
+    try:
+        body = _read_at(str(path), path.stat().st_mtime_ns)
+    except OSError as e:
         log.error("analysis %s unreadable: %s", path, e)
         return None
-    body.setdefault("date", _as_date(path.stem))
-    return body
+    # A copy: the cached dict is shared across callers.
+    return dict(body) if body is not None else None
 
 
 def latest_date(symbol_id: str) -> Optional[str]:

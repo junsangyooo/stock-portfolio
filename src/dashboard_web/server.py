@@ -17,6 +17,7 @@ Run:
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import logging
 import re
@@ -135,8 +136,6 @@ _ICONS = {path: ((STATIC / "icons" / name).read_bytes(), media)
 _ICON_LINKS = ('<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">\n'
                '<link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png">\n'
                '<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">')
-# The earlier inline SVG favicon line in the pages; dropped at serve time.
-_SVG_FAVICON_RE = re.compile(r'[ \t]*<link rel="icon" href="data:image/svg\+xml[^>]*>\n?')
 
 
 def _icon_route(path: str) -> None:
@@ -162,6 +161,28 @@ def _hex_to_rgb_csv(hex_str: str) -> str:
         return "0, 0, 0"
 
 
+# ── static text cache ──────────────────────────────────────────────────────
+# The pages and their fragments are read per request so an edit shows without
+# a restart; keying the cache on mtime keeps that while making the steady
+# state zero disk reads. The nonce in _html stays per response.
+@functools.lru_cache(maxsize=16)
+def _text_at(path: str, mtime_ns: int) -> str:
+    return Path(path).read_text()
+
+
+def _read(path: Path) -> str:
+    """Contents of `path`, re-read only when its mtime changes. Raises
+    OSError when the file is missing."""
+    return _text_at(str(path), path.stat().st_mtime_ns)
+
+
+def _mtime(path: Path) -> int:
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return -1
+
+
 def _load_theme() -> dict:
     """Full theme dict (colors + tokens) from theme.json, the single source of
     truth for every design literal.
@@ -172,7 +193,7 @@ def _load_theme() -> dict:
     while looking healthy. An unstyled page plus this error line is the honest
     failure."""
     try:
-        return json.loads(THEME_PATH.read_text())
+        return json.loads(_read(THEME_PATH))
     except (OSError, json.JSONDecodeError) as exc:
         logging.error("theme.json unusable, serving unstyled: %s", exc)
         return {}
@@ -184,6 +205,11 @@ def _theme_style_tag() -> str:
       - --xxx              for every non-color token (radius, shadow, …)
     Page CSS references only these tokens — no hardcoded design literals
     allowed in the static files."""
+    return _theme_style_tag_at(_mtime(THEME_PATH))
+
+
+@functools.lru_cache(maxsize=4)
+def _theme_style_tag_at(mtime_ns: int) -> str:
     theme = _load_theme()
     lines = [":root {"]
     for name, hex_val in (theme.get("colors") or {}).items():
@@ -206,7 +232,7 @@ def _fragment_tag(name: str, open_tag: str, close_tag: str) -> str:
     `const { el, … } = S`, so a missing fragment is a blank screen — a 500 is
     what the deploy health check can see."""
     try:
-        return open_tag + "\n" + (STATIC / name).read_text() + "\n" + close_tag
+        return open_tag + "\n" + _read(STATIC / name) + "\n" + close_tag
     except OSError as exc:
         logging.error("%s unusable: %s", name, exc)
         raise HTTPException(status_code=500, detail=f"{name} missing") from exc
@@ -235,9 +261,10 @@ def _inject_head(body: str, tag: str) -> str:
 
 
 def _serve(name: str, extra_tag: str = "") -> HTMLResponse:
-    p = STATIC / name
-    body = p.read_text() if p.exists() else f"<h1>{name} missing</h1>"
-    body = _SVG_FAVICON_RE.sub("", body)
+    try:
+        body = _read(STATIC / name)
+    except OSError:
+        body = f"<h1>{name} missing</h1>"
     # <head> order: icons → theme tokens → shared.css → shared.js → extra →
     # the page's own <style>/<script>. CSS arriving first lets page rules
     # override it (the cascade); JS arriving first is why the fragment exports
