@@ -4,6 +4,7 @@ Routes:
   GET /              — landing.html (홈 / 소식) — quant.* host serves /q instead
   GET /a/{id}        — account.html (per-account view)
   GET /q             — quant.html (auto-trading cockpit)
+  GET /favicon*.png · /favicon.ico · /apple-touch-icon.png — product icons
   /api/universe/*    — symbol master search
   /api/accounts/*    — account CRUD + holdings + balances + snapshots + chat
   /api/market/*      — ohlcv + quotes
@@ -19,10 +20,11 @@ import argparse
 import json
 import logging
 import re
+import secrets
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from src.core import security
 
@@ -89,6 +91,64 @@ _NO_CACHE_HEADERS = {
     "Pragma": "no-cache",
     "Expires": "0",
 }
+
+
+# ── CSP ────────────────────────────────────────────────────────────────────
+# Every <script>/<style> on a page is inline (the page's own pair plus the
+# fragments injected below), so the policy is a per-response nonce, never
+# 'unsafe-inline'. Consequences the static files have to live with: a
+# style="…" attribute and setAttribute('style', …) are blocked (CSSOM writes —
+# el.style.cssText / el.style.x — are not); Google Fonts is reached through
+# @import inside the nonced <style>, hence the fonts host in style-src; news
+# thumbnails and source favicons are external https images.
+_TAG_RE = re.compile(r"<(script|style)\b", re.IGNORECASE)
+
+
+def _csp(nonce: str) -> str:
+    return (f"default-src 'self'; script-src 'nonce-{nonce}'; "
+            f"style-src 'nonce-{nonce}' https://fonts.googleapis.com; "
+            "font-src https://fonts.gstatic.com; img-src 'self' data: https:; "
+            "connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; "
+            "form-action 'self'")
+
+
+def _html(body: str, status_code: int = 200) -> HTMLResponse:
+    """Every HTML response leaves through here: one fresh nonce, stamped on
+    every <script>/<style> tag in the finished document (the page's own and
+    the injected ones alike) and named in the CSP header."""
+    nonce = secrets.token_urlsafe(16)
+    body = _TAG_RE.sub(lambda m: f'<{m.group(1)} nonce="{nonce}"', body)
+    return HTMLResponse(content=body, status_code=status_code,
+                        headers={**_NO_CACHE_HEADERS, "Content-Security-Policy": _csp(nonce)})
+
+
+# ── icons ──────────────────────────────────────────────────────────────────
+# Read once at import, served from memory on fixed routes — not a /static
+# mount (§11 화면). Regenerate with deploy/make_icons.py.
+_ICON_HEADERS = {"Cache-Control": "public, max-age=31536000, immutable"}
+_ICONS = {path: ((STATIC / "icons" / name).read_bytes(), media)
+          for path, name, media in (
+              ("/favicon.ico", "favicon.ico", "image/x-icon"),
+              ("/favicon-32.png", "favicon-32.png", "image/png"),
+              ("/favicon-64.png", "favicon-64.png", "image/png"),
+              ("/apple-touch-icon.png", "apple-touch-icon-180.png", "image/png"))}
+_ICON_LINKS = ('<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">\n'
+               '<link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png">\n'
+               '<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">')
+# The earlier inline SVG favicon line in the pages; dropped at serve time.
+_SVG_FAVICON_RE = re.compile(r'[ \t]*<link rel="icon" href="data:image/svg\+xml[^>]*>\n?')
+
+
+def _icon_route(path: str) -> None:
+    body, media = _ICONS[path]
+
+    @app.get(path, include_in_schema=False)
+    def icon() -> Response:
+        return Response(content=body, media_type=media, headers=_ICON_HEADERS)
+
+
+for _p in _ICONS:
+    _icon_route(_p)
 
 
 def _hex_to_rgb_csv(hex_str: str) -> str:
@@ -174,15 +234,16 @@ def _inject_head(body: str, tag: str) -> str:
     return body[:at] + "\n" + tag + body[at:]
 
 
-def _serve(name: str) -> HTMLResponse:
+def _serve(name: str, extra_tag: str = "") -> HTMLResponse:
     p = STATIC / name
     body = p.read_text() if p.exists() else f"<h1>{name} missing</h1>"
-    # <head> order: theme tokens → shared.css → shared.js → the page's own
-    # <style>/<script>. CSS arriving first lets page rules override it (the
-    # cascade); JS arriving first is why the fragment exports one namespace
-    # (window.S) instead of globals a page could shadow.
-    theme_tag = "\n".join([_theme_style_tag(), _shared_css_tag(), _shared_js_tag()])
-    return HTMLResponse(content=_inject_head(body, theme_tag), headers=_NO_CACHE_HEADERS)
+    body = _SVG_FAVICON_RE.sub("", body)
+    # <head> order: icons → theme tokens → shared.css → shared.js → extra →
+    # the page's own <style>/<script>. CSS arriving first lets page rules
+    # override it (the cascade); JS arriving first is why the fragment exports
+    # one namespace (window.S) instead of globals a page could shadow.
+    tags = [_ICON_LINKS, _theme_style_tag(), _shared_css_tag(), _shared_js_tag(), extra_tag]
+    return _html(_inject_head(body, "\n".join(t for t in tags if t)))
 
 
 # quant.jsyoo.dev and portfolio.jsyoo.dev are the same app behind the same
@@ -229,9 +290,8 @@ def _serve_quant() -> HTMLResponse:
     except Exception as exc:  # noqa: BLE001 — an unreachable DB is not a 500 page
         logging.error("quant account lookup failed: %s", exc)
         account_id = ""
-    body = _serve("quant.html").body.decode()
-    tag = f'<script>window.QUANT_ACCOUNT = {json.dumps(account_id)};</script>'
-    return HTMLResponse(content=_inject_head(body, tag), headers=_NO_CACHE_HEADERS)
+    return _serve("quant.html",
+                  f'<script>window.QUANT_ACCOUNT = {json.dumps(account_id)};</script>')
 
 
 @app.get("/a/{account_id}", response_class=HTMLResponse)
@@ -241,6 +301,44 @@ def account_page(request: Request, account_id: str) -> HTMLResponse:
     # account_id is read by the page's JS from window.location.pathname,
     # so the server just hands over the same shell for every account.
     return _serve("account.html")
+
+
+# The Host gate and unknown page paths answer with a page, not FastAPI's
+# JSON string — a person typed that URL. It names only the requesting host's
+# own product (no path to the other one, per the cross-link invariant) and
+# is styled from the same theme tokens. /api/* keeps the JSON body.
+_NOT_FOUND_HTML = """<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>404</title>
+<style>
+body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+       background: var(--bg); color: var(--fg); font-family: ui-monospace, monospace; }
+main { text-align: center; }
+.mark { font-size: 14px; letter-spacing: .12em; color: var(--dim); margin-bottom: 18px; }
+h1 { font-size: 48px; margin: 0 0 8px; font-weight: 500; }
+p { color: var(--muted); margin: 0; font-size: 13px; }
+</style>
+</head>
+<body><main>
+<div class="mark">__MARK__</div>
+<h1>404</h1>
+<p>없는 페이지입니다.</p>
+</main></body>
+</html>
+"""
+
+
+@app.exception_handler(404)
+def not_found(request: Request, exc: Exception):
+    if request.url.path.startswith("/api/"):
+        return JSONResponse({"detail": getattr(exc, "detail", "Not Found")}, status_code=404)
+    mark = ("◆ QUANT" if _is_quant_host(request)
+            else "◆ PORTFOLIO" if _is_portfolio_host(request) else "")
+    body = _NOT_FOUND_HTML.replace("__MARK__", mark)
+    return _html(_inject_head(body, _theme_style_tag()), status_code=404)
 
 
 def main() -> None:
