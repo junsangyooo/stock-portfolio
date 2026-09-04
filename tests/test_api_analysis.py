@@ -34,26 +34,24 @@ class TestAnalysisAPI(unittest.TestCase):
         for forbidden in ("verdict", "label", "score", "risk_flags"):
             self.assertNotIn(forbidden, body)
 
-    def test_unknown_kind(self):
-        body = self.c.get("/api/analysis/bogus/KR/005930").json()
-        self.assertIn("error", body)
-
-    def test_a_removed_kind_is_rejected_rather_than_served_empty(self):
-        """Per-domain verdicts went away on 2026-09-01. The generic route must
-        say so instead of returning a well-formed 'nothing here', which reads
-        as 'not analyzed yet' and sends the UI polling forever."""
-        body = self.c.get("/api/analysis/fundamental/KR/005930").json()
-        self.assertIn("error", body)
-        self.assertIn("analysis", str(body["error"]))
+    def test_removed_kinds_are_not_routes(self):
+        """Per-domain verdicts went away on 2026-09-01: no generic {kind}
+        route serves a well-formed 'nothing here' that reads as 'not analyzed
+        yet' and sends the UI polling forever."""
+        for path in ("/api/analysis/bogus/KR/005930",
+                     "/api/analysis/fundamental/KR/005930",
+                     "/api/analysis/chart/KR/005930/status"):
+            self.assertEqual(self.c.get(path).status_code, 404, path)
 
     def test_the_fundamental_tab_reads_its_own_facts_route(self):
         body = self.c.get("/api/analysis/fundamental/KR/005930/facts").json()
         self.assertNotIn("error", body)
         self.assertEqual(body.get("symbol_id"), "KR:005930")
 
-    def test_running_a_removed_kind_is_refused(self):
-        body = self.c.post("/api/analysis/chart/KR/005930/run").json()
-        self.assertIn("error", body)
+    def test_only_the_analysis_is_runnable(self):
+        self.assertEqual(self.c.post("/api/analysis/chart/KR/005930/run").status_code, 404)
+        body = self.c.get("/api/analysis/analysis/KR/005930/status").json()
+        self.assertEqual(body["state"], "idle")
 
     def test_stored_analysis_is_read_from_the_kind_route(self):
         """One route for the stored result; there is no /verdict twin."""

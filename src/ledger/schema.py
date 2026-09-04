@@ -190,10 +190,6 @@ _BACKFILL = {
 }
 
 
-# Kept for callers that want the whole thing as one string.
-SCHEMA = TABLES + INDEXES
-
-
 def apply(conn: sqlite3.Connection) -> None:
     """Create the ledger tables, widen any a live book predates, then index.
 

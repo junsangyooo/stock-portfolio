@@ -4,9 +4,8 @@ Backfills valuation (L1) + financials (L2). Financials
 change only on quarterly disclosure, so once-daily is plenty; this runs
 alongside the qualitative news batch at 06:00 KST.
 
-This is the COLLECT half (data → parquet stores). The JUDGE half (fundamental
-agent) is per-symbol and runs on-demand when the user clicks the 재무 분석
-button — intentionally NOT here.
+This only collects (sources → market.db). Judgment is the comprehensive
+analysis (src/research/analyze), which reads what is stored here.
 
 Usage:
   python -m src.market.pipeline.fundamental_job [--symbol KR:005930] [--years 4]

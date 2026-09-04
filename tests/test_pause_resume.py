@@ -5,7 +5,6 @@ rules over every armed plan, in order: expired → analysis stale → thesis
 broken → target passed → kept (and re-armed). A missing quote keeps the plan
 and says so.
 """
-import sys
 import time
 
 import pytest

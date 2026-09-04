@@ -20,10 +20,9 @@ from typing import Iterable, Optional
 
 from ...core.kst import KST
 from ...core import paths
+from ..verdict import KIND  # noqa: F401 — re-exported by the package
 
 log = logging.getLogger(__name__)
-
-KIND = "analysis"
 
 # Fields a caller wants for a badge or a shortlist — small enough to fetch for
 # a hundred symbols at once.

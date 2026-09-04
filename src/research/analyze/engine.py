@@ -16,12 +16,11 @@ from typing import Optional
 
 from ...core.kst import KST
 from ..llm_backend import SLOW_MODEL, ClaudeCliBackend, _parse_json
-from ..verdict import clamp_confidence, clamp_score, label_from_score, persist
+from ..verdict import KIND, clamp_confidence, clamp_score, label_from_score, persist
 from . import inputs, prompt
 
 log = logging.getLogger(__name__)
 
-KIND = "analysis"
 _LABELS = ("strong_sell", "sell", "neutral", "buy", "strong_buy")
 _HORIZONS = ("immediate", "near", "mid", "long")
 _LEANS = ("bullish", "neutral", "bearish")
@@ -277,4 +276,4 @@ def analyze(symbol_id: str, name: Optional[str] = None, *,
             out = _facts_only(envelope, err)
     out["elapsed_s"] = round(time.monotonic() - t0, 1)
     out["generated_at"] = datetime.now(KST).isoformat()
-    return persist(KIND, symbol_id, out["date"], out) if store else out
+    return persist(symbol_id, out["date"], out) if store else out

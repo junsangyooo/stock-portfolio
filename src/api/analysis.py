@@ -1,15 +1,16 @@
 """/api/analysis — comprehensive analysis + per-domain facts (live).
 
-Two kinds are readable here:
-  analysis  the stored comprehensive result (src/research/analyze) — one call
-            over chart + fundamental + news, warmed nightly by verdict_job
-  chart     deterministic facts, computed live, no LLM
+  GET  /analysis/{m}/{c}          the stored comprehensive result
+                                  (src/research/analyze) — one call over
+                                  chart + fundamental + news
+  POST /analysis/{m}/{c}/run      run it asynchronously; poll …/status
+  GET  /chart/{m}/{c}             deterministic chart facts, computed live
+  GET  /fundamental/{m}/{c}/facts stored fundamentals, assembled
+  GET  /news/{m}/{c}/signals      the symbol's themes' recent developments
 
-The other two domains have their own dedicated routes because they are facts,
-not verdicts: GET /fundamental/{m}/{c}/facts and GET /news/{m}/{c}/signals.
-Per-domain verdicts were removed on 2026-09-01 — judging a domain alone
-hardens a one-dimensional conclusion the later merge cannot undo, so the
-domains now meet inside a single call.
+Only the comprehensive result is a verdict. Per-domain verdicts were removed
+on 2026-09-01 — judging a domain alone hardens a one-dimensional conclusion
+the later merge cannot undo, so the domains meet inside a single call.
 """
 from __future__ import annotations
 
@@ -25,9 +26,6 @@ router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
 log = logging.getLogger(__name__)
 
-_VALID_KINDS = ("analysis", "chart")
-
-
 def _stamp() -> str:
     """Response timestamp — KST, the same clock the agents write dates in."""
     return kst_now().isoformat()
@@ -36,10 +34,6 @@ def _stamp() -> str:
 def _display_name(symbol_id: str) -> str:
     item = uni_search.get(symbol_id)
     return (item or {}).get("name_kr") or symbol_id
-
-
-def _bad_kind(kind: str) -> dict:
-    return {"error": f"unknown kind '{kind}' (valid: {list(_VALID_KINDS)})"}
 
 
 @router.get("/summary")
@@ -123,48 +117,46 @@ def get_fundamental_facts(market: str, code: str) -> dict:
                 "error": str(e)[:300], "queried_at": _stamp()}
 
 
-@router.get("/{kind}/{market}/{code}")
-def get_analysis(kind: str, market: str, code: str) -> dict:
-    if kind not in _VALID_KINDS:
-        return _bad_kind(kind)
+@router.get("/chart/{market}/{code}")
+def get_chart_facts(market: str, code: str) -> dict:
+    """Deterministic fact extraction, computed live (no claude -p here)."""
     symbol_id = f"{market.upper()}:{code}"
+    from ..research.chart import chart_agent  # lazy: pulls pandas
+    try:
+        facts = chart_agent.collect_facts(symbol_id, persist=False)
+        facts["queried_at"] = _stamp()
+        return facts
+    except Exception as e:  # noqa: BLE001 — empty OHLCV must not 500 the tab
+        log.warning("chart facts %s failed: %s", symbol_id, e)
+        return {"kind": "chart", "symbol_id": symbol_id,
+                "error": str(e)[:300], "queried_at": _stamp()}
 
-    # chart = deterministic fact extraction, computed live (no claude -p here).
-    if kind == "chart":
-        from ..research.chart import chart_agent  # lazy: pulls pandas
-        try:
-            facts = chart_agent.collect_facts(symbol_id, persist=False)
-            facts["queried_at"] = _stamp()
-            return facts
-        except Exception as e:  # noqa: BLE001 — empty OHLCV must not 500 the tab
-            log.warning("chart facts %s failed: %s", symbol_id, e)
-            return {"kind": "chart", "symbol_id": symbol_id,
-                    "error": str(e)[:300], "queried_at": _stamp()}
 
-    # analysis: the stored comprehensive result
+@router.get("/analysis/{market}/{code}")
+def get_analysis(market: str, code: str) -> dict:
+    """The stored comprehensive result."""
+    symbol_id = f"{market.upper()}:{code}"
     from ..research import analyze
     body = analyze.latest(symbol_id)
-    return {"kind": kind, "symbol_id": symbol_id, "exists": body is not None,
+    return {"kind": "analysis", "symbol_id": symbol_id, "exists": body is not None,
             "result": {"date": body["date"], "body": body} if body else None,
             "queried_at": _stamp()}
 
 
-@router.get("/{kind}/{market}/{code}/status")
-def get_job_status(kind: str, market: str, code: str) -> dict:
+@router.get("/analysis/{market}/{code}/status")
+def get_job_status(market: str, code: str) -> dict:
     """Poll the state of an async analysis job started by POST .../run.
     state: idle | running | done | error | stale. The UI polls this, then loads
     GET /analysis/{m}/{c} on done.
     """
-    if kind not in _VALID_KINDS:
-        return _bad_kind(kind)
     symbol_id = f"{market.upper()}:{code}"
-    return {"kind": kind, "symbol_id": symbol_id,
-            **analysis_jobs.get_status(kind, symbol_id),
+    return {"kind": "analysis", "symbol_id": symbol_id,
+            **analysis_jobs.get_status(symbol_id),
             "queried_at": _stamp()}
 
 
-@router.post("/{kind}/{market}/{code}/run")
-def run_analysis(kind: str, market: str, code: str) -> dict:
+@router.post("/analysis/{market}/{code}/run")
+def run_analysis(market: str, code: str) -> dict:
     """Start the comprehensive analysis ASYNCHRONOUSLY (the 🔄 다시 분석 button).
 
     It takes minutes — three domains and their dictionaries in one claude call
@@ -173,9 +165,6 @@ def run_analysis(kind: str, market: str, code: str) -> dict:
     GET .../status, then loads the result. The chart facts it needs are
     computed inside, once per trading day.
     """
-    if kind != "analysis":
-        return {"error": f"'{kind}' is not runnable — only 'analysis' is. "
-                         "Per-domain verdicts were removed on 2026-09-01."}
     symbol_id = f"{market.upper()}:{code}"
     name = _display_name(symbol_id)
 
@@ -185,6 +174,6 @@ def run_analysis(kind: str, market: str, code: str) -> dict:
         from ..research import analyze
         return analyze.run(symbol_id, name)
 
-    job = analysis_jobs.start(kind, symbol_id, _fn)
+    job = analysis_jobs.start(symbol_id, _fn)
     return {"ok": True, "symbol_id": symbol_id, "job": job,
             "queued_at": _stamp()}

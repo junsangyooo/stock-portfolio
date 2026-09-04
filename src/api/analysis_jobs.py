@@ -10,7 +10,7 @@ then loads it via GET /analysis/{m}/{c}.
 
 Single uvicorn worker (server.py runs uvicorn.run with no workers arg), so a
 plain in-memory registry is shared across requests. Jobs are keyed by
-(kind, symbol_id); a duplicate start while one is running is a no-op.
+symbol_id; a duplicate start while one is running is a no-op.
 """
 from __future__ import annotations
 
@@ -31,15 +31,11 @@ _lock = threading.Lock()
 _STALE_S = 2 * 1070
 
 
-def _key(kind: str, symbol_id: str) -> str:
-    return f"{kind}:{symbol_id}"
-
-
-def get_status(kind: str, symbol_id: str) -> dict:
-    """Current job state for (kind, symbol). 'idle' when never started; a
+def get_status(symbol_id: str) -> dict:
+    """Current job state for a symbol. 'idle' when never started; a
     'running' job past _STALE_S is reported 'stale' so the UI stops waiting."""
     with _lock:
-        j = _jobs.get(_key(kind, symbol_id))
+        j = _jobs.get(symbol_id)
         if not j:
             return {"state": "idle"}
         if j["state"] == "running" and (time.time() - j["_t"]) > _STALE_S:
@@ -47,12 +43,12 @@ def get_status(kind: str, symbol_id: str) -> dict:
         return {k: v for k, v in j.items() if not k.startswith("_")}
 
 
-def start(kind: str, symbol_id: str, fn: Callable[[], dict]) -> dict:
+def start(symbol_id: str, fn: Callable[[], dict]) -> dict:
     """Spawn `fn` (a blocking analyze.run) on a daemon thread unless an
     identical job is already running. Returns {state: started|running}. The
     thread records done/error + the stored result's date into the registry.
     """
-    k = _key(kind, symbol_id)
+    k = symbol_id
     with _lock:
         j = _jobs.get(k)
         if j and j["state"] == "running" and (time.time() - j["_t"]) <= _STALE_S:

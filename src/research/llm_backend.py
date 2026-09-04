@@ -17,7 +17,6 @@ No timeouts by default. A failed ``claude -p`` exits 1 with a message (Oracle
 logs: 167 auth errors, 2 overload errors — all surfaced that way); the only
 timeouts ever logged (153) were the old 480s ceiling discarding generations
 that were still running. A process that never returns has not been observed.
-``timeout_s`` stays on the backends for a caller that has a measured reason.
 """
 from __future__ import annotations
 
@@ -86,8 +85,7 @@ class ClaudeCliBackend:
         if not self.bin:
             raise RuntimeError("`claude` CLI not found (PATH or nvm/usr/local)")
 
-    def call(self, system: str, user: str, timeout_s: float | None = None,
-             model: str | None = None,
+    def call(self, system: str, user: str, model: str | None = None,
              extra_args: list[str] | None = None) -> str:
         # extra_args: appended CLI flags, e.g. --allowedTools for the chat
         # agent's read-only lookup tool. Default None = plain text call.
@@ -100,24 +98,20 @@ class ClaudeCliBackend:
         # shaped. Text-only agent calls never need these either.
         for k in [k for k in env if _SENSITIVE_ENV.search(k)]:
             env.pop(k, None)
-        try:
-            # --safe-mode: no project instruction files / hooks / plugins / MCP in the agent
-            # context. Without it every call from the repo root ingested the
-            # 500-line ops document (verified 2026-08-27: the agent quoted
-            # §7 verbatim) — token waste plus dev-instruction contamination.
-            # Verified compatible: subscription auth, --allowedTools, and
-            # --resume --fork-session prompt-cache inheritance all work under
-            # it. (--bare is stronger but never reads OAuth → breaks §7
-            # subscription-only billing, so it is not an option.)
-            r = subprocess.run(
-                [self.bin, "-p", "--safe-mode",
-                 "--output-format", "text", "--model", m]
-                + (extra_args or []),
-                input=prompt, capture_output=True, text=True,
-                timeout=timeout_s, env=env,
-            )
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(f"claude CLI timeout ({timeout_s}s)")
+        # --safe-mode: no project instruction files / hooks / plugins / MCP in the agent
+        # context. Without it every call from the repo root ingested the
+        # 500-line ops document (verified 2026-08-27: the agent quoted
+        # §7 verbatim) — token waste plus dev-instruction contamination.
+        # Verified compatible: subscription auth, --allowedTools, and
+        # --resume --fork-session prompt-cache inheritance all work under
+        # it. (--bare is stronger but never reads OAuth → breaks §7
+        # subscription-only billing, so it is not an option.)
+        r = subprocess.run(
+            [self.bin, "-p", "--safe-mode",
+             "--output-format", "text", "--model", m]
+            + (extra_args or []),
+            input=prompt, capture_output=True, text=True, env=env,
+        )
         if r.returncode != 0:
             # Surface stdout too — CLI often emits errors there (e.g.,
             # "Credit balance is too low" was on stdout, leaving stderr empty).
@@ -148,8 +142,7 @@ class LocalLlamaBackend:
         self.url = url.rstrip("/")
         self.model = model
 
-    def call(self, system: str, user: str, timeout_s: float | None = None,
-             model: str | None = None) -> str:
+    def call(self, system: str, user: str, model: str | None = None) -> str:
         body = json.dumps({
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}],
@@ -160,7 +153,7 @@ class LocalLlamaBackend:
             self.url + "/v1/chat/completions", data=body,
             headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=timeout_s) as r:
+            with urllib.request.urlopen(req) as r:
                 data = json.load(r)
         except urllib.error.HTTPError as e:
             # HTTPError subclasses URLError — split it out, or a generation-side
@@ -171,8 +164,6 @@ class LocalLlamaBackend:
                 f"{e.read(300).decode('utf-8', 'replace')}")
         except urllib.error.URLError as e:
             raise RuntimeError(f"local llama unreachable at {self.url}: {e}")
-        except TimeoutError:
-            raise RuntimeError(f"local llama timeout ({timeout_s}s)")
         try:
             content = data["choices"][0]["message"]["content"].strip()
         except (KeyError, IndexError, AttributeError):

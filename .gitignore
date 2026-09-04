@@ -20,6 +20,8 @@ data/market/
 data/analysis/
 data/logs/
 data/backup/
+models/
+docs_cache/
 # stale local orchestrator_state.json is still on disk here
 
 # ── Catch-all by extension (defense in depth) ───────────────────────
@@ -29,6 +31,7 @@ data/backup/
 *.log
 *.pid
 *.png
+!src/dashboard_web/static/icons/*.png
 
 # ── Docs symlinked to Obsidian Vault (local-only, breaks on Oracle) ──
 docs/

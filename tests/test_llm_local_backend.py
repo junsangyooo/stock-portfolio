@@ -159,5 +159,4 @@ class TestClaudeCliNoTimeout(unittest.TestCase):
         b.bin, b.model = "claude", "m"
         with patch.object(LB.subprocess, "run", side_effect=fake_run):
             self.assertEqual(_REAL_CLI_CALL(b, "s", "u"), "ok")
-        self.assertIn("timeout", seen)
-        self.assertIsNone(seen["timeout"])
+        self.assertNotIn("timeout", seen)

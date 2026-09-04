@@ -21,7 +21,7 @@ class TestApiGate(unittest.TestCase):
         for method, path in [
             ("GET", "/api/market/quotes?symbols=KR:005930"),
             ("GET", "/api/analysis/summary"),
-            ("POST", "/api/analysis/chart/KR/005930/run"),
+            ("POST", "/api/analysis/analysis/KR/005930/run"),
             ("POST", "/api/accounts/junisa/chat"),
             ("GET", "/api/universe/search?q=samsung"),
         ]:

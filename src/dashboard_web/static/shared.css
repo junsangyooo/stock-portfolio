@@ -268,7 +268,7 @@ button, input, select, textarea { font-family: inherit; }
   display: flex;
   gap: 4px;
 }
-.sc-action-buy, .sc-action-sell {
+.sc-action-sell {
   background: transparent;
   border: 1px solid;
   font-family: 'JetBrains Mono', monospace;
@@ -278,18 +278,8 @@ button, input, select, textarea { font-family: inherit; }
   letter-spacing: 1px;
   font-weight: 700;
 }
-.sc-action-buy { color: var(--green); border-color: var(--green); }
-.sc-action-buy:hover { background: rgba(var(--green-rgb), 0.08); }
 .sc-action-sell { color: var(--red); border-color: var(--red); }
 .sc-action-sell:hover { background: rgba(var(--red-rgb), 0.08); }
-/* Featured buy = watchlist entry, prompt to acquire */
-.sc-action-buy.featured {
-  background: var(--green); color: var(--bg);
-  padding: 6px 14px;
-}
-.sc-action-buy.featured:hover {
-  background: var(--green); opacity: 0.85;
-}
 
 /* WATCHLIST CARD — qty is null/0 (관심종목, 매도 후 유지 또는 신규 추가) */
 .stock-card.watchlist {
@@ -382,26 +372,6 @@ button, input, select, textarea { font-family: inherit; }
   gap: 6px;
   align-content: stretch;
 }
-.sc-action {
-  background: transparent;
-  border: 1px solid var(--line);
-  color: var(--purple);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  letter-spacing: 1px;
-  padding: 6px 4px;
-  cursor: pointer;
-  text-align: center;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 0;
-}
-.sc-action:hover { background: rgba(var(--purple-rgb), 0.08); border-color: var(--purple); }
-.sc-action .ico { font-size: 13px; line-height: 1; }
-.sc-action .name { color: var(--purple); font-weight: 700; font-size: 10px; letter-spacing: 1px; }
 /* 통합 분석 버튼 (버튼 4개 → 1개): 차트 옆 컬럼을 채우는 세로형 */
 .sc-action-analysis { flex-direction: column; gap: 8px; }
 .sc-action-analysis .ico { font-size: 20px; }

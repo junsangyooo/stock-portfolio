@@ -69,7 +69,7 @@ def _cmd_quote(symbol_id: str) -> dict:
 def _ensure_tracked(symbol_id: str) -> None:
     """First sight of a symbol: pull ~3y OHLCV on the spot (≈2s).
 
-    chart/fundamental only read stored parquet, so an untracked symbol used
+    chart/fundamental only read stored bars, so an untracked symbol used
     to come back no_data — the discovery agent found candidates in the news
     and then could not examine a single one of them (cycle #1, 2026-08-26).
     """
