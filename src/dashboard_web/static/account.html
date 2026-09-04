@@ -2956,10 +2956,12 @@ renderAll();
       if (filters[f] === v && v !== '') filters[f] = '';
       else filters[f] = v;
       document.querySelectorAll('.filter-bar [data-filter="' + f + '"]')
-        .forEach(c => c.classList.toggle('on', c.dataset.value === filters[f] && filters[f] !== ''));
+        .forEach(c => { const on = c.dataset.value === filters[f] && filters[f] !== '';
+          c.classList.toggle('on', on); c.setAttribute('aria-pressed', String(on)); });
       // "전체" should always look "on" when no filter is set
       if (f === 'market' && filters.market === '') {
-        document.querySelector('.filter-bar .fb-chip[data-filter="market"][data-value=""]').classList.add('on');
+        const all = document.querySelector('.filter-bar .fb-chip[data-filter="market"][data-value=""]');
+        all.classList.add('on'); all.setAttribute('aria-pressed', 'true');
       }
       applyFilters();
     });
@@ -2991,7 +2993,8 @@ renderAll();
   function applyMode(mode) {
     grid.classList.remove('mode-card', 'mode-list', 'mode-mini');
     grid.classList.add('mode-' + mode);
-    segs.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    segs.forEach(b => { const on = b.dataset.mode === mode;
+      b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
     try { localStorage.setItem(STORAGE_KEY, mode); } catch (_) {}
     // chart canvas inside cards may need a redraw after column-count change
     setTimeout(() => {
@@ -3146,8 +3149,8 @@ window.openTradeHistory = async function () {
   }
 
   function setSide(side) {
-    sideSeg.querySelectorAll('button').forEach(b =>
-      b.classList.toggle('active', b.dataset.side === side));
+    sideSeg.querySelectorAll('button').forEach(b => { const on = b.dataset.side === side;
+      b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
     submitBtn.textContent = editingId
       ? '저장'
       : (side === 'buy' ? '＋ 매수 계획 추가' : '− 매도 계획 추가');
@@ -3550,8 +3553,8 @@ window.openTradeHistory = async function () {
   let _chartLoadedSym = null;
 
   function setTab(tab) {
-    navBar.querySelectorAll('button').forEach(b =>
-      b.classList.toggle('active', b.dataset.tab === tab));
+    navBar.querySelectorAll('button').forEach(b => { const on = b.dataset.tab === tab;
+      b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
     for (const k in panes) panes[k].hidden = (k !== tab);
     if (tab === 'chart') loadChartAnalysis();
     if (tab === 'fin') loadFundamentalAnalysis();
@@ -4908,8 +4911,8 @@ window.deleteHolding = async function (stock) {
 
   function setMode(newMode) {
     mode = newMode;
-    tabsEl.querySelectorAll('button').forEach(b =>
-      b.classList.toggle('active', b.dataset.mode === mode));
+    tabsEl.querySelectorAll('button').forEach(b => { const on = b.dataset.mode === mode;
+      b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
     formTrade.hidden = (mode === 'edit');
     formEdit.hidden  = (mode !== 'edit');
     renderPlanPicker();

@@ -331,9 +331,10 @@ button, input, select, textarea { font-family: inherit; }
 .sc-verdict-badge.act-strong_sell { color: var(--red);    border-color: var(--red); }
 .sc-verdict-badge.stale { opacity: 0.45; }   /* 30일+ → 흐리게 = "믿지 말라" 신호 */
 .sc-verdict-badge.running { color: var(--cyan); border-color: var(--cyan); opacity: 0.8; }
-/* The `display` above outranks the UA sheet's [hidden]{display:none}, so the
-   placeholder badge rendered as an empty 1px box until a verdict loaded. */
-.sc-verdict-badge[hidden] { display: none; }
+/* Any author `display` outranks the UA sheet's [hidden]{display:none} (origin
+   beats specificity), so `hidden` on a .btn or a flex row silently did nothing.
+   One author rule with !important restores the attribute's meaning everywhere. */
+[hidden] { display: none !important; }
 
 .sc-body {
   display: grid;
