@@ -467,3 +467,117 @@ def test_a11y_floor():
         gate = src[src.index("function showPinGate"):]
         gate = gate[:gate.index("\n}\n")]
         assert "'aria-label'" in gate, f"{f}: PIN gate input needs an aria-label"
+
+
+# ── U6: design-token layer (ui-open-decisions B1/B2/B3/B7/B9) ────────────
+def _lum(hex_str: str) -> float:
+    h = hex_str.lstrip("#")
+    def ch(c):
+        c = int(c, 16) / 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    return 0.2126 * ch(h[0:2]) + 0.7152 * ch(h[2:4]) + 0.0722 * ch(h[4:6])
+
+
+def _contrast(a: str, b: str) -> float:
+    la, lb = sorted((_lum(a), _lum(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def test_theme_text_tokens_meet_contrast():
+    """WCAG AA for the 9–12px mono text these tokens colour: 4.5:1 against
+    both surfaces text sits on. News-theme colours are badge text → 3:1."""
+    import json
+    theme = json.loads(THEME.read_text())
+    c = theme["colors"]
+    bad = []
+    for tok in ("fg", "dim", "muted", "cyan", "green", "red", "yellow", "orange", "purple"):
+        for surface in ("bg", "panel"):
+            r = _contrast(c[tok], c[surface])
+            if r < 4.5:
+                bad.append(f"{tok} on {surface}: {r:.2f}")
+    for tid, v in theme["themes"].items():
+        r = _contrast(v["color"], c["panel"])
+        if r < 3.0:
+            bad.append(f"theme {tid} on panel: {r:.2f}")
+    assert not bad, "contrast below AA:\n" + "\n".join(bad)
+
+
+def test_theme_has_layout_tokens():
+    import json
+    tokens = json.loads(THEME.read_text())["tokens"]
+    for name in ("space-1", "space-2", "space-3", "space-4", "space-5", "space-6",
+                 "text-xs", "text-sm", "text-md", "text-lg", "text-xl",
+                 "lh-tight", "lh-body", "h1", "h2", "h3", "bp-sm", "bp-md", "bp-lg"):
+        assert name in tokens, name
+    assert float(tokens["lh-body"]) >= 1.5
+    # server.py emits every key under `tokens` as --name; these must reach CSS
+    assert "--space-1" in server._theme_style_tag()
+    assert "--bp-sm" in server._theme_style_tag()
+
+
+BREAKPOINTS = {"600", "900", "1100"}   # theme.json bp-sm / bp-md / bp-lg
+
+
+@pytest.mark.xfail(strict=False, reason="HTML agents flip this when the pages move to the three breakpoints")
+def test_breakpoints_are_canonical():
+    """var() cannot appear inside @media, so the three bp-* values in
+    theme.json are repeated as literals — and only those three."""
+    bad = []
+    for f in PAGES + ("shared.css",):
+        for i, line in enumerate((STATIC / f).read_text().splitlines(), 1):
+            for m in re.finditer(r"@media[^{]*?(\d+)px", line):
+                if m.group(1) not in BREAKPOINTS:
+                    bad.append(f"{f}:{i}: {line.strip()}")
+    assert not bad, "non-canonical breakpoints:\n" + "\n".join(bad)
+
+
+def test_shared_css_breakpoints_are_canonical():
+    """The shared floor is done already; the page files are the xfail above."""
+    for i, line in enumerate(SHARED_CSS.read_text().splitlines(), 1):
+        for m in re.finditer(r"@media[^{]*?(\d+)px", line):
+            assert m.group(1) in BREAKPOINTS, f"shared.css:{i}: {line.strip()}"
+
+
+def test_btn_family_and_a11y_base():
+    css = SHARED_CSS.read_text()
+    for sel in (".btn {", ".btn-primary", ".btn-danger", ".btn-sm",
+                ".btn:hover", ".btn:focus-visible", ".btn:disabled",
+                "prefers-reduced-motion", "pointer: coarse",
+                ".skip-link", ".sr-only", "img {"):
+        assert sel in css, sel
+    assert "min-height: 24px" in css and "min-height: 44px" in css
+    assert re.search(r"body\s*\{[^}]*line-height:\s*var\(--lh-body\)", css)
+    # the other shared verbs: no stray 5th variant
+    variants = set(re.findall(r"\.btn-([a-z]+)", css))
+    assert variants == {"primary", "danger", "sm"}, variants
+
+
+def test_el_style_via_csstext():
+    """setAttribute('style', …) is blocked under a nonce CSP (B4);
+    element.style.cssText is not."""
+    js = SHARED_JS.read_text()
+    assert "e.style.cssText = val" in js
+    assert "setAttribute('style'" not in js
+
+
+def test_label_dictionary_exported():
+    js = SHARED_JS.read_text()
+    m = re.search(r"const LABELS\s*=\s*\{([^}]*)\}", js)
+    assert m, "shared.js defines LABELS"
+    for word in ("삭제", "취소", "확인", "저장", "닫기", "다시 분석", "정지", "재개", "전체 보기", "접기"):
+        assert f"'{word}'" in m.group(1), word
+    assert "제거" not in m.group(1)
+    assert re.search(r"window\.S\s*=\s*\{[^}]*\bLABELS\b", js)
+
+
+@pytest.mark.xfail(strict=False, reason="HTML agents flip this once 제거 → 삭제 (S.LABELS.delete) everywhere")
+def test_label_dictionary_used():
+    """One verb per action: 삭제, never 제거, in anything a user reads
+    (button text, confirmLabel, aria-label, dialog body). Comments are exempt."""
+    bad = []
+    for f in PAGES:
+        for i, line in enumerate((STATIC / f).read_text().splitlines(), 1):
+            code = line.split("//")[0]
+            if "제거" in code:
+                bad.append(f"{f}:{i}: {line.strip()}")
+    assert not bad, "'제거' in user-facing text — use S.LABELS.delete:\n" + "\n".join(bad)

@@ -1,6 +1,70 @@
 /* Shared floor — injected by server.py after the theme tokens and before
    each page's own <style>, so a page can override any rule here by the
-   cascade. Colours come only from the injected tokens (var(--x)). */
+   cascade. Colours come only from the injected tokens (var(--x)).
+   Breakpoints: var() is not allowed inside @media, so the three theme.json
+   values are written as literals — 600px (bp-sm) · 900px (bp-md) ·
+   1100px (bp-lg) — and test_breakpoints_are_canonical refuses any other
+   number. Mobile-first: narrow is the default, `min-width` adds the rest. */
+
+/* ── base ── */
+html { font-size: var(--text-md); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; color: var(--fg); background: var(--bg);
+  font-size: var(--text-md); line-height: var(--lh-body);
+}
+h1, h2, h3 { margin: 0; color: var(--fg); font-weight: 700; line-height: var(--lh-tight); }
+h1 { font-size: var(--h1); letter-spacing: 2px; }
+h2 { font-size: var(--h2); letter-spacing: 1.5px; }
+h3 { font-size: var(--h3); letter-spacing: 1px; }
+img { max-width: 100%; height: auto; }
+button, input, select, textarea { font-family: inherit; }
+
+/* ── a11y ── */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+/* Skip link: first focusable element on the page — <a class="skip-link"
+   href="#main">본문으로 건너뛰기</a>. Hidden until keyboard focus. */
+.skip-link {
+  position: absolute; top: -100px; left: var(--space-2); z-index: 10003;
+  padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm);
+  background: var(--cyan); color: var(--bg); font-weight: 700;
+}
+.skip-link:focus { top: var(--space-2); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important; scroll-behavior: auto !important;
+  }
+}
+
+/* ── button family: .btn + exactly three modifiers (B9). Pages add no
+      further variants; a special case is `.btn` plus a page-local class. ── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: var(--space-1); min-height: 24px; min-width: 24px;
+  padding: 5px 12px; border-radius: var(--radius-sm);
+  background: transparent; color: var(--dim);
+  border: var(--border-w) solid var(--line-strong);
+  font-family: inherit; font-size: var(--text-sm); letter-spacing: 1px;
+  line-height: var(--lh-tight); cursor: pointer; user-select: none;
+  transition: border-color 0.12s, color 0.12s, background 0.12s, opacity 0.12s;
+}
+.btn:hover  { border-color: var(--cyan); color: var(--cyan); }
+.btn:active { opacity: 0.8; transform: translateY(1px); }
+.btn:focus-visible { outline: 2px solid var(--cyan) !important; outline-offset: 2px; }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+.btn-primary { background: var(--cyan); color: var(--bg); border-color: var(--cyan); font-weight: 700; }
+.btn-primary:hover { opacity: 0.88; color: var(--bg); }
+.btn-danger { border-color: var(--red); color: var(--red); font-weight: 700; }
+.btn-danger:hover { background: var(--red); color: var(--bg); }
+.btn-sm { padding: 2px 8px; font-size: var(--text-xs); }
+/* Touch: 44px hit area on coarse pointers without changing the drawn size. */
+@media (pointer: coarse) {
+  .btn { min-height: 44px; min-width: 44px; }
+  .btn-sm { min-height: 44px; padding-top: 0; padding-bottom: 0; }
+}
 
 /* ── wordmark: both products share the diamond and the tracking ── */
 .header .title { color: var(--fg); font-weight: 700; letter-spacing: 2px; }
@@ -50,38 +114,37 @@
 .s-btn {
   background: transparent; color: var(--dim); border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm); padding: 6px 14px; cursor: pointer;
-  font-family: inherit; font-size: 11px; letter-spacing: 1px;
+  font-family: inherit; font-size: var(--text-sm); letter-spacing: 1px;
+  min-height: 24px; min-width: 24px;
 }
 .s-btn:hover { border-color: var(--cyan); color: var(--cyan); }
 .s-btn.primary { background: var(--cyan); color: var(--bg); border-color: var(--cyan); font-weight: 700; }
 .s-btn.danger { border-color: var(--red); color: var(--red); font-weight: 700; }
 .s-btn.danger:hover { background: var(--red); color: var(--bg); }
+@media (pointer: coarse) { .s-btn { min-height: 44px; } }
 
 /* ── news card (S.newsCard / S.newsGrid) — landing and quant render the
-      same DOM, so they get the same rules ── */
-/* NEWS GRID */
-.news-grid {
-  display:grid; grid-template-columns:repeat(2, 1fr); gap:8px;
-}
-@media (max-width: 600px) { .news-grid { grid-template-columns:1fr; } }
+      same DOM, so they get the same rules. Default (phones) is a dense scan
+      list, ~6-8 rows per screen; from 600px it becomes the 2-column card
+      grid. ── */
+.news-grid { display:grid; grid-template-columns:1fr; gap:0; }
 .news-card {
-  border:1px solid var(--line); border-radius:var(--radius-md);
-  padding:0; overflow:hidden;
-  cursor:pointer; background:var(--elevated);
-  box-shadow:var(--shadow-sm);
-  display:flex; flex-direction:column;
+  display:flex; flex-direction:row; gap:10px; align-items:flex-start;
+  padding:10px 4px 10px 8px; cursor:pointer;
+  background:transparent; border:none; border-radius:0;
+  border-left:2px solid var(--tc); border-bottom:1px solid var(--line);
   transition:border-color 0.12s, transform 0.12s, box-shadow 0.12s;
 }
-.news-card:hover {
-  border-color:var(--cyan); transform:translateY(-2px);
-  box-shadow:var(--shadow-md);
-}
 .news-thumb {
-  height:120px; background:linear-gradient(135deg,
+  position:relative; display:flex; align-items:center; justify-content:center;
+  width:56px; height:56px; flex:none;
+  border-radius:var(--radius-sm); overflow:hidden;
+  background:linear-gradient(135deg,
     rgba(var(--cyan-rgb), 0.10),
     rgba(var(--purple-rgb), 0.10));
-  position:relative; display:flex; align-items:center; justify-content:center;
 }
+.news-thumb.no-img { display:none; }   /* favicon/gradient carries no info */
+.news-thumb .tag, .news-thumb .imp { display:none; }
 .news-thumb .tag {
   position:absolute; top:8px; left:8px; z-index:2;
   background:rgba(var(--bg-rgb), 0.8);
@@ -99,15 +162,15 @@
 }
 .news-thumb .placeholder-ico { font-size:32px; opacity:0.3; }
 .news-thumb .fav-img { width:34px; height:34px; opacity:0.9; }
-.news-body { padding:10px 12px; }
+.news-body { padding:0; flex:1; min-width:0; }
 .news-title {
-  font-size:12px; font-weight:700; color:var(--fg);
-  margin-bottom:6px; line-height:1.3;
-  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+  font-size:13px; font-weight:700; color:var(--fg);
+  margin-bottom:4px; line-height:1.3;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;
   overflow:hidden;
 }
 .news-sum {
-  font-size:11px; color:var(--dim); line-height:1.4; margin-bottom:6px;
+  font-size:11px; color:var(--dim); line-height:1.4; margin-bottom:4px;
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
   overflow:hidden;
 }
@@ -121,30 +184,26 @@
 }
 .news-meta .src-ico { width:14px; height:14px; border-radius:3px; flex:none; }
 .news-meta .when { flex:none; }
-.news-meta .imp-m { display:none; color:var(--yellow); flex:none; }
+.news-meta .imp-m { display:inline; color:var(--yellow); flex:none; }
 
-/* phones: dense scan list instead of the card grid */
-@media (max-width: 640px) {
-  /* NEWS → scan list: ~6-8 rows per screen instead of 2 cards */
-  .news-grid { gap:0; }
+@media (min-width: 600px) {
+  .news-grid { grid-template-columns:repeat(2, 1fr); gap:8px; }
   .news-card {
-    flex-direction:row; gap:10px; align-items:flex-start;
-    padding:10px 4px 10px 8px;
-    background:transparent; border:none; border-radius:0;
-    border-left:2px solid var(--tc); border-bottom:1px solid var(--line);
-    box-shadow:none;
+    flex-direction:column; gap:0; align-items:stretch; padding:0; overflow:hidden;
+    background:var(--elevated); border:1px solid var(--line);
+    border-radius:var(--radius-md); box-shadow:var(--shadow-sm);
   }
-  .news-card:hover { transform:none; box-shadow:none; border-color:var(--line); }
-  .news-thumb {
-    width:56px; height:56px; flex:none;
-    border-radius:var(--radius-sm); overflow:hidden;
+  .news-card:hover {
+    border-color:var(--cyan); transform:translateY(-2px);
+    box-shadow:var(--shadow-md);
   }
-  .news-thumb.no-img { display:none; }   /* favicon/gradient carries no info */
-  .news-thumb .tag, .news-thumb .imp { display:none; }
-  .news-body { padding:0; flex:1; min-width:0; }
-  .news-title { font-size:13px; -webkit-line-clamp:3; margin-bottom:4px; }
-  .news-sum { margin-bottom:4px; }
-  .news-meta .imp-m { display:inline; }
+  .news-thumb { width:auto; height:120px; border-radius:0; overflow:visible; }
+  .news-thumb.no-img { display:flex; }
+  .news-thumb .tag, .news-thumb .imp { display:block; }
+  .news-body { padding:10px 12px; }
+  .news-title { font-size:12px; -webkit-line-clamp:2; margin-bottom:6px; }
+  .news-sum { margin-bottom:6px; }
+  .news-meta .imp-m { display:none; }
 }
 
 /* ── holdings card — the grammar portfolio and quant both use. The CSS is

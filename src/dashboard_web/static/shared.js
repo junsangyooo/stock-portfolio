@@ -22,7 +22,7 @@ function el(tag, props, children) {
       const val = props[k];
       if (val == null || val === false) continue;
       if (k === 'className') e.className = val;
-      else if (k === 'style') e.setAttribute('style', val);
+      else if (k === 'style') e.style.cssText = val;   // not setAttribute: a nonce CSP blocks style attributes
       else if (k === 'dataset') { for (const d in val) e.dataset[d] = val[d]; }
       else if (k.startsWith('on') && typeof val === 'function') {
         e.addEventListener(k.slice(2).toLowerCase(), val);
@@ -56,6 +56,9 @@ function svgIco(name) {
 // a CSS variable. The tokens are the same ones the <style id="theme-vars">
 // carries, injected once per page load.
 function designColor(token) { return T.colors[token] || T.colors.fg || ''; }
+// Non-colour token (space-*, text-*, bp-*, …) as its raw string, e.g.
+// designToken('bp-sm') → '600px' for matchMedia.
+function designToken(name) { return T.tokens[name] || ''; }
 function hexRgb(hex) {
   const n = parseInt(hex.slice(1), 16);
   return ((n >> 16) & 255) + ', ' + ((n >> 8) & 255) + ', ' + (n & 255);
@@ -75,6 +78,14 @@ function newsThemeIcon(id) {
   const t = T.themes[id];
   return (t && t.icon) || 'newspaper';
 }
+
+// ── label dictionary: one Korean verb per shared action (B9). Pages take
+//    the word from here instead of picking a synonym (삭제, never 제거).
+const LABELS = {
+  delete: '삭제', cancel: '취소', confirm: '확인', save: '저장', close: '닫기',
+  reanalyze: '다시 분석', pause: '정지', resume: '재개',
+  showAll: '전체 보기', collapse: '접기',
+};
 
 // ── time ─────────────────────────────────────────────────────────────
 // ISO string or epoch seconds. Bad input → '', the future clamps to 0.
@@ -165,12 +176,12 @@ function confirmModal(o) {
   o = o || {};
   return new Promise(resolve => {
     const trigger = document.activeElement;
-    const cancel = el('button', { className: 's-btn', type: 'button' }, [o.cancelLabel || '취소']);
+    const cancel = el('button', { className: 's-btn', type: 'button' }, [o.cancelLabel || LABELS.cancel]);
     const ok = el('button', { className: 's-btn ' + (o.danger ? 'danger' : 'primary'),
-                              type: 'button' }, [o.confirmLabel || '확인']);
+                              type: 'button' }, [o.confirmLabel || LABELS.confirm]);
     const box = el('div', { className: 's-dialog', role: 'dialog', 'aria-modal': 'true',
                             'aria-labelledby': 's-dialog-title' }, [
-      el('h3', { id: 's-dialog-title' }, [o.title || '확인']),
+      el('h3', { id: 's-dialog-title' }, [o.title || LABELS.confirm]),
       o.body ? el('div', { className: 's-dialog-body' }, [o.body]) : null,
       el('div', { className: 's-dialog-actions' }, [cancel, ok]),
     ]);
@@ -604,7 +615,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 window.S = {
   el, clear, svgIco,
-  designColor, designRgba, newsThemeColor, newsThemeIcon,
+  designColor, designRgba, designToken, newsThemeColor, newsThemeIcon, LABELS,
   timeAgo, itemTime, kstClock,
   money, ccyMoney, pct, signCls,
   toast, api, confirmModal,
