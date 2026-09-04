@@ -24,6 +24,39 @@
 .toast.err { border-color: var(--red); color: var(--red); }
 .toast.ok  { border-color: var(--green); color: var(--green); }
 
+/* ── keyboard focus ring. Pages keep their `outline: none` for mouse focus;
+      :focus-visible is the keyboard case, and !important is what lets a
+      shared rule beat an inline outline:none on the PIN inputs. ── */
+:focus-visible {
+  outline: 2px solid var(--cyan) !important;
+  outline-offset: 2px;
+}
+
+/* ── confirm dialog (S.confirmModal) ── */
+.s-ovl {
+  position: fixed; inset: 0; z-index: 10002;
+  background: rgba(var(--fg-rgb), 0.34);
+  display: flex; align-items: center; justify-content: center; padding: 14px;
+}
+.s-dialog {
+  background: var(--panel); border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+  padding: 18px 20px; width: min(92vw, 420px);
+  font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--fg);
+}
+.s-dialog h3 { font-size: 13px; letter-spacing: 2px; margin: 0 0 8px; }
+.s-dialog-body { font-size: 11px; color: var(--dim); line-height: 1.5; white-space: pre-line; }
+.s-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.s-btn {
+  background: transparent; color: var(--dim); border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm); padding: 6px 14px; cursor: pointer;
+  font-family: inherit; font-size: 11px; letter-spacing: 1px;
+}
+.s-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.s-btn.primary { background: var(--cyan); color: var(--bg); border-color: var(--cyan); font-weight: 700; }
+.s-btn.danger { border-color: var(--red); color: var(--red); font-weight: 700; }
+.s-btn.danger:hover { background: var(--red); color: var(--bg); }
+
 /* ── news card (S.newsCard / S.newsGrid) — landing and quant render the
       same DOM, so they get the same rules ── */
 /* NEWS GRID */

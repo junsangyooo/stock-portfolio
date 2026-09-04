@@ -32,6 +32,7 @@ THEME_PATH = STATIC / "theme.json"
 
 # Matches <head>, <head lang="ko">, <HEAD ...> etc.
 _HEAD_RE = re.compile(r"<head\b[^>]*>", re.IGNORECASE)
+_CHARSET_RE = re.compile(r"<meta\s+charset=[^>]*>", re.IGNORECASE)
 
 # Interactive docs off: they sit outside /api/* so the PIN gate never sees them,
 # and on a public origin they would publish the whole API surface.
@@ -158,6 +159,20 @@ def _shared_js_tag() -> str:
     return _fragment_tag("shared.js", '<script id="shared-js">', "</script>")
 
 
+def _inject_head(body: str, tag: str) -> str:
+    """Insert `tag` right after <meta charset> (so the ~45KB of fragments
+    never push the charset declaration out of the browser's sniffing window),
+    else after the opening <head ...>, else prepend."""
+    head = _HEAD_RE.search(body)
+    if not head:
+        return tag + body
+    at = head.end()
+    charset = _CHARSET_RE.search(body, at)
+    if charset:
+        at = charset.end()
+    return body[:at] + "\n" + tag + body[at:]
+
+
 def _serve(name: str) -> HTMLResponse:
     p = STATIC / name
     body = p.read_text() if p.exists() else f"<h1>{name} missing</h1>"
@@ -166,14 +181,7 @@ def _serve(name: str) -> HTMLResponse:
     # cascade); JS arriving first is why the fragment exports one namespace
     # (window.S) instead of globals a page could shadow.
     theme_tag = "\n".join([_theme_style_tag(), _shared_css_tag(), _shared_js_tag()])
-    # Inject right after the opening <head ...> tag (any attributes) so theme
-    # tokens load before page CSS. Falls back to prepend if no <head> found.
-    m = _HEAD_RE.search(body)
-    if m:
-        body = body[:m.end()] + "\n" + theme_tag + body[m.end():]
-    else:
-        body = theme_tag + body
-    return HTMLResponse(content=body, headers=_NO_CACHE_HEADERS)
+    return HTMLResponse(content=_inject_head(body, theme_tag), headers=_NO_CACHE_HEADERS)
 
 
 # quant.jsyoo.dev and portfolio.jsyoo.dev are the same app behind the same
@@ -220,12 +228,9 @@ def _serve_quant() -> HTMLResponse:
     except Exception as exc:  # noqa: BLE001 — an unreachable DB is not a 500 page
         logging.error("quant account lookup failed: %s", exc)
         account_id = ""
-    resp = _serve("quant.html")
-    body = resp.body.decode()
+    body = _serve("quant.html").body.decode()
     tag = f'<script>window.QUANT_ACCOUNT = {json.dumps(account_id)};</script>'
-    m = _HEAD_RE.search(body)
-    body = (body[:m.end()] + "\n" + tag + body[m.end():]) if m else tag + body
-    return HTMLResponse(content=body, headers=_NO_CACHE_HEADERS)
+    return HTMLResponse(content=_inject_head(body, tag), headers=_NO_CACHE_HEADERS)
 
 
 @app.get("/a/{account_id}", response_class=HTMLResponse)

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>portfolio-dashboard · 계좌</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1 15 8 8 15 1 8z' fill='silver'/%3E%3C/svg%3E">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Press+Start+2P&display=swap');
 /* Color tokens (--bg, --panel, --line, --cyan, etc.) are injected by
@@ -2196,8 +2197,7 @@ async function loadPortfolio() {
     const need = STOCKS.filter(s => s.price == null).map(s => s.symbolId);
     if (need.length) {
       try {
-        const qr = await fetch(API.quotes(need.join(',')));
-        const qd = await qr.json();
+        const qd = await S.api(API.quotes(need.join(',')));
         for (const s of STOCKS) {
           const q = qd.quotes && qd.quotes[s.symbolId];
           if (q && q.price != null) {
@@ -2219,6 +2219,7 @@ async function loadPortfolio() {
 // returns 403. On success it sets the session cookie and re-renders.
 // ─────────────────────────────────────────────────────────────
 let _pinGateOpen = false;
+S.onForbidden = showPinGate;   // S.api's 403 lands here instead of a toast
 function showPinGate() {
   if (_pinGateOpen) return;
   _pinGateOpen = true;
@@ -2245,7 +2246,7 @@ function showPinGate() {
 
   const input = el('input', {
     id: 'pin-gate-input', type: 'password', inputmode: 'numeric',
-    maxlength: '6', autocomplete: 'off',
+    maxlength: '6', autocomplete: 'off', 'aria-label': '6자리 비밀번호',
     placeholder: '● ● ● ● ● ●',
     style: 'width:100%; text-align:center; letter-spacing:8px;' +
            ' font-size:22px; font-family:inherit; padding:10px 8px;' +
@@ -2324,13 +2325,11 @@ function showPinGate() {
   }, 50);
 }
 
+// S.api has already toasted by the time the catch runs, so an empty chart
+// never passes for "no data".
 async function fetchOhlcv(symbolId, period, n = 240) {
-  try {
-    const r = await fetch(API.ohlcv(symbolId, period, n));
-    if (!r.ok) return [];
-    const d = await r.json();
-    return d.bars || [];
-  } catch (_) { return []; }
+  try { return (await S.api(API.ohlcv(symbolId, period, n))).bars || []; }
+  catch (_) { return []; }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -2823,13 +2822,13 @@ async function loadAnalysisBadges() {
   if (!STOCKS.length) return;
   try {
     const ids = STOCKS.map(s => s.symbolId).join(',');
-    const d = await (await fetch(API.analysisSummary(ids))).json();
+    const d = await S.api(API.analysisSummary(ids));
     const map = (d && d.symbols) || {};
     STOCKS.forEach(s => {
       const entry = map[s.symbolId] || map[s.symbolId.toUpperCase()];
       window._setAnalysisBadge(s.symbolId, entry || null);
     });
-  } catch (_) { /* 배지는 부가 정보 — 실패는 조용히 */ }
+  } catch (_) { /* 배지는 부가 정보 — S.api 가 이미 알렸다 */ }
 }
 
 // debounced resize → redraw all charts
@@ -2905,8 +2904,8 @@ document.getElementById('btn-add').addEventListener('click', () => {
 
 document.getElementById('btn-refresh').addEventListener('click', async () => {
   try {
-    await fetch(API.marketRefresh(), { method: 'POST' });
-  } catch (_) {}
+    await S.api(API.marketRefresh(), { method: 'POST' });
+  } catch (_) { /* S.api toasted */ }
   await renderAll();
 });
 
@@ -3013,12 +3012,12 @@ renderAll();
       if (s) s._order = i;
     });
     try {
-      await fetch(API.reorderHoldings(), {
+      await S.api(API.reorderHoldings(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order }),
       });
-    } catch (_) {}
+    } catch (_) { /* S.api toasted — the order on screen is not the saved one */ }
   }
 
   reorderBtn.addEventListener('click', () => {
@@ -3441,7 +3440,8 @@ window.openTradeHistory = async function () {
   }
 
   async function remove(plan) {
-    if (!confirm(plan.name + ' 계획을 삭제합니다.')) return;
+    if (!await S.confirmModal({ title: '계획 삭제', body: plan.name + ' 계획을 삭제합니다.',
+                                danger: true, confirmLabel: '삭제' })) return;
     try {
       const r = await fetch(API.plan(plan.plan_id), { method: 'DELETE' });
       if (!r.ok) throw new Error(r.status);
@@ -3546,11 +3546,9 @@ window.openTradeHistory = async function () {
 
   async function load() {
     try {
-      const r = await fetch(API.snapshots(currentCcy, currentDays));
-      const d = await r.json();
-      snapshots = d.snapshots || [];
+      snapshots = (await S.api(API.snapshots(currentCcy, currentDays))).snapshots || [];
     } catch (_) {
-      snapshots = [];
+      snapshots = [];   // S.api toasted
     }
     draw();
   }
@@ -3741,11 +3739,11 @@ window.openTradeHistory = async function () {
   // 탭 재진입 복구용: running이면 실행 버튼 대신 진행 표시 + 폴링 재개 (중복 실행 방지).
   async function runningElapsed(kind, mkt, code) {
     try {
-      const s = await (await fetch(API.analysisStatus(kind, mkt, code))).json();
+      const s = await S.api(API.analysisStatus(kind, mkt, code));
       if (s.state !== 'running') return null;
       const t = Date.parse(s.started_at || '');
       return Number.isNaN(t) ? 0 : Math.max(0, Math.round((Date.now() - t) / 1000));
-    } catch (_) { return null; }
+    } catch (_) { return null; }   // S.api toasted — 'not running' is now a guess the user saw
   }
 
   // pane별 watcher 세대 카운터 — 새 watcher가 붙으면 이전 poller는 isStale()로 소멸
@@ -3798,7 +3796,7 @@ window.openTradeHistory = async function () {
     const sym = currentStock.symbolId, mkt = _amkt(), code = currentStock.code;
     (async () => {   // 차트 자동 신호 칩 2개만 (정배열 / 추세 강도)
       try {
-        const f = await (await fetch(API.chartAnalysis(sym))).json();
+        const f = await S.api(API.chartAnalysis(sym));
         if (!currentStock || currentStock.symbolId !== sym) return;
         const day = ((f.timeframes || {})['1d']) || {};
         if (!day.has_data) return;
@@ -3809,11 +3807,11 @@ window.openTradeHistory = async function () {
           el('span', { className: 'ca-muted' }, [svgIco('trending-up'), ' 차트 자동 신호 (실시간): ']),
           ...chips,
         ]));
-      } catch (_) { /* 폴백 보조 정보 — 실패 무시 */ }
+      } catch (_) { /* 폴백 보조 정보 — S.api 가 이미 알렸다 */ }
     })();
     (async () => {   // 최근 연결 뉴스 3건
       try {
-        const sg = await (await fetch(API.newsSignals(mkt, code))).json();
+        const sg = await S.api(API.newsSignals(mkt, code));
         if (!currentStock || currentStock.symbolId !== sym) return;
         const devs = (sg.developments || []).slice(0, 3);
         if (!devs.length) return;
@@ -3829,7 +3827,7 @@ window.openTradeHistory = async function () {
           el('span', { className: 'na-sig-th' }, [d.theme_kr || '']),
           el('span', { className: 'na-sig-pt' }, [d.point || '']),
         ])));
-      } catch (_) { /* 폴백 보조 정보 — 실패 무시 */ }
+      } catch (_) { /* 폴백 보조 정보 — S.api 가 이미 알렸다 */ }
     })();
   }
 
@@ -3945,7 +3943,7 @@ window.openTradeHistory = async function () {
         ].filter(Boolean)),
         el('div', { className: 'jd-when' }, [
           freshEl(date),
-          (body.confidence != null)
+          (body.confidence != null && !factsOnly)   // facts_only carries 0.0 — a number, not a verdict
             ? el('span', { className: 'fa-conf' }, ['신뢰도 ',
                 el('span', { className: 'dots' }, [_confDots(body.confidence)])]) : null,
         ].filter(Boolean)),
@@ -4723,7 +4721,9 @@ window.openTradeHistory = async function () {
 // ─────────────────────────────────────────────────────────────
 window.deleteHolding = async function (stock) {
   const label = stock.name + ' (' + stock.market + ' · ' + stock.code + ')';
-  if (!confirm(label + ' 을(를) 포트폴리오에서 제거할까요?\n\n(히스토리 데이터는 디스크에 보존됩니다.)')) return;
+  if (!await S.confirmModal({ title: '종목 제거',
+      body: label + ' 을(를) 포트폴리오에서 제거할까요?\n\n(히스토리 데이터는 디스크에 보존됩니다.)',
+      danger: true, confirmLabel: '제거' })) return;
   try {
     const r = await fetch(API.removeHolding(stock.symbolId),
                           { method: 'DELETE' });
@@ -5601,7 +5601,7 @@ window.deleteHolding = async function (stock) {
     }, ['비밀번호 변경 (6자리)']));
     const pinInput = el('input', {
       type:'password', inputmode:'numeric', maxlength:'6', autocomplete:'new-password',
-      placeholder:'새 비밀번호 6자리',
+      placeholder:'새 비밀번호 6자리', 'aria-label':'새 비밀번호 6자리',
       style:'width:100%; padding:8px; letter-spacing:6px; text-align:center;' +
             ' background:var(--bg); color:var(--fg); border:1px solid var(--line);' +
             ' border-radius:var(--radius-sm); font-family:inherit; margin-bottom:6px;',
@@ -5647,7 +5647,9 @@ window.deleteHolding = async function (stock) {
             ' border:1px solid var(--red); border-radius:var(--radius-sm);' +
             ' cursor:pointer; font-weight:700; font-family:inherit; letter-spacing:1px;',
       onClick: async () => {
-        if (!confirm(ACCOUNT_ID + ' 계좌를 완전히 삭제할까요?\n보유 종목·잔고·스냅샷이 모두 사라집니다. (되돌릴 수 없음)')) return;
+        if (!await S.confirmModal({ title: '계좌 삭제',
+            body: ACCOUNT_ID + ' 계좌를 완전히 삭제할까요?\n보유 종목·잔고·스냅샷이 모두 사라집니다. (되돌릴 수 없음)',
+            danger: true, confirmLabel: '완전히 삭제' })) return;
         delBtn.disabled = true; setStat('삭제 중…', 'var(--dim)');
         try {
           const r = await fetch('/api/accounts/' + _ACC, { method:'DELETE' });
@@ -5940,7 +5942,9 @@ window.deleteHolding = async function (stock) {
 
   async function delThread() {
     if (!sid) return;
-    if (!confirm('이 대화를 삭제합니다. 서버의 대화 기록과 모델 세션도 함께 지워집니다.')) return;
+    if (!await S.confirmModal({ title: '대화 삭제',
+        body: '이 대화를 삭제합니다. 서버의 대화 기록과 모델 세션도 함께 지워집니다.',
+        danger: true, confirmLabel: '삭제' })) return;
     try { await api('/chats/' + sid, { method: 'DELETE' }); } catch (e) { /* already gone */ }
     sid = null;
     await refresh(null);

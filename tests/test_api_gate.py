@@ -78,9 +78,23 @@ class TestQuantSessionOnSharedData(unittest.TestCase):
             self.assertNotEqual(r.status_code, 403, path)
 
     def test_still_refused_on_the_ledger(self):
-        r = self.c.get("/api/accounts/junisa", cookies=self.q)
-        self.assertIn(r.status_code, (403, 404))
-        self.assertNotEqual(r.status_code, 200)
+        """Exactly 403 (ops notes §10) — on an account that exists and has a
+        PIN, so a 404 could not stand in for the refusal."""
+        import tempfile
+        from unittest import mock
+        from src.portfolio.store import account_store, db as pdb
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(pdb, "DB_PATH", f"{tmp}/portfolio.db"), \
+                mock.patch.object(pdb, "_initialized", False):
+            account_store.create("junisa", "junisa", "GENERAL")
+            account_store.set_pin_hash("junisa", security.hash_pin("junisa", "123456"))
+            r = self.c.get("/api/accounts/junisa", cookies=self.q)
+            self.assertEqual(r.status_code, 403)
+            # and the very same account opens to its own session
+            name, value = (security.COOKIE_PREFIX + "junisa",
+                           security.make_session_token("junisa"))
+            self.assertEqual(self.c.get("/api/accounts/junisa",
+                                        cookies={name: value}).status_code, 200)
 
     def test_swapped_account_is_a_forgery(self):
         from src.api.quant import COOKIE_NAME

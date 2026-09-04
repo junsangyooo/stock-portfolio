@@ -87,6 +87,8 @@ SHARED_NAMES = (
     "srcName", "newsCard", "newsGrid", "toast", "api",
     # U4: the card grammar both pages draw with
     "drawChart", "fmtBarDate", "drawCurve", "LABEL_KO", "freshInfo", "verdictBadge",
+    # U5: the one confirm dialog (native confirm() is banned below)
+    "confirmModal",
 )
 
 # A colour literal in a VALUE position: after ':' / '=' / '(' / ',' or an
@@ -157,8 +159,8 @@ def test_shared_fragments_injected_in_order(client):
     the reason the fragment lives under one namespace (S.*)."""
     for path, host in (("/", PORTFOLIO_HOST), ("/a/x", PORTFOLIO_HOST), ("/q", QUANT_HOST)):
         body = client.get(path, headers={"host": host}).text
-        marks = ['id="theme-vars"', "window.__THEME_TOKENS", 'id="shared-css"',
-                 'id="shared-js"', "@import url("]
+        marks = ['<meta charset', 'id="theme-vars"', "window.__THEME_TOKENS",
+                 'id="shared-css"', 'id="shared-js"', "@import url("]
         pos = [body.find(m) for m in marks]
         assert all(p >= 0 for p in pos), (path, dict(zip(marks, pos)))
         assert pos == sorted(pos), (path, dict(zip(marks, pos)))
@@ -338,3 +340,84 @@ def test_quant_page_has_no_stale_sections():
     for pid in ("panel-plans", "panel-watch", "panel-news"):
         assert re.search(rf'id="{pid}"[^>]*\bhidden\b', src), f"{pid} must start collapsed"
     assert 'class="nav"' not in src
+
+
+# ── U5: harness closure ──────────────────────────────────────────────────
+PAGES = ("landing.html", "account.html", "quant.html")
+
+
+def test_facts_only_result_is_not_dressed_as_a_judgement():
+    """engine._facts_only emits confidence 0.0 — a number, so `!= null` alone
+    would draw 「신뢰도 ○○○○○」 under a result that holds no judgement."""
+    src = ACCOUNT.read_text()
+    assert re.search(r"body\.confidence\s*!=\s*null\s*&&\s*!factsOnly", src)
+
+
+def test_pages_route_403_to_their_own_pin_gate():
+    for f in ("account.html", "quant.html"):
+        assert re.search(r"S\.onForbidden\s*=\s*showPinGate\b", (STATIC / f).read_text()), f
+    assert "onForbidden" in SHARED_JS.read_text()
+
+
+def test_no_native_confirm():
+    bad = []
+    for f in PAGES:
+        for i, line in enumerate((STATIC / f).read_text().splitlines(), 1):
+            if re.search(r"\bconfirm\(", line):
+                bad.append(f"{f}:{i}: {line.strip()}")
+    assert not bad, "native confirm() — use S.confirmModal:\n" + "\n".join(bad)
+    js = SHARED_JS.read_text()
+    for needle in ("role: 'dialog'", "'Escape'", "cancel.focus()"):
+        assert needle in js, needle
+
+
+def test_quant_page_blocks_on_pin_setup():
+    src = QUANT.read_text()
+    assert "qapi('/pin'" in src
+    assert re.search(r"\.no_pin\b", src), "the /auth answer's no_pin is read"
+    assert re.search(r"\.has_pin\b", src), "the /state answer's has_pin is read"
+    assert "showPinSetup" in src
+
+
+def test_el_attribute_objects_use_the_canonical_keys():
+    """class: / onclick: still work (el() maps them) but two spellings of one
+    key is how the pages drifted apart before U2."""
+    bad = []
+    for f in PAGES:
+        for i, line in enumerate((STATIC / f).read_text().splitlines(), 1):
+            if re.search(r"(?<![\w-])(class|onclick)\s*:", line):
+                bad.append(f"{f}:{i}: {line.strip()}")
+    assert not bad, "use className: / onClick: in el() props:\n" + "\n".join(bad)
+
+
+def test_every_page_has_a_favicon():
+    for f in PAGES:
+        src = (STATIC / f).read_text()
+        assert re.search(r'<link rel="icon" href="data:image/svg\+xml', src), f
+
+
+def test_ohlcv_and_analysis_fetches_fail_loudly():
+    """A swallowed fetch failure renders as 'no data'. Every read that used to
+    return [] / null silently now goes through S.api (toast + throw)."""
+    src = ACCOUNT.read_text()
+    for call in ("API.ohlcv(", "API.quotes(need", "API.analysisSummary(",
+                 "API.analysisStatus(", "API.snapshots(", "API.reorderHoldings(",
+                 "API.marketRefresh("):
+        assert re.search(r"S\.api\(\s*" + re.escape(call), src), call
+    js = SHARED_JS.read_text()
+    assert "네트워크 오류" in js, "S.api toasts a network failure, not only a non-2xx"
+
+
+def test_a11y_floor():
+    css = SHARED_CSS.read_text()
+    assert ":focus-visible" in css
+    js = SHARED_JS.read_text()
+    assert re.search(r"id: 'toast-host'[^}]*role: 'status'[^}]*'aria-live': 'polite'", js)
+    q = QUANT.read_text()
+    assert re.search(r'input\[type="password"\][^}]*font-size:\s*16px', q), "iOS zoom"
+    assert re.search(r"el\('label',\s*\{\s*for:", q), "field() labels its control"
+    for f in ("account.html", "quant.html"):
+        src = (STATIC / f).read_text()
+        gate = src[src.index("function showPinGate"):]
+        gate = gate[:gate.index("\n}\n")]
+        assert "'aria-label'" in gate, f"{f}: PIN gate input needs an aria-label"

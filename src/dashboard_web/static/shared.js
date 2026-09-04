@@ -118,28 +118,72 @@ const signCls = v => v == null ? '' : (v >= 0 ? 'pos' : 'neg');
 
 // ── feedback ─────────────────────────────────────────────────────────
 // The one error channel: a failure must never look like an empty screen.
+// A message already on screen is not repeated — 25 cards losing the network
+// at once is one failure, not 25.
 function toast(msg, kind) {
   let host = document.getElementById('toast-host');
   if (!host) {
-    host = el('div', { id: 'toast-host' });
+    host = el('div', { id: 'toast-host', role: 'status', 'aria-live': 'polite' });
     document.body.appendChild(host);
   }
+  if ([...host.children].some(c => c.textContent === msg)) return;
   const t = el('div', { className: 'toast' + (kind ? ' ' + kind : '') }, [msg]);
   host.appendChild(t);
   setTimeout(() => t.remove(), 4000);
 }
 // fetch wrapper for absolute /api paths. Non-2xx → toast + throw, so a
-// caller that forgets its catch still shows the failure.
+// caller that forgets its catch still shows the failure; a network failure
+// (fetch itself throws) is toasted too, or it would render as "no data".
+// 403 goes to the page's own PIN gate when it has set S.onForbidden.
 async function api(path, opts) {
-  const r = await fetch(path, opts);
+  let r;
+  try { r = await fetch(path, opts); }
+  catch (e) { toast('네트워크 오류 — ' + path.split('?')[0], 'err'); throw e; }
   const body = await r.json().catch(() => ({}));
   if (!r.ok) {
+    if (r.status === 403 && typeof window.S.onForbidden === 'function') {
+      window.S.onForbidden();
+      throw new Error('PIN required');
+    }
     const msg = r.status === 403 ? '로그인이 필요합니다'
       : (body.detail || ('HTTP ' + r.status));
     toast(msg, 'err');
     throw new Error(msg);
   }
   return body;
+}
+
+// ── confirm dialog ───────────────────────────────────────────────────
+// Replaces native confirm(): resolves true/false. Esc cancels, initial focus
+// on 취소 (the safe button), focus returns to whatever opened it.
+function confirmModal(o) {
+  o = o || {};
+  return new Promise(resolve => {
+    const trigger = document.activeElement;
+    const cancel = el('button', { className: 's-btn', type: 'button' }, [o.cancelLabel || '취소']);
+    const ok = el('button', { className: 's-btn ' + (o.danger ? 'danger' : 'primary'),
+                              type: 'button' }, [o.confirmLabel || '확인']);
+    const box = el('div', { className: 's-dialog', role: 'dialog', 'aria-modal': 'true',
+                            'aria-labelledby': 's-dialog-title' }, [
+      el('h3', { id: 's-dialog-title' }, [o.title || '확인']),
+      o.body ? el('div', { className: 's-dialog-body' }, [o.body]) : null,
+      el('div', { className: 's-dialog-actions' }, [cancel, ok]),
+    ]);
+    const ovl = el('div', { className: 's-ovl' }, [box]);
+    function done(v) {
+      ovl.remove();
+      document.removeEventListener('keydown', onKey, true);
+      if (trigger && typeof trigger.focus === 'function') trigger.focus();
+      resolve(v);
+    }
+    function onKey(e) { if (e.key === 'Escape') { e.stopPropagation(); done(false); } }
+    document.addEventListener('keydown', onKey, true);
+    cancel.addEventListener('click', () => done(false));
+    ok.addEventListener('click', () => done(true));
+    ovl.addEventListener('mousedown', e => { if (e.target === ovl) done(false); });
+    document.body.appendChild(ovl);
+    cancel.focus();
+  });
 }
 
 // ── news card ────────────────────────────────────────────────────────
@@ -558,7 +602,7 @@ window.S = {
   designColor, designRgba, newsThemeColor, newsThemeIcon,
   timeAgo, itemTime, kstClock,
   money, ccyMoney, pct, signCls,
-  toast, api,
+  toast, api, confirmModal,
   srcName, newsCard, newsGrid,
   LABEL_KO, freshInfo, verdictBadge,
   fmtBarDate, drawChart, drawCurve,
