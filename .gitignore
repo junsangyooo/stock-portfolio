@@ -22,7 +22,6 @@ data/logs/
 data/backup/
 models/
 docs_cache/
-# stale local orchestrator_state.json is still on disk here
 
 # ── Catch-all by extension (defense in depth) ───────────────────────
 *.parquet
