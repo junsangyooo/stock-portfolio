@@ -22,9 +22,14 @@ from src.research.llm_backend import ClaudeCliBackend
 
 @pytest.fixture(autouse=True)
 def temp_books(tmp_path, monkeypatch):
-    """Fresh empty market.db and news.db per test."""
+    """Fresh empty market.db, news.db and analysis tree per test."""
     monkeypatch.setattr(paths, "MARKET_DB_PATH", tmp_path / "market.db")
     monkeypatch.setattr(paths, "NEWS_DB_PATH", tmp_path / "news.db")
+    # Stored analyses are read by existence (analyze.read globs the folder), so
+    # a suite run on a host that has actually analysed something answers from
+    # production output: test_api_analysis asserted exists=False for KR:005930
+    # and failed on Oracle alone, where 20260901.json sits in the real tree.
+    monkeypatch.setattr(paths, "ANALYSIS_DIR", tmp_path / "analysis")
     monkeypatch.setattr(paths, "ensure_dirs", lambda: None)
     return tmp_path
 
