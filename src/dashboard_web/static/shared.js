@@ -506,6 +506,8 @@ function drawCurve(canvas, snapshots, opts) {
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, w, h);
+  const multi = (opts.series || []).filter(s => s && (s.rows || []).length >= 2);
+  if (multi.length) return curveMulti(ctx, w, h, multi);
   if (snapshots.length < 2) return;
 
   const PAD_L = 70, PAD_R = 14, PAD_T = 14, PAD_B = 28;
@@ -576,6 +578,91 @@ function drawCurve(canvas, snapshots, opts) {
   ctx.beginPath();
   ctx.arc(px(snapshots.length - 1), py(last.total_assets), 4, 0, Math.PI * 2);
   ctx.fill();
+}
+
+// Several currencies of one account on a single date axis. Each keeps its own
+// y-scale — a KRW balance and a USD balance share no unit, so one axis would
+// flatten whichever is smaller into the floor. Colour is per currency, never
+// per direction: two green lines would be indistinguishable, and the reader
+// needs to know which line is which before knowing whether it rose.
+const CURVE_TOKENS = ['cyan', 'orange', 'purple', 'yellow'];
+
+function curveMulti(ctx, w, h, series) {
+  const PAD_L = 70, PAD_R = 70, PAD_T = 30, PAD_B = 28;
+  const plotW = w - PAD_L - PAD_R;
+  const plotH = h - PAD_T - PAD_B;
+
+  // A currency the account only opened last week has fewer rows than one it
+  // has held all along; the x axis is every date any of them carries, so the
+  // short series starts partway across instead of being stretched to fit.
+  const seen = {};
+  series.forEach(s => s.rows.forEach(r => { seen[r.date] = 1; }));
+  const dates = Object.keys(seen).sort();
+  const at = {};
+  dates.forEach((d, i) => { at[d] = PAD_L + (i / Math.max(dates.length - 1, 1)) * plotW; });
+
+  const scaled = series.map((s, i) => {
+    let lo = Infinity, hi = -Infinity;
+    s.rows.forEach(r => {
+      if (r.total_assets < lo) lo = r.total_assets;
+      if (r.total_assets > hi) hi = r.total_assets;
+    });
+    const pad = (hi - lo) * 0.08 || Math.abs(hi) * 0.005 || 1;
+    // A balance that never went negative must not be labelled below zero —
+    // padding under a near-empty account would print "-41,466원" on the axis.
+    lo = lo >= 0 ? Math.max(0, lo - pad) : lo - pad;
+    hi += pad;
+    const token = CURVE_TOKENS[i % CURVE_TOKENS.length];
+    return { rows: s.rows, currency: s.currency, color: designColor(token), lo: lo, hi: hi,
+             y: v => PAD_T + (1 - (v - lo) / (hi - lo)) * plotH };
+  });
+
+  ctx.font = '10px JetBrains Mono';
+
+  // y grid — one set of lines, read against the left scale and the right one.
+  // Past two currencies the axes run out, so the rest carry the legend only.
+  for (let i = 0; i <= 4; i++) {
+    const y = PAD_T + plotH * i / 4;
+    ctx.strokeStyle = designRgba('dim', 0.18);
+    ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(w - PAD_R, y); ctx.stroke();
+    scaled.slice(0, 2).forEach((s, k) => {
+      ctx.fillStyle = s.color;
+      ctx.fillText(ccyMoney(s.lo + (s.hi - s.lo) * (1 - i / 4), s.currency),
+                   k === 0 ? 4 : w - PAD_R + 6, y + 3);
+    });
+  }
+
+  ctx.fillStyle = designColor('dim');
+  ctx.fillText(dates[0], PAD_L, h - 8);
+  if (dates.length >= 3) {
+    ctx.fillText(dates[Math.floor(dates.length / 2)], PAD_L + plotW / 2 - 30, h - 8);
+  }
+  ctx.fillText(dates[dates.length - 1], w - PAD_R - 60, h - 8);
+
+  let lx = PAD_L;
+  scaled.forEach(s => {
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    s.rows.forEach((r, i) => {
+      const x = at[r.date], y = s.y(r.total_assets);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    const last = s.rows[s.rows.length - 1], first = s.rows[0].total_assets;
+    ctx.fillStyle = s.color;
+    ctx.beginPath();
+    ctx.arc(at[last.date], s.y(last.total_assets), 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // legend: the swatch says which line, the number says what it did
+    const moved = first ? (last.total_assets / first - 1) * 100 : 0;
+    const label = s.currency + ' ' + (moved >= 0 ? '+' : '') + moved.toFixed(1) + '%';
+    ctx.beginPath(); ctx.moveTo(lx, PAD_T - 14); ctx.lineTo(lx + 14, PAD_T - 14); ctx.stroke();
+    ctx.fillText(label, lx + 19, PAD_T - 10);
+    lx += 33 + ctx.measureText(label).width;
+  });
 }
 
 // ── icon sprite (Lucide, ISC, lucide.dev) ────────────────────────────
