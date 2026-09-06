@@ -38,3 +38,6 @@ docs/
 
 # session signing secret (Oracle-generated, never commit)
 data/.session_secret
+
+# deprecated per-theme jsonl (migrated into news.db)
+data/signals/
