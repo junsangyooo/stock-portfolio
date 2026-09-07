@@ -9,7 +9,8 @@ subscription budget for the layers that actually decide something.
 Contents:
   - ``ClaudeCliBackend``   subprocess wrapper around `claude -p`
   - ``LocalLlamaBackend``  HTTP client for the on-host llama.cpp server
-  - ``_parse_json``        lenient JSON extractor (handles fenced blocks)
+  - ``_parse_json``        lenient JSON extractor — FIRST object, raises
+  - ``extract_json``       lenient JSON extractor — LAST fence, returns None
   - constants              ``FAST_MODEL`` (Haiku 4.5), ``SLOW_MODEL`` (Sonnet 4.6),
                            ``LOCAL_URL``
 
@@ -235,6 +236,39 @@ def local_or_claude(system: str, user: str, *, claude_model: str,
     out = ClaudeCliBackend(model=claude_model).call(system, user, model=claude_model)
     _get_log().warning(f"[{stage}] served by claude_cli ({claude_model})")
     return out, "claude_cli"
+
+
+def extract_json(text: str) -> dict | None:
+    """Last ```json fence, else the last top-level {...} in the text.
+
+    The other reader here, ``_parse_json``, takes the FIRST object and raises.
+    Both exist on purpose: a fenced answer that the model prefaced with prose
+    containing a brace is read correctly only by this one, and a caller that
+    wants a failure rather than a None is served only by the other. Merging
+    them would change what six live call sites accept.
+    """
+    fences = re.findall(r"```(?:json)?\s*\n(.*?)```", text, re.S)
+    for cand in reversed(fences):
+        try:
+            return json.loads(cand)
+        except json.JSONDecodeError:
+            continue
+    # fall back: widest brace span from the last '{'
+    end = text.rfind("}")
+    while end != -1:
+        depth = 0
+        for i in range(end, -1, -1):
+            if text[i] == "}":
+                depth += 1
+            elif text[i] == "{":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(text[i:end + 1])
+                    except json.JSONDecodeError:
+                        break
+        end = text.rfind("}", 0, end)
+    return None
 
 
 def _parse_json(text: str) -> dict:

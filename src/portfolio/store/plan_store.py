@@ -19,7 +19,13 @@ SIDES = ("buy", "sell")
 # What a person may set by hand (PATCH). entered/done normally arrive through
 # a trade row; they are allowed here for the case the trade could not pick a
 # plan. stopped/expired are quant vocabulary — a human just abandons.
-HUMAN_STATUSES = ("armed", "entered", "done", "abandoned")
+#
+# `proposed` is the planner's output: an agent wrote it, and it does nothing
+# until the person approves it into `armed`. It is reachable by PATCH only as
+# a source (approve / reject), never as a destination — nothing may turn an
+# armed plan back into a proposal.
+HUMAN_STATUSES = ("armed", "entered", "done", "abandoned", "proposed")
+_FROM_PROPOSED = {"armed": "approve", "abandoned": "reject"}
 
 
 def _row(r) -> dict:
@@ -32,6 +38,9 @@ def _row(r) -> dict:
         "qty": float(r["qty"]),
         "note": r["note"] or "",
         "status": r["status"],
+        # who wrote it — the card shows an approve/reject pair only on a
+        # proposal, and only an agent's plan may be rewritten by a later pass.
+        "source": r["source"],
         "created_at": r["created_at"],
         "updated_at": r["updated_at"],
     }
@@ -106,3 +115,26 @@ def delete(account_id: str, plan_id: int) -> bool:
             (plan_id, account_id))
         c.commit()
         return cur.rowcount > 0
+
+
+def decide(account_id: str, plan_id: int, status: str) -> Optional[dict]:
+    """Approve (`armed`) or reject (`abandoned`) an agent's proposal.
+
+    Returns None when the plan is not this account's, is not a proposal, or is
+    not the agent's — so the route answers 404 without a second read, and a
+    person's own plan can never be closed by this door.
+    """
+    if status not in _FROM_PROPOSED:
+        return None
+    with connect() as c:
+        cur = c.execute(
+            "UPDATE plans SET status = ?, updated_at = ?"
+            " WHERE plan_id = ? AND account_id = ?"
+            "   AND status = 'proposed' AND source = 'agent'",
+            (status, int(time.time()), plan_id, account_id))
+        c.commit()
+        if cur.rowcount == 0:
+            return None
+        row = c.execute("SELECT * FROM plans WHERE plan_id = ?",
+                        (plan_id,)).fetchone()
+        return _row(row) if row else None

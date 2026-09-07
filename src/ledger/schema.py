@@ -135,6 +135,10 @@ CREATE TABLE IF NOT EXISTS plans (
   note                  TEXT,
   status                TEXT NOT NULL DEFAULT 'armed',
                         -- armed|entered|done|stopped|abandoned|expired
+                        --   |proposed  (an agent wrote it for a human book;
+                        --    the person approves it into `armed`. No executor
+                        --    looks at it — trade_store and keeper both match
+                        --    on `armed`, so a proposal cannot fill.)
   source                TEXT NOT NULL DEFAULT 'agent',  -- user | agent
   conditions            TEXT,           -- JSON, see above
   conditional_order_id  TEXT,
@@ -143,6 +147,33 @@ CREATE TABLE IF NOT EXISTS plans (
                                         -- NULL for a person's or a user's plan
   created_at            INTEGER NOT NULL,
   updated_at            INTEGER NOT NULL
+);
+
+-- One plan-writing pass over one account: what the model was shown, what it
+-- proposed, and what survived validation. The diff is kept whole for a person
+-- to read, but `notes_by_symbol` is lifted into its own column: the card grid
+-- draws one badge per symbol and must not parse the whole diff to do it.
+--
+-- UNIQUE(account_id, date, slot) is the idempotence key. A second `morning`
+-- on the same day is refused; a second `manual` (the preview button) replaces
+-- the first, because only the newest preview means anything.
+CREATE TABLE IF NOT EXISTS plan_runs (
+  run_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id      TEXT NOT NULL REFERENCES accounts(account_id) ON DELETE CASCADE,
+  date            TEXT NOT NULL,         -- 'YYYY-MM-DD' KST
+  slot            TEXT NOT NULL,         -- morning | manual
+  status          TEXT NOT NULL,         -- ok | incomplete | parse_error
+                                         --   | llm_error | skipped
+  model           TEXT,
+  context_chars   INTEGER,
+  diff            TEXT,                  -- JSON, the model's own output
+  accepted        TEXT,                  -- JSON, what validation kept
+  rejected        TEXT,                  -- JSON [{item, why}]
+  notes_by_symbol TEXT,                  -- JSON {symbol_id: {stance, line_ko}}
+  portfolio_note  TEXT,
+  elapsed_s       REAL,
+  created_at      INTEGER NOT NULL,
+  UNIQUE(account_id, date, slot)
 );
 
 -- Symbols the account is interested in but does not own.
@@ -158,7 +189,7 @@ CREATE TABLE IF NOT EXISTS watch (
 );
 """
 
-INDEXES = """\nCREATE INDEX IF NOT EXISTS idx_holdings_symbol ON holdings(symbol_id);\nCREATE INDEX IF NOT EXISTS idx_trades_account ON trades(account_id, traded_at DESC);\nCREATE INDEX IF NOT EXISTS idx_trades_symbol  ON trades(account_id, symbol_id, traded_at DESC);\nCREATE INDEX IF NOT EXISTS idx_snapshots_date    ON snapshots(date);\nCREATE INDEX IF NOT EXISTS idx_snapshots_account ON snapshots(account_id);\nCREATE INDEX IF NOT EXISTS idx_plans_account ON plans(account_id, created_at DESC);\nCREATE INDEX IF NOT EXISTS idx_plans_status  ON plans(account_id, status);\n"""
+INDEXES = """\nCREATE INDEX IF NOT EXISTS idx_holdings_symbol ON holdings(symbol_id);\nCREATE INDEX IF NOT EXISTS idx_trades_account ON trades(account_id, traded_at DESC);\nCREATE INDEX IF NOT EXISTS idx_trades_symbol  ON trades(account_id, symbol_id, traded_at DESC);\nCREATE INDEX IF NOT EXISTS idx_snapshots_date    ON snapshots(date);\nCREATE INDEX IF NOT EXISTS idx_snapshots_account ON snapshots(account_id);\nCREATE INDEX IF NOT EXISTS idx_plans_account ON plans(account_id, created_at DESC);\nCREATE INDEX IF NOT EXISTS idx_plans_status  ON plans(account_id, status);\nCREATE INDEX IF NOT EXISTS idx_plan_runs_account ON plan_runs(account_id, date DESC);\n"""
 
 # Columns added after a book was first created. Applied to both books, since
 # the ledger is one definition — a book-specific column belongs in that book's
