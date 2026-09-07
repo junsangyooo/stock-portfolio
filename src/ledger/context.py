@@ -374,5 +374,10 @@ def build(conn: sqlite3.Connection, account_id: str, *,
 
 
 def as_json(ctx: dict) -> str:
-    """The exact bytes the model is handed."""
-    return json.dumps(ctx, ensure_ascii=False, indent=1)
+    """The exact bytes the model is handed.
+
+    Unindented on purpose: pretty-printing a 19-holding account costs 30% more
+    characters and carries no information the model does not already get from
+    the braces (measured 82,773 → 63,854 on the auto book).
+    """
+    return json.dumps(ctx, ensure_ascii=False)
