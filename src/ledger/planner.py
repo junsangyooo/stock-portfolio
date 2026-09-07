@@ -130,7 +130,8 @@ JSON 하나. ```json 코드펜스. 그 뒤에 아무것도 쓰지 마라.
                      "stop": "invalidation"},
            "why": ""}],
   "reanalyze": [{"symbol_id": "US:GOOGL", "why": ""}],
-  "notes_by_symbol": {"KR:005930": {"stance": "hold", "line_ko": ""}},
+  "notes_by_symbol": {"KR:005930": {"stance": "hold", "line_ko": ""},
+                      "US:GOOGL": {"stance": "watch", "line_ko": ""}},
   "portfolio_note": "두세 문장. 오늘 이 계좌에서 바꾼 것의 요지"
 }"""
 
@@ -391,9 +392,11 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
                                  "why": "sell plan on an unheld symbol"})
                 continue
             qty = min(qty, owned)
+        # A modify that moved the entry moved the number the card shows.
+        moved = _f(((conds or {}).get("entry") or {}).get("price"))
         accepted["modify"].append({
             "plan_id": pid, "symbol_id": plan["symbol_id"],
-            "conditions": conds, "qty": qty,
+            "conditions": conds, "qty": qty, "price": moved,
             "expires_at": _expires(item.get("expires"), today),
             "why": _text(item.get("why"), 2000),
             "unanchored": unanchored})
@@ -579,13 +582,14 @@ def apply(conn: sqlite3.Connection, account_id: str, accepted: dict, *,
             conn.execute(
                 "UPDATE plans SET conditions = COALESCE(?, conditions),"
                 " qty = COALESCE(?, qty),"
+                " price = COALESCE(?, price),"
                 " expires_at = COALESCE(?, expires_at),"
                 " note = TRIM(COALESCE(note, '') || char(10) || ?),"
                 " updated_at = ?"
                 " WHERE plan_id = ? AND account_id = ? AND source = 'agent'",
                 (json.dumps(m["conditions"], ensure_ascii=False)
                  if m["conditions"] is not None else None,
-                 m["qty"], m["expires_at"], note, now,
+                 m["qty"], m["price"], m["expires_at"], note, now,
                  m["plan_id"], account_id))
         for a in accepted["abandon"]:
             conn.execute(
@@ -650,8 +654,15 @@ def run(conn: sqlite3.Connection, account_id: str, *, slot: str,
     done = conn.execute(
         "SELECT status FROM plan_runs WHERE account_id = ? AND date = ?"
         "   AND slot = ?", (account_id, day, slot)).fetchone()
-    if slot != "manual" and done and done[0] == "ok":
+    if slot != "manual" and done and done[0] in ("ok", "running"):
+        # `running` too: a pass takes ~18 minutes, and a second one started
+        # beside it would judge the same book and write the proposals twice.
         return {"status": "skipped", "account_id": account_id, "date": day}
+    if slot != "manual":
+        # Claim the slot before spending the call, not after. UNIQUE(account,
+        # date, slot) is what makes this a claim rather than a hope.
+        _record(conn, account_id, day=day, slot=slot, status="running",
+                model=model, elapsed=0.0)
 
     if not dry:
         _expire_proposals(conn, account_id, day)

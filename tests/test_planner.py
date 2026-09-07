@@ -665,3 +665,35 @@ def test_a_shape_nobody_foresaw_is_a_recorded_failure(book, monkeypatch):
     out = planner.run(book, "acc", slot="morning", today=TODAY)
     assert out["status"] == "parse_error"
     assert book.execute("SELECT count(*) FROM plan_runs").fetchone()[0] == 1
+
+
+def test_a_pass_claims_its_slot_before_spending_the_call(book, monkeypatch):
+    """A pass takes ~18 minutes. A second one started beside it would judge
+    the same book and write every proposal twice."""
+    seen = []
+
+    def _call(self, system, user, **k):
+        # while this one is "in flight", a second pass must find the slot taken
+        seen.append(planner.run(book, "acc", slot="morning", today=TODAY))
+        return "```json\n" + json.dumps(_doc(), ensure_ascii=False) + "\n```"
+
+    monkeypatch.setattr(llm_backend.ClaudeCliBackend, "call", _call)
+    monkeypatch.setattr(llm_backend.ClaudeCliBackend, "__init__",
+                        lambda self, model=None: None)
+    out = planner.run(book, "acc", slot="morning", today=TODAY)
+    assert out["status"] == "ok"
+    assert seen == [{"status": "skipped", "account_id": "acc", "date": TODAY}]
+    assert book.execute("SELECT count(*) FROM plan_runs").fetchone()[0] == 1
+
+
+def test_a_modify_that_moves_the_entry_moves_the_price_the_card_shows(book,
+                                                                     ctx):
+    accepted, _ = planner.validate(
+        _doc(keep=[], modify=[{"plan_id": 1,
+                               "conditions": {"entry": {"kind": "below",
+                                                        "price": 69000}},
+                               "basis": {"entry": "entry_zone.low"},
+                               "why": "진입을 내렸다"}]), ctx)
+    planner.apply(book, "acc", accepted, add_status="proposed", today=TODAY)
+    assert book.execute("SELECT price FROM plans WHERE plan_id = 1"
+                        ).fetchone()[0] == 69000
