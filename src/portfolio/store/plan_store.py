@@ -10,6 +10,7 @@ or delete another account's note even if that gate is ever bypassed.
 """
 from __future__ import annotations
 
+import json
 import time
 from typing import List, Optional
 
@@ -28,6 +29,13 @@ HUMAN_STATUSES = ("armed", "entered", "done", "abandoned", "proposed")
 _FROM_PROPOSED = {"armed": "approve", "abandoned": "reject"}
 
 
+def _conditions(raw):
+    try:
+        return json.loads(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _row(r) -> dict:
     return {
         "plan_id": r["plan_id"],
@@ -41,6 +49,10 @@ def _row(r) -> dict:
         # who wrote it — the card shows an approve/reject pair only on a
         # proposal, and only an agent's plan may be rewritten by a later pass.
         "source": r["source"],
+        # what is actually being approved. A proposal whose stop and target
+        # the screen cannot show is a button a person presses blind.
+        "conditions": _conditions(r["conditions"]),
+        "expires_at": r["expires_at"],
         "created_at": r["created_at"],
         "updated_at": r["updated_at"],
     }

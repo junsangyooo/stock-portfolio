@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import html
 import json
+import math
 import sqlite3
 import time
 from datetime import datetime, timedelta
@@ -86,6 +87,8 @@ SYSTEM_PLAN = """# 계획 작성자
    있으면 stop을, targets가 있으면 take_profit을 세운다. 좌표가 없으면 `reanalyze`.
 3. **신규 진입은 마지막.** 관심 종목과 보유 확대. 현금 비중과 테마 집중도를 본 뒤에.
    매도 계획이 만들 현금은 오늘 매수 한도가 아니다.
+   **이미 활성 계획이 걸린 종목에는 `add`를 쓰지 마라** — `modify`로 낸다. 한 종목에
+   `add`를 두 번 적는 것도 안 된다(두 번째는 기각된다).
 4. **포트폴리오 한 번 더.** 매수 계획들의 합이 그 통화 현금을 넘는가, 한 테마에
    몰리는가. 넘치면 확신이 낮은 것부터 뺀다. `add`는 확신이 높은 것부터 적는다.
 5. **종목마다 한 줄.** holdings와 watch의 모든 종목에 stance와 line_ko를 쓴다.
@@ -97,6 +100,8 @@ SYSTEM_PLAN = """# 계획 작성자
 - 가격은 그 종목 분석의 좌표에서만. 어느 좌표인지 `basis`에 적는다
   (예: "invalidation", "targets[0]", "support[1]", "entry_zone.low"). 좌표에 없는
   가격이면 basis를 "none"으로 두고 why에 이유를 쓴다. 프로그램이 표시한다.
+  `price`(기준가)도 같은 검사를 받는다 — 좌표이거나, 그 계획 자신의 조건 가격 중
+  하나여야 한다. 아니면 「좌표 밖」으로 찍힌다.
 - 수량은 정수. 매도 수량은 보유 수량 이하.
 - `price`는 **기준가**다 — 그 계획으로 실제 사거나 팔 가격. 진입 조건이 있으면 그
   가격, 청산만 거는 계획이면 목표가(take_profit). 비워두지 마라.
@@ -111,7 +116,8 @@ SYSTEM_PLAN = """# 계획 작성자
 JSON 하나. ```json 코드펜스. 그 뒤에 아무것도 쓰지 마라.
 {
   "keep": [],
-  "modify": [{"plan_id": 13, "conditions": {}, "qty": 10, "expires": "2026-09-30",
+  "modify": [{"plan_id": 13, "qty": 10, "expires": "2026-09-30",
+              "conditions": {"stop": {"kind": "below", "price": 66000}},
               "basis": {"stop": "invalidation"}, "why": ""}],
   "abandon": [{"plan_id": 14, "why": ""}],
   "suggest": [{"plan_id": 12, "what": "익절 80,000 → 82,000(targets[0])", "why": ""}],
@@ -133,11 +139,21 @@ USER_PLAN = "위 계좌 상태에 대해 계획 diff를 작성하라.\n\n"
 
 # ── validation ────────────────────────────────────────────────────────────
 
-def _levels_of(ctx: dict, symbol_id: str) -> dict:
+def _analysis_of(ctx: dict, symbol_id: str) -> dict:
     for row in ctx["holdings"] + ctx["watch"]:
         if row["symbol_id"] == symbol_id:
-            return ((row.get("analysis") or {}).get("levels")) or {}
+            return row.get("analysis") or {}
     return {}
+
+
+def _levels_of(ctx: dict, symbol_id: str) -> dict:
+    return (_analysis_of(ctx, symbol_id).get("levels")) or {}
+
+
+def _freshness_of(ctx: dict, symbol_id: str):
+    """A four-day-old coordinate is not a coordinate — for a plan being
+    rewritten just as much as for one being written."""
+    return _analysis_of(ctx, symbol_id).get("freshness")
 
 
 def _coordinate(levels: dict, basis: str):
@@ -188,25 +204,42 @@ def _text(v, n: int) -> str:
 
 
 def _f(v):
+    """A number we can act on, or None.
+
+    NaN and Infinity are valid JSON to `json.loads` (and `1e400` needs no
+    special literal at all), and every downstream guard is a comparison that
+    NaN loses silently — `nan <= 0` is False, so an unusable price would pass
+    every gate and detonate inside apply()'s transaction.
+    """
     try:
-        return float(v)
+        f = float(v)
     except (TypeError, ValueError):
         return None
+    return f if math.isfinite(f) else None
 
 
 def _int_qty(v):
-    f = _f(v)
+    f = _f(v)                                  # already rejects nan / inf
     if f is None or f != int(f) or int(f) <= 0:
         return None
     return int(f)
 
 
-def _conditions(raw, symbol_levels: dict, basis: dict) -> tuple[dict, bool]:
+def _held_qty(row) -> int:
+    """How many shares this position can sell. Floored, not required whole —
+    a fractional holding (an overseas broker's 1.5 shares) is still held, and
+    demanding an integer here read it as unheld and refused every exit plan."""
+    f = _f((row or {}).get("qty"))
+    return int(f) if f and f > 0 else 0
+
+
+def _conditions(raw, symbol_levels: dict, basis) -> tuple[dict, bool]:
     """Normalize the machine-evaluable predicates. Raises ValueError on a
     shape the keeper could not read. Returns (conditions, unanchored)."""
     raw = raw or {}
     if not isinstance(raw, dict):
         raise ValueError("conditions is not an object")
+    basis = basis if isinstance(basis, dict) else {}
     out: dict = {}
     unanchored = False
     for key in _COND_KEYS:
@@ -223,7 +256,7 @@ def _conditions(raw, symbol_levels: dict, basis: dict) -> tuple[dict, bool]:
             if price is None:
                 raise ValueError(f"{key}.price missing")
             out[key] = {"kind": kind, "price": price}
-            if not _anchored(symbol_levels, (basis or {}).get(key), price):
+            if not _anchored(symbol_levels, basis.get(key), price):
                 unanchored = True
         else:
             out[key] = {"kind": kind}
@@ -257,6 +290,21 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
     rejected: list[dict] = []
     today = ctx["account"]["date"]
 
+    _lists: dict[str, list] = {}
+
+    def _list(key) -> list:
+        """The model sometimes sends one object where the contract says list.
+        That is a malformed answer, not an exception out of run(). Cached so
+        the completeness sweep and the apply loops report it once."""
+        if key not in _lists:
+            v = doc.get(key)
+            if v is not None and not isinstance(v, list):
+                rejected.append({"item": {key: v},
+                                 "why": f"{key} is not a list"})
+                v = None
+            _lists[key] = v or []
+        return _lists[key]
+
     plans = {p["plan_id"]: p for p in ctx["plans"]}
     held = {h["symbol_id"]: h for h in ctx["holdings"]}
     watched = {w["symbol_id"] for w in ctx["watch"]}
@@ -273,7 +321,7 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
             return None
 
     def _ids(key) -> list:
-        return [pid for pid in ((_pid(i, key) for i in (doc.get(key) or [])))
+        return [pid for pid in ((_pid(i, key) for i in _list(key)))
                 if pid is not None]
 
     seen: dict[int, str] = {}
@@ -304,12 +352,16 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
             return None
         return plan
 
-    for item in doc.get("modify") or []:
+    for item in _list("modify"):
         if not isinstance(item, dict):
             continue
         pid = _pid(item, "modify")
         plan = _own(pid, "modify", item) if pid is not None else None
         if plan is None:
+            continue
+        if _freshness_of(ctx, plan["symbol_id"]) in (None, "missing"):
+            rejected.append({"item": {"modify": item},
+                             "why": "no usable analysis for this symbol today"})
             continue
         levels = _levels_of(ctx, plan["symbol_id"])
         try:
@@ -318,13 +370,23 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
             conds, unanchored = (
                 _conditions(item["conditions"], levels, item.get("basis"))
                 if "conditions" in item else (None, False))
+            # `{}` and `null` mean the same thing as an absent key: nothing to
+            # say about the conditions. The prompt's own template showed `{}`,
+            # so treating it as "replace with nothing" wiped the stop.
+            conds = conds or None
         except ValueError as e:
             rejected.append({"item": {"modify": item}, "why": str(e)})
             continue
-        qty = _int_qty(item.get("qty")) if item.get("qty") is not None else None
+        qty = None
+        if item.get("qty") is not None:
+            qty = _int_qty(item.get("qty"))
+            if qty is None:
+                rejected.append({"item": {"modify": item},
+                                 "why": "qty must be a whole number above zero"})
+                continue
         if plan.get("side") == "sell" and qty:
-            owned = _int_qty((held.get(plan["symbol_id"]) or {}).get("qty"))
-            if owned is None:
+            owned = _held_qty(held.get(plan["symbol_id"]))
+            if not owned:
                 rejected.append({"item": {"modify": item},
                                  "why": "sell plan on an unheld symbol"})
                 continue
@@ -336,7 +398,7 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
             "why": _text(item.get("why"), 2000),
             "unanchored": unanchored})
 
-    for item in doc.get("abandon") or []:
+    for item in _list("abandon"):
         if not isinstance(item, dict):
             continue
         pid = _pid(item, "abandon")
@@ -345,15 +407,21 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
         accepted["abandon"].append(
             {"plan_id": pid, "why": _text(item.get("why"), 2000)})
 
-    for item in doc.get("suggest") or []:
-        if isinstance(item, dict) and item.get("plan_id") in plans:
-            accepted["suggest"].append({
-                "plan_id": item["plan_id"],
-                "what": _text(item.get("what"), 500),
-                "why": _text(item.get("why"), 2000)})
+    for item in _list("suggest"):
+        pid = _pid(item, "suggest") if isinstance(item, dict) else None
+        if pid is None:
+            continue
+        if pid not in plans:
+            rejected.append({"item": {"suggest": item},
+                             "why": "no such active plan"})
+            continue
+        accepted["suggest"].append({
+            "plan_id": pid,
+            "what": _text(item.get("what"), 500),
+            "why": _text(item.get("why"), 2000)})
 
     # ── new plans, cheapest checks first, cash last ───────────────────────
-    for item in doc.get("add") or []:
+    for item in _list("add"):
         if not isinstance(item, dict):
             continue
         sid = str(item.get("symbol_id") or "").upper()
@@ -364,9 +432,7 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
         if sid in planned_symbols:
             why("this symbol already has an active plan — modify it")
             continue
-        ana = ((held.get(sid) or next(
-            (w for w in ctx["watch"] if w["symbol_id"] == sid), {}))
-            .get("analysis")) or {}
+        ana = _analysis_of(ctx, sid)
         if ana.get("freshness") in (None, "missing"):
             why("no usable analysis for this symbol today")
             continue
@@ -391,8 +457,8 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
             why("no price and none derivable from the conditions")
             continue
         if item["side"] == "sell":
-            owned = _int_qty((held.get(sid) or {}).get("qty"))
-            if owned is None:
+            owned = _held_qty(held.get(sid))
+            if not owned:
                 why("sell plan on an unheld symbol")
                 continue
             qty = min(qty, owned)
@@ -403,6 +469,16 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
         except ValueError as e:
             why(str(e))
             continue
+        # The price the ledger stores is the one a person reads on the card.
+        # It is grounded when a coordinate explains it, or when it is one of
+        # the plan's own condition prices (which were checked above).
+        own = [c["price"] for c in conds.values() if c.get("price")]
+        if not (_anchored(ana.get("levels") or {},
+                          (item.get("basis") or {}).get("price")
+                          if isinstance(item.get("basis"), dict) else None,
+                          price)
+                or any(abs(price - p) / p <= ANCHOR_TOLERANCE for p in own)):
+            unanchored = True
         accepted["add"].append({
             "symbol_id": sid,
             "name": _text(item.get("name") or _name_of(ctx, sid), 80),
@@ -412,6 +488,7 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
             "expires_at": _expires(item.get("expires"), today),
             "why": _text(item.get("why"), 2000),
             "unanchored": unanchored})
+        planned_symbols.add(sid)      # a second entry for it is a modify now
 
     # The prompt asks for the buys in descending confidence, so the ones that
     # do not fit come off the end. Cash is per currency: there is no rate in
@@ -434,7 +511,7 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
         kept_adds.append(a)
     accepted["add"] = kept_adds
 
-    for item in doc.get("reanalyze") or []:
+    for item in _list("reanalyze"):
         if isinstance(item, dict) and item.get("symbol_id") in known_symbols:
             accepted["reanalyze"].append({
                 "symbol_id": item["symbol_id"],
@@ -485,20 +562,20 @@ def apply(conn: sqlite3.Connection, account_id: str, accepted: dict, *,
     conn.execute("BEGIN IMMEDIATE")
     try:
         for a in accepted["add"]:
-            note = f"{tag} {a['why']}" + (" [unanchored]" if a["unanchored"]
-                                          else "")
+            note = (f"{tag} " + ("[unanchored] " if a["unanchored"] else "")
+                    + a["why"])[:2000]
             conn.execute(
                 "INSERT INTO plans (account_id, symbol_id, name, side, price,"
                 " qty, note, status, source, conditions, expires_at,"
                 " created_at, updated_at)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'agent', ?, ?, ?, ?)",
                 (account_id, a["symbol_id"], a["name"], a["side"], a["price"],
-                 a["qty"], note[:2000], add_status,
+                 a["qty"], note, add_status,
                  json.dumps(a["conditions"], ensure_ascii=False),
                  a["expires_at"], now, now))
         for m in accepted["modify"]:
-            note = f"{tag} {m['why']}" + (" [unanchored]" if m["unanchored"]
-                                          else "")
+            note = (f"{tag} " + ("[unanchored] " if m["unanchored"] else "")
+                    + m["why"])[:2000]
             conn.execute(
                 "UPDATE plans SET conditions = COALESCE(?, conditions),"
                 " qty = COALESCE(?, qty),"
@@ -508,7 +585,7 @@ def apply(conn: sqlite3.Connection, account_id: str, accepted: dict, *,
                 " WHERE plan_id = ? AND account_id = ? AND source = 'agent'",
                 (json.dumps(m["conditions"], ensure_ascii=False)
                  if m["conditions"] is not None else None,
-                 m["qty"], m["expires_at"], note[:2000], now,
+                 m["qty"], m["expires_at"], note, now,
                  m["plan_id"], account_id))
         for a in accepted["abandon"]:
             conn.execute(
@@ -604,11 +681,23 @@ def run(conn: sqlite3.Connection, account_id: str, *, slot: str,
             status = "incomplete"
             out["error"] = str(e)[:200]
             continue
+        except Exception as e:  # noqa: BLE001 — a shape we did not foresee is
+            # still the model being wrong, and being wrong is a recorded
+            # outcome. run() promises a row for every ending.
+            status = "parse_error"
+            out["error"] = f"{type(e).__name__}: {e}"[:200]
+            continue
         status = "ok"
         break
 
     if status == "ok" and not dry:
-        apply(conn, account_id, accepted, add_status="proposed", today=day)
+        try:
+            apply(conn, account_id, accepted, add_status="proposed", today=day)
+        except Exception as e:  # noqa: BLE001 — the book is rolled back; the
+            # pass must not also vanish. A silent failure here reads on screen
+            # as yesterday's badges, with nothing saying today's pass died.
+            status = "apply_error"
+            out["error"] = f"{type(e).__name__}: {e}"[:200]
 
     elapsed = time.monotonic() - t0
     _record(conn, account_id, day=day, slot=slot, status=status, model=model,

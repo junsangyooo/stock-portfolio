@@ -2051,12 +2051,17 @@ function _planBadgeApply(span, symbolId) {
   const mine = (window._PLANS || []).filter(p => p.symbol_id === symbolId);
   const proposals = mine.filter(p => p.status === 'proposed').length;
   const active = mine.filter(p => p.status === 'armed' || p.status === 'entered').length;
-  if (!note && !mine.length) { span.hidden = true; return; }
+  // Hide on what is actually drawn: a symbol whose only plans are closed has
+  // no note and nothing to count, and an empty badge is worse than none.
+  if (!note && !active && !proposals) { span.hidden = true; return; }
   clear(span);
   const stance = (note && note.stance) || 'none';
   span.className = 'sc-plan-badge st-' + stance;
   const bits = ['📋 ' + (PLAN_STANCE_KO[stance] || '—')];
   if (active) bits.push('계획 ' + active);
+  // A preview changed nothing in the book; the card must not read as if the
+  // morning pass had said it.
+  if (run && run.slot === 'manual') bits.push('미리보기');
   span.appendChild(el('span', {}, [bits.join(' · ')]));
   if (proposals) span.appendChild(el('span', { className: 'prop' },
                                      ['제안 ' + proposals]));
@@ -2882,10 +2887,17 @@ window.addEventListener('resize', () => {
       tags.push(el('span', { className: 'psm-tag warn', title: '분석 좌표에 없는 가격' },
                    ['좌표 밖']));
     }
+    const c = plan.conditions || {};
+    const cond = [];
+    if (c.entry && c.entry.price) cond.push('진입 ' + fmtPrice(c.entry.price, ccy));
+    if (c.stop && c.stop.price) cond.push('손절 ' + fmtPrice(c.stop.price, ccy));
+    if (c.take_profit && c.take_profit.price) {
+      cond.push('목표 ' + fmtPrice(c.take_profit.price, ccy));
+    }
     const row = el('div', { className: 'psm-plan' }, [
       el('div', { className: 'grow' }, [
         (plan.side === 'buy' ? '매수' : '매도') + ' ' + fmtQty(plan.qty) + '주 @' +
-        fmtPrice(plan.price, ccy)]),
+        fmtPrice(plan.price, ccy) + (cond.length ? ' · ' + cond.join(' · ') : '')]),
     ].concat(tags));
     if (proposed) {
       const yes = el('button', { className: 'btn btn-sm btn-primary' }, [S.LABELS.approve]);

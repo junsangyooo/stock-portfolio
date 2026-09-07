@@ -212,3 +212,27 @@ def test_plan_stance_dictionary_is_one_place():
     for word in ("유지", "추가", "축소", "정리", "관심"):
         assert word in SRC[SRC.index("const PLAN_STANCE_KO"):
                            SRC.index("window._planBadgeEls")]
+
+
+def test_a_badge_with_nothing_to_say_is_hidden():
+    """A symbol whose only plans are closed has no note and no counts; an
+    empty badge is worse than no badge."""
+    fn = SRC[SRC.index("function _planBadgeApply"):]
+    fn = fn[:fn.index("window._setPlanBadge")]
+    assert "if (!note && !active && !proposals) { span.hidden = true; return; }" in fn
+
+
+def test_a_preview_says_it_is_a_preview_on_the_card():
+    """A dry pass changed nothing in the book. The badge must not read as if
+    the morning pass had said it."""
+    assert "run.slot === 'manual'" in SRC and "'미리보기'" in SRC
+
+
+def test_the_approval_shows_what_is_being_approved():
+    """Approving a stop and a target you cannot see is pressing a button
+    blind."""
+    fn = SRC[SRC.index("function planRow(plan)"):]
+    fn = fn[:fn.index("\n  function plansOf")]
+    assert "plan.conditions" in fn
+    for word in ("'진입 '", "'손절 '", "'목표 '"):
+        assert word in fn

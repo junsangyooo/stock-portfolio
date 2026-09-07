@@ -7,6 +7,7 @@ validation keeps, what it refuses, and what a refusal leaves behind.
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from datetime import datetime, timedelta
 
@@ -171,11 +172,25 @@ def test_a_plan_that_is_not_active_is_dropped_not_applied(ctx):
 # ── prices and coordinates ───────────────────────────────────────────────
 
 def test_a_price_on_a_real_coordinate_is_anchored(ctx):
+    """Every price in the plan is explained: the stop by a coordinate, the
+    headline price by the entry it will transact at."""
+    accepted, _ = planner.validate(_doc(add=[{
+        "symbol_id": "KR:BBB", "side": "buy", "qty": 2, "price": 69000,
+        "conditions": {"entry": {"kind": "below", "price": 69000},
+                       "stop": {"kind": "below", "price": 66000}},
+        "basis": {"entry": "entry_zone.low", "stop": "invalidation"},
+        "why": "둘 다 좌표 위"}]), ctx)
+    assert accepted["add"][0]["unanchored"] is False
+
+
+def test_a_headline_price_nothing_explains_is_flagged(ctx):
+    """The stop sits on a coordinate, but 17,000 is neither a coordinate nor
+    a price this plan trades at — the card must say so."""
     accepted, _ = planner.validate(_doc(add=[{
         "symbol_id": "KR:BBB", "side": "buy", "qty": 2, "price": 17000,
         "conditions": {"stop": {"kind": "below", "price": 66000}},
-        "basis": {"stop": "invalidation"}, "why": "손절이 좌표 위"}]), ctx)
-    assert accepted["add"][0]["unanchored"] is False
+        "basis": {"stop": "invalidation"}, "why": "기준가는 어디서 왔나"}]), ctx)
+    assert accepted["add"][0]["unanchored"] is True
 
 
 def test_an_invented_price_is_kept_but_flagged(ctx):
@@ -253,8 +268,8 @@ def test_buys_beyond_the_currencys_cash_come_off_the_end(ctx):
     accepted, rejected = planner.validate(_doc(add=[
         {"symbol_id": "KR:BBB", "side": "buy", "qty": 10, "price": 18000,
          "why": "180,000 — 든다"},
-        {"symbol_id": "KR:BBB", "side": "buy", "qty": 10, "price": 18000,
-         "why": "또 180,000 — 현금 300,000을 넘는다"}]), ctx)
+        {"symbol_id": "KR:CCC", "side": "buy", "qty": 30, "price": 5000,
+         "why": "150,000 — 현금 300,000을 넘는다"}]), ctx)
     assert len(accepted["add"]) == 1
     assert any("cannot cover" in r["why"] for r in rejected)
 
@@ -491,3 +506,162 @@ def test_the_example_the_prompt_shows_is_an_answer_validation_accepts():
                               "US:GOOGL": {"stance": "watch", "line_ko": "관심"}}
     accepted, rejected = planner.validate(doc, ctx)   # must not raise
     assert accepted["portfolio_note"]
+
+
+# ── shapes the model gets wrong must be rejections, never exceptions ───────
+
+@pytest.mark.parametrize("bad", [
+    float("nan"), float("inf"), float("-inf"), 1e400,
+])
+def test_a_non_finite_quantity_is_refused_not_raised(ctx, bad):
+    """json.loads accepts bare NaN/Infinity, and 1e400 needs no literal at
+    all. Every downstream guard is a comparison NaN loses silently."""
+    accepted, rejected = planner.validate(_doc(add=[{
+        "symbol_id": "KR:BBB", "side": "buy", "qty": bad, "price": 17000,
+        "why": "숫자가 아니다"}]), ctx)
+    assert accepted["add"] == [] and rejected
+
+
+def test_a_non_finite_price_never_reaches_the_book(book, ctx):
+    """`nan <= 0` is False, so the price gate used to pass it straight into an
+    INSERT against a NOT NULL column. It is now unreadable like any other
+    missing price — derived, and marked as not grounded in a coordinate."""
+    accepted, _ = planner.validate(_doc(add=[{
+        "symbol_id": "KR:BBB", "side": "buy", "qty": 1,
+        "price": float("nan"), "why": "nan <= 0 은 False다"}]), ctx)
+    row = accepted["add"][0]
+    assert math.isfinite(row["price"]) and row["unanchored"] is True
+    planner.apply(book, "acc", accepted, add_status="proposed", today=TODAY)
+    assert book.execute("SELECT count(*) FROM plans WHERE price IS NULL"
+                        ).fetchone()[0] == 0
+
+
+def test_a_non_finite_number_leaves_a_row_rather_than_an_exception(book,
+                                                                  monkeypatch):
+    _answer(monkeypatch, '```json\n{"keep": [1], "suggest": [{"plan_id": 2, '
+                         '"what": "x", "why": "y"}], "add": [{"symbol_id": '
+                         '"KR:BBB", "side": "buy", "qty": NaN, "price": 1}], '
+                         '"notes_by_symbol": {}, "portfolio_note": "n"}\n```')
+    out = planner.run(book, "acc", slot="morning", today=TODAY)
+    assert out["status"] == "ok"          # the bad item is dropped, not the pass
+    assert book.execute("SELECT count(*) FROM plan_runs").fetchone()[0] == 1
+
+
+def test_a_scalar_where_a_list_belongs_is_a_rejection(ctx):
+    accepted, rejected = planner.validate(
+        _doc(add={"symbol_id": "KR:BBB"}), ctx)
+    assert accepted["add"] == []
+    assert sum(1 for r in rejected if r["why"] == "add is not a list") == 1
+
+
+def test_a_basis_that_is_not_an_object_does_not_crash(ctx):
+    accepted, _ = planner.validate(_doc(add=[{
+        "symbol_id": "KR:BBB", "side": "buy", "qty": 1, "price": 17000,
+        "conditions": {"stop": {"kind": "below", "price": 66000}},
+        "basis": "invalidation", "why": "basis가 문자열"}]), ctx)
+    assert accepted["add"][0]["unanchored"] is True
+
+
+# ── modify is held to the same rules as add ───────────────────────────────
+
+def test_a_modify_that_sends_empty_conditions_keeps_the_ones_it_has(book, ctx):
+    """The prompt's own template showed `"conditions": {}` — read as "replace
+    with nothing" it silently deleted the stop."""
+    book.execute("UPDATE plans SET conditions = ? WHERE plan_id = 1",
+                 (json.dumps({"stop": {"kind": "below", "price": 60000}}),))
+    book.commit()
+    fresh = context.build(book, "acc", today=TODAY)
+    accepted, _ = planner.validate(
+        _doc(keep=[], modify=[{"plan_id": 1, "conditions": {},
+                               "why": "빈 객체"}]), fresh)
+    planner.apply(book, "acc", accepted, add_status="proposed", today=TODAY)
+    row = book.execute("SELECT conditions FROM plans WHERE plan_id = 1"
+                       ).fetchone()[0]
+    assert json.loads(row)["stop"]["price"] == 60000
+
+
+def test_a_modify_on_a_symbol_with_no_usable_analysis_is_refused(book):
+    now = _ts(0)
+    book.execute(
+        "INSERT INTO plans (account_id, symbol_id, name, side, price, qty,"
+        " status, source, created_at, updated_at)"
+        " VALUES ('acc', 'KR:OLD', 'OLD', 'sell', 1000, 1, 'armed', 'agent',"
+        " ?, ?)", (now, now))
+    book.commit()
+    ctx = context.build(book, "acc", today=TODAY)
+    pid = [p["plan_id"] for p in ctx["plans"] if p["symbol_id"] == "KR:OLD"][0]
+    accepted, rejected = planner.validate(
+        _doc(keep=[1], modify=[{"plan_id": pid, "qty": 2, "why": "분석이 낡았다"}]),
+        ctx)
+    assert accepted["modify"] == []
+    assert any("no usable analysis" in r["why"] for r in rejected)
+
+
+def test_a_modify_quantity_that_cannot_be_read_is_refused(book, ctx):
+    accepted, rejected = planner.validate(
+        _doc(keep=[], modify=[{"plan_id": 1, "qty": 2.5, "why": "반 주"}]), ctx)
+    assert accepted["modify"] == []
+    assert any("whole number" in r["why"] for r in rejected)
+
+
+def test_a_second_add_on_one_symbol_is_a_modify(ctx):
+    """Per-item clamps do not see each other: two sells of the whole holding
+    both passed, and together they were twice the position."""
+    accepted, rejected = planner.validate(_doc(add=[
+        {"symbol_id": "KR:CCC", "side": "sell", "qty": 4, "price": 5000,
+         "why": "전량"},
+        {"symbol_id": "KR:CCC", "side": "sell", "qty": 4, "price": 5000,
+         "why": "또 전량"}]), ctx)
+    assert len(accepted["add"]) == 1
+    assert any("already has an active plan" in r["why"] for r in rejected)
+
+
+def test_a_fractional_holding_is_still_held(book):
+    """An overseas broker's 1.5 shares read as unheld and could never be sold."""
+    book.execute("UPDATE holdings SET qty = 1.5 WHERE symbol_id = 'KR:CCC'")
+    book.commit()
+    ctx = context.build(book, "acc", today=TODAY)
+    accepted, _ = planner.validate(_doc(add=[{
+        "symbol_id": "KR:CCC", "side": "sell", "qty": 5, "price": 5000,
+        "why": "가진 만큼"}]), ctx)
+    assert accepted["add"][0]["qty"] == 1
+
+
+def test_a_suggest_on_a_plan_that_is_not_active_says_so(ctx):
+    accepted, rejected = planner.validate(
+        _doc(keep=[1, 2], suggest=[{"plan_id": 99, "what": "x", "why": "y"}]),
+        ctx)
+    assert accepted["suggest"] == []
+    assert any("no such active plan" in r["why"] for r in rejected)
+
+
+def test_the_unanchored_mark_survives_a_long_rationale(book, ctx):
+    accepted, _ = planner.validate(_doc(add=[{
+        "symbol_id": "KR:BBB", "side": "buy", "qty": 1, "price": 17000,
+        "why": "가" * 4000}]), ctx)
+    planner.apply(book, "acc", accepted, add_status="proposed", today=TODAY)
+    note = book.execute("SELECT note FROM plans WHERE symbol_id = 'KR:BBB'"
+                        ).fetchone()[0]
+    assert "[unanchored]" in note and len(note) <= 2000
+
+
+def test_a_write_that_fails_still_leaves_a_row(book, monkeypatch):
+    """The book rolls back; the pass must not vanish with it. Silently, the
+    screen would show yesterday's badges with nothing saying today failed."""
+    _answer(monkeypatch, _doc())
+    def _boom(*a, **k):
+        raise sqlite3.IntegrityError("NOT NULL constraint failed: plans.price")
+    monkeypatch.setattr(planner, "apply", _boom)
+    out = planner.run(book, "acc", slot="morning", today=TODAY)
+    assert out["status"] == "apply_error" and "IntegrityError" in out["error"]
+    assert book.execute("SELECT status FROM plan_runs").fetchone()[0] == \
+        "apply_error"
+
+
+def test_a_shape_nobody_foresaw_is_a_recorded_failure(book, monkeypatch):
+    _answer(monkeypatch, _doc(), _doc())
+    monkeypatch.setattr(planner, "validate",
+                        lambda d, c: (_ for _ in ()).throw(AttributeError("x")))
+    out = planner.run(book, "acc", slot="morning", today=TODAY)
+    assert out["status"] == "parse_error"
+    assert book.execute("SELECT count(*) FROM plan_runs").fetchone()[0] == 1

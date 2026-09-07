@@ -163,7 +163,7 @@ CREATE TABLE IF NOT EXISTS plan_runs (
   date            TEXT NOT NULL,         -- 'YYYY-MM-DD' KST
   slot            TEXT NOT NULL,         -- morning | manual
   status          TEXT NOT NULL,         -- ok | incomplete | parse_error
-                                         --   | llm_error | skipped
+                                         --   | llm_error | apply_error
   model           TEXT,
   context_chars   INTEGER,
   diff            TEXT,                  -- JSON, the model's own output
