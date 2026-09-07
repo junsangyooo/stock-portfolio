@@ -1409,6 +1409,29 @@ body.chat-open .chat-panel { transform: translateX(0); }
   font: inherit; font-size: var(--text-sm); padding: var(--space-1) var(--space-2);
 }
 .th-list { flex: 1; overflow-y: auto; padding: 0 var(--space-4) var(--space-4); }
+/* ── 계좌×종목 모달: "이 계좌에서 이 종목을 오늘 어떻게 볼 것인가" ── */
+.psm-sec { border-top: 1px solid var(--line); padding: var(--space-3) 0; }
+.psm-sec:first-child { border-top: 0; }
+.psm-h { font-size: var(--text-xs); color: var(--muted); letter-spacing: 1px;
+         font-weight: 700; margin-bottom: var(--space-2); }
+.psm-line { font-size: var(--text-sm); line-height: var(--lh-body); color: var(--fg); }
+.psm-meta { font-size: var(--text-xs); color: var(--muted); margin-top: var(--space-1); }
+.psm-empty { font-size: var(--text-sm); color: var(--muted); }
+.psm-plan { display: flex; flex-wrap: wrap; align-items: center;
+            gap: var(--space-2); padding: var(--space-2) 0;
+            border-top: 1px dotted var(--line); font-size: var(--text-sm); }
+.psm-plan:first-of-type { border-top: 0; }
+.psm-plan .grow { flex: 1 1 60%; }
+.psm-tag { font-size: var(--text-xs); font-weight: 700; letter-spacing: 1px;
+           border: 1px solid var(--dim); color: var(--dim);
+           border-radius: 3px; padding: 0 var(--space-1); }
+.psm-tag.prop { color: var(--cyan); border-color: var(--cyan); }
+.psm-tag.warn { color: var(--orange); border-color: var(--orange); }
+.psm-foot { display: flex; flex-wrap: wrap; gap: var(--space-2);
+            align-items: center; padding-top: var(--space-3);
+            border-top: 1px solid var(--line); }
+@media (min-width: 600px) { .psm-plan .grow { flex: 1 1 auto; } }
+
 </style>
 </head>
 <body>
@@ -1840,6 +1863,23 @@ body.chat-open .chat-panel { transform: translateX(0); }
 </div>
 
 <!-- ─────────────────────────────────────────────────────────────
+     ACCOUNT × SYMBOL — 이 계좌에서 이 종목을 오늘 어떻게 볼 것인가.
+     종목 판정(공유)은 확대 모달이 보여준다. 여기는 계좌 쪽 절반이다.
+     ───────────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="plan-symbol-modal" hidden>
+  <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="psm-title">
+    <div class="modal-header">
+      <h2 class="modal-title" id="psm-title">
+        <span id="psm-name">—</span>
+        <span class="cd" id="psm-code"></span>
+      </h2>
+      <button class="btn btn-sm" id="psm-close" aria-label="닫기">✕</button>
+    </div>
+    <div class="add-body" id="psm-body"></div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────────────────
      ASSET CURVE MODAL (F)
      ───────────────────────────────────────────────────────────── -->
 <div class="modal-overlay" id="curve-modal" hidden>
@@ -1924,6 +1964,10 @@ const API = {
   // Level 0 배지: 계좌 전 종목의 최신 종합 판단을 GET 1번으로
   analysisSummary: (ids) =>
     '/api/analysis/summary?symbols=' + encodeURIComponent(ids),
+  // 계좌 배지: 이 계좌의 최신 계획 판단 한 벌 (종목당 요청 0개)
+  planRunLatest:  () => '/api/accounts/' + _ACC + '/plan_runs/latest',
+  runPlan:        () => '/api/accounts/' + _ACC + '/plan_runs/run',
+  planRunStatus:  () => '/api/accounts/' + _ACC + '/plan_runs/status',
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -1991,6 +2035,41 @@ window._analysisBadgeEls = window._analysisBadgeEls || {};   // symbolId → spa
 const _analysisBadgeApply = (span, entry) => S.verdictBadge(span, entry, AJOB_ETA_KO);
 window._setAnalysisBadge = function (symbolId, entry) {
   _analysisBadgeApply(window._analysisBadgeEls[symbolId], entry);
+};
+
+// ── 계좌 배지: 종목 판정 아래 한 줄. 판정은 종목에 대한 것이고 이건 이 계좌에
+//    대한 것이라 배지가 둘이다 (§4 경계가 화면에서도 그대로 보인다).
+const PLAN_STANCE_KO = { hold: '유지', add: '추가', trim: '축소', exit: '정리',
+                         watch: '관심', none: '—' };
+window._planBadgeEls = window._planBadgeEls || {};   // symbolId → span
+window._PLAN_RUN = null;                             // 최신 plan_runs/latest
+
+function _planBadgeApply(span, symbolId) {
+  if (!span) return;
+  const run = window._PLAN_RUN;
+  const note = run && run.notes_by_symbol ? run.notes_by_symbol[symbolId] : null;
+  const mine = (window._PLANS || []).filter(p => p.symbol_id === symbolId);
+  const proposals = mine.filter(p => p.status === 'proposed').length;
+  const active = mine.filter(p => p.status === 'armed' || p.status === 'entered').length;
+  if (!note && !mine.length) { span.hidden = true; return; }
+  clear(span);
+  const stance = (note && note.stance) || 'none';
+  span.className = 'sc-plan-badge st-' + stance;
+  const bits = ['📋 ' + (PLAN_STANCE_KO[stance] || '—')];
+  if (active) bits.push('계획 ' + active);
+  span.appendChild(el('span', {}, [bits.join(' · ')]));
+  if (proposals) span.appendChild(el('span', { className: 'prop' },
+                                     ['제안 ' + proposals]));
+  span.appendChild(el('span', {}, ['▸']));
+  span.title = (note && note.line_ko) || '';
+  span.setAttribute('aria-label',
+    '이 계좌의 판단 — ' + (PLAN_STANCE_KO[stance] || '판단 없음') +
+    (proposals ? ', 승인 대기 ' + proposals + '건' : '') + '. 열기');
+  span.hidden = false;
+}
+
+window._setPlanBadge = function (symbolId) {
+  _planBadgeApply(window._planBadgeEls[symbolId], symbolId);
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -2350,10 +2429,21 @@ function renderCard(stock) {
   const analysisBadge = el('span', { className: 'sc-verdict-badge', hidden: '' }, []);
   window._analysisBadgeEls[stock.symbolId] = analysisBadge;
 
+  // 계좌 배지 — 숨김으로 만들고 loadPlanBadges()가 in-place로 채운다
+  const planBadge = el('span', {
+    className: 'sc-plan-badge', role: 'button', tabindex: '0', hidden: '',
+  }, []);
+  planBadge.addEventListener('click', () => openPlanSymbolModal(stock));
+  planBadge.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPlanSymbolModal(stock); }
+  });
+  window._planBadgeEls[stock.symbolId] = planBadge;
+
   const nameBlockChildren = [
     el('span', { className: 'sc-name' }, [stock.name]),
     el('span', { className: 'sc-code' }, [stock.market + ' · ' + stock.code]),
     analysisBadge,
+    planBadge,
   ];
   if (isWatchlist) {
     nameBlockChildren.push(
@@ -2662,6 +2752,7 @@ async function renderAll() {
 
   // Level 0 종합 배지 채우기 — 부가 정보라 렌더를 막지 않음 (fire-and-forget)
   loadAnalysisBadges();
+  loadPlanBadges();
 }
 
 // GET /api/analysis/summary 1번으로 전 종목 배지 채움 (카드 25개가 각각 fan-out 금지)
@@ -2671,11 +2762,27 @@ async function loadAnalysisBadges() {
     const ids = STOCKS.map(s => s.symbolId).join(',');
     const d = await S.api(API.analysisSummary(ids));
     const map = (d && d.symbols) || {};
+    window._ANALYSIS_SUMMARY = map;      // 계좌×종목 모달이 같은 응답을 읽는다
     STOCKS.forEach(s => {
       const entry = map[s.symbolId] || map[s.symbolId.toUpperCase()];
       window._setAnalysisBadge(s.symbolId, entry || null);
     });
   } catch (_) { /* 배지는 부가 정보 — S.api 가 이미 알렸다 */ }
+}
+
+// 계좌 배지: /plan_runs/latest 1번 + 이미 받아둔 계획 목록으로 카드 전부를 채운다.
+// 종목당 요청은 0개다 — 22장짜리 그리드가 22번 물어보면 안 된다.
+async function loadPlanBadges() {
+  if (!STOCKS.length) return;
+  try {
+    const [run, plans] = await Promise.all([
+      S.api(API.planRunLatest()),
+      S.api(API.plans()).then(d => d.plans || []).catch(() => []),
+    ]);
+    window._PLAN_RUN = run && run.date ? run : null;
+    window._PLANS = plans;
+    STOCKS.forEach(s => window._setPlanBadge(s.symbolId));
+  } catch (_) { /* 배지는 부가 정보 */ }
 }
 
 // debounced resize → redraw all charts
@@ -2684,6 +2791,204 @@ window.addEventListener('resize', () => {
   clearTimeout(resizeTO);
   resizeTO = setTimeout(() => _redrawCallbacks.forEach(fn => fn()), 100);
 });
+
+
+// ─────────────────────────────────────────────────────────────
+// ACCOUNT × SYMBOL MODAL — 이 계좌에서 이 종목을 오늘 어떻게 볼 것인가.
+// 종목 판정은 확대 모달(공유 분석)이 보여준다. 여기는 계좌 쪽 절반이고,
+// 승인 대기 중인 제안이 사람 손을 만나는 유일한 자리다.
+// ─────────────────────────────────────────────────────────────
+(function planSymbolModal() {
+  const modal = document.getElementById('plan-symbol-modal');
+  const nameEl = document.getElementById('psm-name');
+  const codeEl = document.getElementById('psm-code');
+  const bodyEl = document.getElementById('psm-body');
+  const closeBtn = document.getElementById('psm-close');
+  let release = null;
+  let current = null;      // the stock this modal is open on
+  let pollStop = null;
+
+  function close() {
+    modal.hidden = true;
+    if (release) { release(); release = null; }
+    if (pollStop) { pollStop(); pollStop = null; }
+    current = null;
+  }
+  closeBtn.addEventListener('click', close);
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modal.hidden) close();
+  });
+
+  function sec(title, kids) {
+    return el('div', { className: 'psm-sec' },
+              [el('div', { className: 'psm-h' }, [title])].concat(
+                (kids || []).filter(Boolean)));
+  }
+
+  // ① 오늘의 판단 ------------------------------------------------------
+  function judgement(stock) {
+    const run = window._PLAN_RUN;
+    if (!run) {
+      return sec('오늘의 판단', [
+        el('div', { className: 'psm-empty' },
+           ['아직 이 계좌의 계획 판단이 없습니다. 아래 「미리보기 생성」으로 한 번 돌려볼 수 있습니다.'])]);
+    }
+    const note = (run.notes_by_symbol || {})[stock.symbolId];
+    const mine = (run.suggest || []).filter(sg => {
+      const p = (window._PLANS || []).find(x => x.plan_id === sg.plan_id);
+      return p && p.symbol_id === stock.symbolId;
+    });
+    return sec('오늘의 판단', [
+      el('div', { className: 'psm-line' }, [
+        '📋 ' + (note ? (PLAN_STANCE_KO[note.stance] || '—') : '—') + ' — ' +
+        (note && note.line_ko ? note.line_ko : '이 종목에 대한 줄이 없습니다.')]),
+      mine.length ? el('div', { className: 'psm-line' },
+                       ['💬 ' + mine.map(sg => sg.what).join(' / ')]) : null,
+      mine.length && mine[0].why ? el('div', { className: 'psm-meta' },
+                                      [mine[0].why]) : null,
+      el('div', { className: 'psm-meta' }, [
+        run.date + ' · ' + (run.slot === 'manual' ? '미리보기 (장부에 적용되지 않음)' : '아침 배치')]),
+    ]);
+  }
+
+  // ② 이 계좌의 계획 ---------------------------------------------------
+  async function decide(plan, status) {
+    if (status === 'abandoned') {
+      const ok = await S.confirmModal({
+        title: S.LABELS.reject,
+        body: '이 제안을 거절합니다. 계획 노트에 철회로 남습니다.',
+        confirmLabel: S.LABELS.reject, danger: true });
+      if (!ok) return;
+    }
+    try {
+      await S.api(API.plan(plan.plan_id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+    } catch (_) { return; }          // S.api already told the user
+    await loadPlanBadges();
+    if (window._reloadPlanNote) window._reloadPlanNote();
+    if (current) render(current);
+  }
+
+  function planRow(plan) {
+    const ccy = (plan.symbol_id || '').startsWith('US:') ? 'USD' : 'KRW';
+    const proposed = plan.status === 'proposed';
+    const tags = [];
+    if (proposed) tags.push(el('span', { className: 'psm-tag prop' }, ['제안']));
+    if (plan.source === 'user') tags.push(el('span', { className: 'psm-tag' }, ['내 계획']));
+    if ((plan.note || '').indexOf('[unanchored]') >= 0) {
+      tags.push(el('span', { className: 'psm-tag warn', title: '분석 좌표에 없는 가격' },
+                   ['좌표 밖']));
+    }
+    const row = el('div', { className: 'psm-plan' }, [
+      el('div', { className: 'grow' }, [
+        (plan.side === 'buy' ? '매수' : '매도') + ' ' + fmtQty(plan.qty) + '주 @' +
+        fmtPrice(plan.price, ccy)]),
+    ].concat(tags));
+    if (proposed) {
+      const yes = el('button', { className: 'btn btn-sm btn-primary' }, [S.LABELS.approve]);
+      yes.addEventListener('click', () => decide(plan, 'armed'));
+      const no = el('button', { className: 'btn btn-sm btn-danger' }, [S.LABELS.reject]);
+      no.addEventListener('click', () => decide(plan, 'abandoned'));
+      row.appendChild(yes);
+      row.appendChild(no);
+    }
+    if (plan.note) row.appendChild(el('div', { className: 'psm-meta grow' }, [plan.note]));
+    return row;
+  }
+
+  function plansOf(stock) {
+    const mine = (window._PLANS || []).filter(
+      p => p.symbol_id === stock.symbolId &&
+           ['armed', 'entered', 'proposed'].indexOf(p.status) >= 0);
+    return sec('이 계좌의 계획', mine.length
+      ? mine.map(planRow)
+      : [el('div', { className: 'psm-empty' }, ['이 종목에 걸린 계획이 없습니다.'])]);
+  }
+
+  // ③ 종목 분석 요약 (공유 자원 쪽 절반) -------------------------------
+  function analysisOf(stock) {
+    const e = (window._ANALYSIS_SUMMARY || {})[stock.symbolId];
+    if (!e || !e.date) {
+      return sec('종목 분석', [el('div', { className: 'psm-empty' },
+                                 ['저장된 분석이 없습니다.'])]);
+    }
+    const facts = e.status === 'facts_only';
+    return sec('종목 분석', [
+      el('div', { className: 'psm-line' }, [
+        facts ? '판정 없음 (사실만)' : (LABEL_KO[e.label] || e.label || '—')]),
+      e.summary_ko ? el('div', { className: 'psm-meta' }, [e.summary_ko]) : null,
+      el('div', { className: 'psm-meta' }, [e.date]),
+    ]);
+  }
+
+  // ④ 하단 — 총평과 미리보기 --------------------------------------------
+  function foot(stock) {
+    const run = window._PLAN_RUN;
+    const kids = [];
+    if (run && run.portfolio_note) {
+      const box = el('div', { className: 'psm-meta' }, [run.portfolio_note]);
+      box.hidden = true;
+      const toggle = el('button', { className: 'btn btn-sm' }, ['계좌 총평 보기']);
+      toggle.addEventListener('click', () => {
+        box.hidden = !box.hidden;
+        toggle.textContent = box.hidden ? '계좌 총평 보기' : S.LABELS.collapse;
+      });
+      kids.push(toggle, box);
+    }
+    const runBtn = el('button', { className: 'btn btn-sm' }, ['미리보기 생성']);
+    const state = el('span', { className: 'psm-meta' }, []);
+    runBtn.addEventListener('click', async () => {
+      runBtn.disabled = true;
+      state.textContent = '생성 중…';
+      try {
+        await S.api(API.runPlan(), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+      }
+      catch (_) { runBtn.disabled = false; state.textContent = ''; return; }
+      poll(stock, runBtn, state);
+    });
+    kids.push(runBtn, state);
+    return el('div', { className: 'psm-foot' }, kids);
+  }
+
+  // 탭이 숨으면 폴러도 잔다 (S.whenVisible 규칙).
+  function poll(stock, btn, state) {
+    if (pollStop) pollStop();
+    pollStop = S.whenVisible(async () => {
+      let st;
+      try { st = await S.api(API.planRunStatus()); } catch (_) { return; }
+      if (st.state === 'running') { state.textContent = '생성 중…'; return; }
+      if (pollStop) { pollStop(); pollStop = null; }
+      btn.disabled = false;
+      state.textContent = st.state === 'done' ? '' : '실패: ' + (st.error || st.state);
+      if (st.state === 'done') {
+        await loadPlanBadges();
+        if (current) render(current);
+      }
+    }, 5000);
+  }
+
+  function render(stock) {
+    current = stock;
+    nameEl.textContent = stock.name;
+    codeEl.textContent = stock.market + ' · ' + stock.code;
+    clear(bodyEl);
+    [judgement(stock), plansOf(stock), analysisOf(stock), foot(stock)]
+      .forEach(n => bodyEl.appendChild(n));
+  }
+
+  window.openPlanSymbolModal = function (stock) {
+    render(stock);
+    modal.hidden = false;
+    release = S.trapFocus(modal.querySelector('.modal-dialog'));
+    closeBtn.focus();
+  };
+})();
 
 // ─────────────────────────────────────────────────────────────
 // TOOLBAR — search dropdown + add + refresh
@@ -3144,7 +3449,7 @@ window.openTradeHistory = async function () {
   const ccyOf = sid => (sid || '').startsWith('US:') ? 'USD' : 'KRW';
   // a trade row moves a plan (§3.1): buy → entered, full sell → done
   const PLAN_STATUS_KO = { entered: '진입', done: '완료', stopped: '손절',
-                           expired: '만료', abandoned: '철회' };
+                           expired: '만료', abandoned: '철회', proposed: '제안' };
 
   function currentSide() {
     const on = sideSeg.querySelector('button.active');
@@ -3260,7 +3565,10 @@ window.openTradeHistory = async function () {
       const ccy = ccyOf(plan.symbol_id);
       const ix = plan.symbol_id.indexOf(':');
       const active = !plan.status || plan.status === 'armed' || plan.status === 'entered';
-      const row = el('div', { className: 'plan-row' + (active ? '' : ' closed') }, [
+      // A proposal is neither open nor closed: it is waiting for an answer,
+      // which is given on the card (계좌 배지 → 승인/거절), not here.
+      const proposed = plan.status === 'proposed';
+      const row = el('div', { className: 'plan-row' + (active || proposed ? '' : ' closed') }, [
         el('div', {}, [
           el('div', { className: 'p-name' }, [plan.name]),
           el('div', { className: 'p-code' }, [
@@ -3358,6 +3666,9 @@ window.openTradeHistory = async function () {
       setStatus('삭제 실패: ' + e.message, 'err');
     }
   }
+
+  // The card's 승인/거절 writes the same rows; let it refresh this list.
+  window._reloadPlanNote = () => { if (!modal.hidden) load(); };
 
   sideSeg.querySelectorAll('button').forEach(b =>
     b.addEventListener('click', () => setSide(b.dataset.side)));

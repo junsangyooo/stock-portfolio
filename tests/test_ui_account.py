@@ -156,3 +156,54 @@ def test_trade_history_has_symbol_and_date_filters():
     assert "el('select'" in fn
     assert "S.trapFocus(" in fn
     assert re.search(r"trades:\s*\(q\)", SRC), "API.trades takes the filter query"
+
+
+# ── 계좌 배지 · 계좌×종목 모달 ──────────────────────────────────────────
+
+def test_plan_badge_is_filled_in_place_from_one_request():
+    """22 cards, one /plan_runs/latest. A badge that fetched per symbol would
+    be 22 requests, and rebuilding the card to fill it loses scroll and the
+    drawn chart (the in-place rule)."""
+    assert "window._planBadgeEls[stock.symbolId] = planBadge" in SRC
+    assert len(re.findall(r"/plan_runs/latest'", SRC)) == 1
+    loader = SRC[SRC.index("async function loadPlanBadges"):]
+    loader = loader[:loader.index("\n}\n")]
+    assert "_setPlanBadge" in loader and "renderCard" not in loader
+
+
+def test_the_plan_badge_is_reachable_without_a_mouse():
+    badge = SRC[SRC.index("const planBadge = el("):]
+    badge = badge[:badge.index("window._planBadgeEls")]
+    assert "role: 'button'" in badge and "tabindex: '0'" in badge
+    assert "'Enter'" in badge and "' '" in badge
+    assert "aria-label" in SRC[SRC.index("function _planBadgeApply"):
+                               SRC.index("window._setPlanBadge")]
+
+
+def test_a_proposal_is_approved_or_rejected_by_patching_the_plan():
+    """No second write path: approval is the same PATCH the plan note uses,
+    and a rejection asks first."""
+    fn = SRC[SRC.index("async function decide(plan, status)"):]
+    fn = fn[:fn.index("\n  function planRow")]
+    assert "API.plan(plan.plan_id)" in fn and "'PATCH'" in fn
+    assert "S.confirmModal" in fn and "'armed'" not in fn.split("decide(plan")[0]
+    assert "S.LABELS.approve" in SRC and "S.LABELS.reject" in SRC
+
+
+def test_the_preview_is_a_job_not_a_blocking_call():
+    """A synchronous plan pass would die at Cloudflare's 100s ceiling."""
+    assert "API.runPlan()" in SRC and "API.planRunStatus()" in SRC
+    poll = SRC[SRC.index("  function poll(stock, btn, state)"):]
+    poll = poll[:poll.index("\n  function render(stock)")]
+    assert "S.whenVisible(" in poll
+
+
+def test_the_account_modal_does_not_dress_a_preview_as_the_book():
+    assert "장부에 적용되지 않음" in SRC
+
+
+def test_plan_stance_dictionary_is_one_place():
+    assert len(re.findall(r"const PLAN_STANCE_KO = ", SRC)) == 1
+    for word in ("유지", "추가", "축소", "정리", "관심"):
+        assert word in SRC[SRC.index("const PLAN_STANCE_KO"):
+                           SRC.index("window._planBadgeEls")]
