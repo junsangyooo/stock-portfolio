@@ -143,7 +143,8 @@ def test_weights_close_against_cash_in_each_currency(book):
     krw = ctx["totals"]["KRW"]
     assert krw == {"eval": 810000.0, "cost": 800000.0, "pnl": 10000.0,
                    "pnl_pct": 1.25, "cash": 100000.0,
-                   "total_assets": 910000.0, "cash_pct": 10.99, "n_held": 2}
+                   "total_assets": 910000.0, "cash_pct": 10.99,
+                   "n_held": 2, "n_cost_unknown": 0}
     assert ctx["totals"]["USD"]["pnl_pct"] == 20.0
 
 
@@ -230,3 +231,70 @@ def test_two_builds_of_one_book_are_byte_identical(book):
 def test_an_unknown_account_raises_rather_than_planning_an_empty_book(book):
     with pytest.raises(KeyError):
         context.build(book, "nope", today=TODAY)
+
+
+def test_a_plan_on_a_symbol_the_book_neither_holds_nor_watches_is_resolved(book):
+    """quant has six such rows. The model must judge every active plan, so the
+    symbol has to arrive with its price and its coordinates — or with a
+    missing[] row saying why it did not."""
+    now = _ts(0)
+    book.execute(
+        "INSERT INTO plans (account_id, symbol_id, name, side, price, qty,"
+        " status, source, created_at, updated_at)"
+        " VALUES ('acc', 'KR:FFF', 'FFF', 'buy', 1000, 1, 'armed', 'agent',"
+        " ?, ?)", (now, now))
+    book.commit()
+    ctx = context.build(book, "acc", today=TODAY)
+    entry = [w for w in ctx["watch"] if w["symbol_id"] == "KR:FFF"]
+    assert entry and entry[0]["reason"] == "활성 계획만 있는 종목"
+    assert ("KR:FFF", "analysis_missing") in {(m["symbol_id"], m["why"])
+                                              for m in ctx["missing"]}
+    assert "KR:FFF" in {p["symbol_id"] for p in ctx["plans"]}
+
+
+def test_a_us_symbol_watched_without_a_stored_name_is_not_a_bare_ticker(book,
+                                                                       monkeypatch):
+    """The universe leaves name_kr NULL for US symbols, and the agent's own
+    watch rows carry no name — so the English rung is the only one left."""
+    now = _ts(0)
+    book.execute("INSERT INTO watch (account_id, symbol_id, reason,"
+                 " updated_at) VALUES ('acc', 'US:GOOGL', '후보', ?)", (now,))
+    book.commit()
+    monkeypatch.setattr(context.uni_search, "get", lambda sid: {
+        "name_kr": None, "name_en": "Alphabet Inc.", "currency": "USD"})
+    ctx = context.build(book, "acc", today=TODAY)
+    googl = [w for w in ctx["watch"] if w["symbol_id"] == "US:GOOGL"][0]
+    assert googl["name"] == "Alphabet Inc."
+
+
+def test_a_position_with_no_cost_basis_is_counted_not_hidden(book):
+    """It still belongs to eval — it is what the account is worth — but pnl
+    cannot include it, so the count says so instead of pnl quietly ceasing to
+    mean eval - cost."""
+    now = _ts(0)
+    book.execute(
+        "INSERT INTO holdings (account_id, symbol_id, qty, avg_cost, note,"
+        " added_at, sort_order, updated_at)"
+        " VALUES ('acc', 'KR:DDD', 4, NULL, NULL, ?, 0, ?)"
+        " ON CONFLICT(account_id, symbol_id) DO UPDATE SET qty = 4,"
+        " avg_cost = NULL", (now, now))
+    book.commit()
+    t = context.build(book, "acc", today=TODAY)["totals"]["KRW"]
+    assert t["n_held"] == 3 and t["n_cost_unknown"] == 1
+    assert t["eval"] == 810000.0 + 4 * 5000.0
+    assert t["cost"] == 800000.0            # unchanged: we do not know it
+
+
+def test_a_negative_cost_basis_is_not_a_percentage(book):
+    """A sign typo in the holdings form is reachable; a +1500 gain must not
+    reach the model as a 300% loss."""
+    now = _ts(0)
+    book.execute("UPDATE holdings SET avg_cost = -50 WHERE symbol_id = 'KR:BBB'")
+    book.commit()
+    ctx = context.build(book, "acc", today=TODAY)
+    bbb = [h for h in ctx["holdings"] if h["symbol_id"] == "KR:BBB"][0]
+    assert bbb["pnl_pct"] is None
+    t = ctx["totals"]["KRW"]
+    # the poisoned row leaves the aggregate entirely rather than dragging it
+    assert t["cost"] == 700000.0 and t["pnl"] == 20000.0
+    assert t["pnl_pct"] == 2.86 and t["n_cost_unknown"] == 1

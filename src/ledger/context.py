@@ -225,25 +225,33 @@ def build(conn: sqlite3.Connection, account_id: str, *,
     def _bucket(ccy: str) -> dict:
         return totals.setdefault(ccy, {
             "eval": 0.0, "cost": 0.0, "pnl": 0.0, "pnl_pct": 0.0,
-            "cash": 0.0, "total_assets": 0.0, "cash_pct": 0.0, "n_held": 0})
+            "cash": 0.0, "total_assets": 0.0, "cash_pct": 0.0,
+            "n_held": 0, "n_cost_unknown": 0})
 
-    for h in holding_rows:
-        sid = h["symbol_id"]
+    def _resolve(sid: str, name_override=None, ccy_override=None):
+        """Name, currency, price and analysis for one symbol — and a row in
+        missing[] for each of those we could not get. Every symbol the model
+        sees goes through here, so 'we do not know' is never silent."""
         meta = uni_search.get(sid) or {}
-        ccy = h.get("currency") or meta.get("currency") or base_ccy
         q = quote_store.get(sid)
         price = _r(q.price) if q else None
-        qty = _num(h.get("qty")) or 0.0
-        avg = _num(h.get("avg_cost"))
-        name = h.get("name") or meta.get("name_kr") or meta.get("name_en") or sid
-
+        ana = _analysis(sid, price, today_d)
         if price is None:
             missing.append({"symbol_id": sid, "why": "quote_missing"})
-        ana = _analysis(sid, price, today_d)
         if ana is None:
             missing.append({"symbol_id": sid, "why": "analysis_missing"})
         elif ana["freshness"] == "missing":
             missing.append({"symbol_id": sid, "why": "analysis_old"})
+        name = (name_override or meta.get("name_kr") or meta.get("name_en")
+                or sid)
+        ccy = ccy_override or meta.get("currency") or base_ccy
+        return name, ccy, price, ana
+
+    for h in holding_rows:
+        sid = h["symbol_id"]
+        qty = _num(h.get("qty")) or 0.0
+        avg = _num(h.get("avg_cost"))
+        name, ccy, price, ana = _resolve(sid, h.get("name"), h.get("currency"))
 
         if qty <= 0:
             watch.append({
@@ -254,15 +262,25 @@ def build(conn: sqlite3.Connection, account_id: str, *,
         t = _bucket(ccy)
         t["n_held"] += 1
         if price is not None:
+            # eval carries the position whatever we know about its cost — it
+            # is what the account is worth, and weights are measured against
+            # it. cost and pnl cannot, so the count says how many are absent
+            # rather than letting pnl quietly stop meaning eval - cost.
             t["eval"] += price * qty
-            if avg is not None:
+            if avg is not None and avg > 0:
                 t["cost"] += avg * qty
                 t["pnl"] += (price - avg) * qty
+            else:
+                # A missing cost basis and an impossible one (a sign typo in
+                # the holdings form is reachable) are the same thing here: we
+                # cannot price what this position cost. One such row left in
+                # would poison the whole currency's pnl_pct.
+                t["n_cost_unknown"] += 1
         held.append({
             "symbol_id": sid, "name": name, "currency": ccy,
             "qty": qty, "avg_cost": avg, "price": price,
             "pnl_pct": (round((price - avg) / avg * 100, 2)
-                        if price is not None and avg else None),
+                        if price is not None and avg and avg > 0 else None),
             "weight_pct": None,                     # filled once totals close
             "note": h.get("note"),
             "opened_at": _epoch_to_date(h.get("opened_at")),
@@ -276,28 +294,30 @@ def build(conn: sqlite3.Connection, account_id: str, *,
         sid = w["symbol_id"]
         if sid in known:
             continue
-        meta = uni_search.get(sid) or {}
-        q = quote_store.get(sid)
-        price = _r(q.price) if q else None
-        ana = _analysis(sid, price, today_d)
-        if price is None:
-            missing.append({"symbol_id": sid, "why": "quote_missing"})
-        if ana is None:
-            missing.append({"symbol_id": sid, "why": "analysis_missing"})
-        elif ana["freshness"] == "missing":
-            missing.append({"symbol_id": sid, "why": "analysis_old"})
-        watch.append({
-            "symbol_id": sid,
-            "name": w.get("name") or meta.get("name_kr") or sid,
-            "currency": meta.get("currency") or base_ccy,
-            "price": price, "reason": w.get("reason"), "analysis": ana})
+        name, ccy, price, ana = _resolve(sid, w.get("name"))
+        watch.append({"symbol_id": sid, "name": name, "currency": ccy,
+                      "price": price, "reason": w.get("reason"),
+                      "analysis": ana})
+        known.add(sid)
+
+    # A plan can name a symbol the book neither holds nor watches — quant has
+    # six such rows today. Without this sweep that plan reaches the model with
+    # no price, no coordinates and nothing in missing[] to say so, and the
+    # model is required to judge every active plan.
+    for sid in sorted(set(plans_by_symbol) - known):
+        name, ccy, price, ana = _resolve(
+            sid, next(p["name"] for p in plan_rows if p["symbol_id"] == sid))
+        watch.append({"symbol_id": sid, "name": name, "currency": ccy,
+                      "price": price, "reason": "활성 계획만 있는 종목",
+                      "analysis": ana})
 
     # ── totals ────────────────────────────────────────────────────────────
     for ccy, amt in cash.items():
         _bucket(ccy)["cash"] = amt
     for ccy, t in totals.items():
         t["total_assets"] = t["eval"] + t["cash"]
-        t["pnl_pct"] = round(t["pnl"] / t["cost"] * 100, 2) if t["cost"] else 0.0
+        t["pnl_pct"] = (round(t["pnl"] / t["cost"] * 100, 2)
+                        if t["cost"] > 0 else 0.0)
         t["cash_pct"] = (round(t["cash"] / t["total_assets"] * 100, 2)
                          if t["total_assets"] else 0.0)
         for k in ("eval", "cost", "pnl", "cash", "total_assets"):
