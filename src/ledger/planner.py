@@ -97,6 +97,8 @@ SYSTEM_PLAN = """# 계획 작성자
   (예: "invalidation", "targets[0]", "support[1]", "entry_zone.low"). 좌표에 없는
   가격이면 basis를 "none"으로 두고 why에 이유를 쓴다. 프로그램이 표시한다.
 - 수량은 정수. 매도 수량은 보유 수량 이하.
+- `price`는 **기준가**다 — 그 계획으로 실제 사거나 팔 가격. 진입 조건이 있으면 그
+  가격, 청산만 거는 계획이면 목표가(take_profit). 비워두지 마라.
 - 변경 0건도 답이다.
 - why는 "왜 이 값인가"가 보이게. "상승 여력이 있다"는 이유가 아니다.
   "invalidation 66,000이 평단 대비 -5.7%라 손절폭이 스윙에 맞는다"가 이유다.
@@ -360,9 +362,21 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
             why(f"bad side {item.get('side')!r}")
             continue
         qty = _int_qty(item.get("qty"))
-        price = _f(item.get("price"))
-        if qty is None or price is None or price <= 0:
-            why("qty must be a whole number above zero, price a number")
+        if qty is None:
+            why("qty must be a whole number above zero")
+            continue
+        # `price` is the reference price the ledger stores, and an exit-only
+        # plan has no obvious one to name — the model left it null on all 19
+        # plans of the first real pass. It is derivable from the plan's own
+        # numbers, so derive it rather than discard a complete plan.
+        price = (_f(item.get("price"))
+                 or _f(((item.get("conditions") or {}).get("entry") or {})
+                       .get("price"))
+                 or _f(((item.get("conditions") or {}).get("take_profit") or {})
+                       .get("price"))
+                 or _f((ana.get("levels") or {}).get("current")))
+        if price is None or price <= 0:
+            why("no price and none derivable from the conditions")
             continue
         if item["side"] == "sell":
             owned = _int_qty((held.get(sid) or {}).get("qty"))

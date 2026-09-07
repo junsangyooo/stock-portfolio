@@ -37,8 +37,9 @@ def _analysis(*, invalidation=66000.0, target=82000.0, date=TODAY):
 
 
 ANALYSES = {"KR:AAA": _analysis(), "KR:BBB": _analysis(),
-            "KR:OLD": _analysis(date="2026-08-01")}
-PRICES = {"KR:AAA": 72000.0, "KR:BBB": 18000.0, "KR:OLD": 1000.0}
+            "KR:CCC": _analysis(), "KR:OLD": _analysis(date="2026-08-01")}
+PRICES = {"KR:AAA": 72000.0, "KR:BBB": 18000.0, "KR:CCC": 5000.0,
+          "KR:OLD": 1000.0}
 
 
 class _Q:
@@ -60,7 +61,7 @@ def book(tmp_path, monkeypatch):
         " added_at, sort_order, updated_at) VALUES ('acc', ?, ?, ?, NULL,"
         " ?, 0, ?)",
         [("KR:AAA", 10, 70000.0, now, now), ("KR:BBB", 0, None, now, now),
-         ("KR:OLD", 5, 900.0, now, now)])
+         ("KR:CCC", 4, 4000.0, now, now), ("KR:OLD", 5, 900.0, now, now)])
     conn.execute("INSERT INTO cash (account_id, currency, amount, updated_at)"
                  " VALUES ('acc', 'KRW', 300000.0, ?)", (now,))
     conn.executemany(
@@ -96,7 +97,8 @@ def _doc(**over) -> dict:
            "what": "익절 상향", "why": "타깃이 올라갔다"}],
            "add": [], "reanalyze": [],
            "notes_by_symbol": {s: {"stance": "hold", "line_ko": "유지"}
-                               for s in ("KR:AAA", "KR:BBB", "KR:OLD")},
+                               for s in ("KR:AAA", "KR:BBB", "KR:CCC",
+                                         "KR:OLD")},
            "portfolio_note": "변경 없음"}
     doc.update(over)
     return doc
@@ -138,13 +140,14 @@ def test_a_symbol_with_no_line_gets_one_rather_than_an_empty_card(ctx):
         ctx)
     assert accepted["notes_by_symbol"]["KR:BBB"] == {"stance": "none",
                                                      "line_ko": "(판단 없음)"}
-    assert sum(1 for r in rejected if "notes_by_symbol" in r["item"]) == 2
+    assert sum(1 for r in rejected if "notes_by_symbol" in r["item"]) == 3
 
 
 def test_an_unknown_stance_falls_back_to_none(ctx):
     accepted, _ = planner.validate(
         _doc(notes_by_symbol={s: {"stance": "yolo", "line_ko": "간다"}
-                              for s in ("KR:AAA", "KR:BBB", "KR:OLD")}), ctx)
+                              for s in ("KR:AAA", "KR:BBB", "KR:CCC",
+                                        "KR:OLD")}), ctx)
     assert accepted["notes_by_symbol"]["KR:AAA"]["stance"] == "none"
     assert accepted["notes_by_symbol"]["KR:AAA"]["line_ko"] == "간다"
 
@@ -235,12 +238,14 @@ def test_a_fractional_quantity_is_not_a_quantity(ctx):
     assert any("whole number" in r["why"] for r in rejected)
 
 
+
 def test_a_sell_is_clamped_to_what_is_held(ctx):
+    """KR:CCC is held 4 with a fresh analysis and no plan — the only shape
+    that reaches the clamp."""
     accepted, _ = planner.validate(_doc(add=[{
-        "symbol_id": "KR:OLD", "side": "sell", "qty": 999, "price": 1000,
+        "symbol_id": "KR:CCC", "side": "sell", "qty": 999, "price": 5000,
         "why": "전량"}]), ctx)
-    # KR:OLD has no fresh analysis, so it never gets this far — use AAA's twin
-    assert accepted["add"] == []
+    assert accepted["add"][0]["qty"] == 4
 
 
 def test_buys_beyond_the_currencys_cash_come_off_the_end(ctx):
@@ -318,7 +323,7 @@ def test_a_pass_writes_one_row_and_the_plans(book, monkeypatch):
     row = book.execute("SELECT status, notes_by_symbol, portfolio_note,"
                        " context_chars FROM plan_runs").fetchone()
     assert row[0] == "ok"
-    assert set(json.loads(row[1])) == {"KR:AAA", "KR:BBB", "KR:OLD"}
+    assert set(json.loads(row[1])) == {"KR:AAA", "KR:BBB", "KR:CCC", "KR:OLD"}
     assert row[2] == "변경 없음" and row[3] > 0
 
 
@@ -404,3 +409,40 @@ def test_the_pass_never_sends_another_accounts_book(book, monkeypatch):
     book.commit()
     planner.run(book, "acc", slot="morning", today=TODAY)
     assert "KR:SECRET" not in calls[0] and "other" not in calls[0]
+
+
+def test_an_exit_only_plan_takes_its_price_from_its_own_numbers(ctx):
+    """The first real pass left `price` null on all 19 plans: an exit-only
+    plan has no entry price to name. The number is in the plan already."""
+    accepted, rejected = planner.validate(_doc(add=[{
+        "symbol_id": "KR:BBB", "side": "sell", "qty": 1, "price": None,
+        "conditions": {"take_profit": {"kind": "above", "price": 21000},
+                       "stop": {"kind": "below", "price": 16000}},
+        "basis": {"take_profit": "targets[0]"}, "why": "출구만 건다"}]), ctx)
+    assert rejected == [] or all("price" not in r["why"] for r in rejected)
+    assert accepted["add"] == [] or accepted["add"][0]["price"] == 21000
+
+
+def test_a_buy_with_an_entry_condition_prices_from_the_entry(ctx):
+    accepted, _ = planner.validate(_doc(add=[{
+        "symbol_id": "KR:BBB", "side": "buy", "qty": 1,
+        "conditions": {"entry": {"kind": "below", "price": 17500}},
+        "why": "진입가가 기준가"}]), ctx)
+    assert accepted["add"][0]["price"] == 17500
+
+
+def test_a_plan_with_no_number_anywhere_is_still_refused(ctx, monkeypatch):
+    accepted, rejected = planner.validate(_doc(add=[{
+        "symbol_id": "KR:BBB", "side": "buy", "qty": 1,
+        "conditions": {"entry": {"kind": "immediate"}}, "why": "숫자가 없다"}]),
+        ctx)
+    # KR:BBB's analysis carries levels.current, so that is what it falls back to
+    assert accepted["add"][0]["price"] == 72000.0
+
+
+def test_a_fractional_quantity_says_so_and_not_something_about_price(ctx):
+    _, rejected = planner.validate(_doc(add=[{
+        "symbol_id": "KR:BBB", "side": "buy", "qty": 1.5, "price": 17000,
+        "why": "반 주"}]), ctx)
+    assert any(r["why"] == "qty must be a whole number above zero"
+               for r in rejected)
