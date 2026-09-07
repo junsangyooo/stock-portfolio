@@ -697,3 +697,46 @@ def test_a_modify_that_moves_the_entry_moves_the_price_the_card_shows(book,
     planner.apply(book, "acc", accepted, add_status="proposed", today=TODAY)
     assert book.execute("SELECT price FROM plans WHERE plan_id = 1"
                         ).fetchone()[0] == 69000
+
+
+def test_the_cash_cap_counts_what_is_already_committed(book):
+    """An armed buy waiting on the same cash is a claim on it. Counting only
+    today's new plans let a second one spend money the first had taken."""
+    now = _ts(0)
+    book.execute(
+        "INSERT INTO plans (account_id, symbol_id, name, side, price, qty,"
+        " status, source, created_at, updated_at)"
+        " VALUES ('acc', 'KR:CCC', 'CCC', 'buy', 5000, 50, 'armed', 'agent',"
+        " ?, ?)", (now, now))          # 250,000 of the 300,000 already claimed
+    book.commit()
+    ctx = context.build(book, "acc", today=TODAY)
+    ids = [p["plan_id"] for p in ctx["plans"]]
+    accepted, rejected = planner.validate(
+        {"keep": ids, "modify": [], "abandon": [], "suggest": [],
+         "reanalyze": [],
+         "add": [{"symbol_id": "KR:BBB", "side": "buy", "qty": 5,
+                  "price": 18000, "why": "90,000 — 남은 50,000을 넘는다"}],
+         "notes_by_symbol": {s: {"stance": "hold", "line_ko": "유지"}
+                             for s in ("KR:AAA", "KR:BBB", "KR:CCC", "KR:OLD")},
+         "portfolio_note": "n"}, ctx)
+    assert accepted["add"] == []
+    assert any("already committed" in r["why"] for r in rejected)
+
+
+def test_a_non_finite_number_in_a_rejection_row_stays_readable(book,
+                                                               monkeypatch):
+    """The row echoes the model's raw item. json.dumps writes bare NaN and
+    every strict reader — Starlette's JSONResponse included — refuses it."""
+    _answer(monkeypatch, '```json\n{"keep": [1], "suggest": [{"plan_id": 2, '
+                         '"what": "x", "why": "y"}], "add": [{"symbol_id": '
+                         '"KR:BBB", "side": "buy", "qty": Infinity, '
+                         '"price": 1}], "notes_by_symbol": {}, '
+                         '"portfolio_note": "n"}\n```')
+    planner.run(book, "acc", slot="morning", today=TODAY)
+    raw = book.execute("SELECT rejected FROM plan_runs").fetchone()[0]
+    assert '"inf"' in raw          # kept, as text, so the row still says what came in
+    json.loads(raw, parse_constant=_no_constants)   # strict: no bare literals
+
+
+def _no_constants(name):
+    raise ValueError(f"bare {name} in stored JSON")

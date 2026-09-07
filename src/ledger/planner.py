@@ -496,7 +496,19 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
     # The prompt asks for the buys in descending confidence, so the ones that
     # do not fit come off the end. Cash is per currency: there is no rate in
     # this system and a KRW plan cannot be paid for with dollars.
+    #
+    # The baseline is what the account has already committed — a buy plan that
+    # is still waiting will want the same cash. Counting only today's new ones
+    # let a second plan spend money the first one had already claimed.
+    dropped = {a["plan_id"] for a in accepted["abandon"]}
     spend: dict[str, float] = {}
+    for p in ctx["plans"]:
+        if (p.get("side") != "buy" or p.get("plan_id") in dropped
+                or p.get("status") not in ("armed", "proposed")):
+            continue
+        ccy = _currency_of(ctx, p["symbol_id"])
+        spend[ccy] = spend.get(ccy, 0.0) + (_f(p.get("qty")) or 0) * (
+            _f(p.get("price")) or 0)
     kept_adds = []
     for a in accepted["add"]:
         if a["side"] != "buy":
@@ -508,7 +520,7 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
         if spend.get(ccy, 0.0) + want > cash:
             rejected.append({"item": {"add": a},
                              "why": f"{ccy} cash {cash:,.0f} cannot cover this "
-                                    f"and the buys above it"})
+                                    f"on top of what is already committed"})
             continue
         spend[ccy] = spend.get(ccy, 0.0) + want
         kept_adds.append(a)
@@ -621,7 +633,22 @@ def _record(conn: sqlite3.Connection, account_id: str, *, day: str, slot: str,
             diff=None, accepted=None, rejected=None) -> None:
     """A pass that failed still leaves a row. A silent failure is the one
     outcome the morning batch must not have."""
-    j = (lambda o: json.dumps(o, ensure_ascii=False) if o is not None else None)
+    def _finite(o):
+        """NaN and Infinity are writable by json.dumps and unreadable by
+        anything strict — Starlette's JSONResponse refuses them. A rejection
+        row echoes the model's raw item, so one bad number would 500 the read
+        route forever on a pass that reported ok."""
+        if isinstance(o, float) and not math.isfinite(o):
+            return repr(o)
+        if isinstance(o, dict):
+            return {k: _finite(v) for k, v in o.items()}
+        if isinstance(o, list):
+            return [_finite(v) for v in o]
+        return o
+
+    def j(o):
+        return (json.dumps(_finite(o), ensure_ascii=False, allow_nan=False)
+                if o is not None else None)
     conn.execute(
         "INSERT INTO plan_runs (account_id, date, slot, status, model,"
         " context_chars, diff, accepted, rejected, notes_by_symbol,"
