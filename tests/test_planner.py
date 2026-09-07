@@ -446,3 +446,15 @@ def test_a_fractional_quantity_says_so_and_not_something_about_price(ctx):
         "why": "반 주"}]), ctx)
     assert any(r["why"] == "qty must be a whole number above zero"
                for r in rejected)
+
+
+def test_the_models_own_html_escaping_does_not_reach_the_reader(ctx):
+    """The first real pass wrote "TIGER 미국S&amp;P500" from a context holding a
+    plain "&". The card renders with textContent, so the entity would show."""
+    accepted, _ = planner.validate(
+        _doc(portfolio_note="TIGER 미국S&amp;P500 정리",
+             suggest=[{"plan_id": 2, "what": "A &amp; B", "why": "x &lt; y"}]),
+        ctx)
+    assert accepted["portfolio_note"] == "TIGER 미국S&P500 정리"
+    assert accepted["suggest"][0]["what"] == "A & B"
+    assert accepted["suggest"][0]["why"] == "x < y"

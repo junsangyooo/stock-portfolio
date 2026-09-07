@@ -20,6 +20,7 @@ every executor (trade_store, the keeper) matches on `armed`.
 """
 from __future__ import annotations
 
+import html
 import json
 import sqlite3
 import time
@@ -175,6 +176,16 @@ def _anchored(levels: dict, basis, price) -> bool:
     return abs(p - float(coord)) / abs(float(coord)) <= ANCHOR_TOLERANCE
 
 
+def _text(v, n: int) -> str:
+    """Model prose, trimmed and un-escaped.
+
+    The first real pass wrote "TIGER 미국S&amp;P500" into portfolio_note from a
+    context that held a plain "&" — the model escaped it on its own. The card
+    renders with textContent, so the entity would reach the reader verbatim.
+    """
+    return html.unescape(str(v or ""))[:n]
+
+
 def _f(v):
     try:
         return float(v)
@@ -321,7 +332,7 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
             "plan_id": pid, "symbol_id": plan["symbol_id"],
             "conditions": conds, "qty": qty,
             "expires_at": _expires(item.get("expires"), today),
-            "why": str(item.get("why") or "")[:2000],
+            "why": _text(item.get("why"), 2000),
             "unanchored": unanchored})
 
     for item in doc.get("abandon") or []:
@@ -331,14 +342,14 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
         if pid is None or _own(pid, "abandon", item) is None:
             continue
         accepted["abandon"].append(
-            {"plan_id": pid, "why": str(item.get("why") or "")[:2000]})
+            {"plan_id": pid, "why": _text(item.get("why"), 2000)})
 
     for item in doc.get("suggest") or []:
         if isinstance(item, dict) and item.get("plan_id") in plans:
             accepted["suggest"].append({
                 "plan_id": item["plan_id"],
-                "what": str(item.get("what") or "")[:500],
-                "why": str(item.get("why") or "")[:2000]})
+                "what": _text(item.get("what"), 500),
+                "why": _text(item.get("why"), 2000)})
 
     # ── new plans, cheapest checks first, cash last ───────────────────────
     for item in doc.get("add") or []:
@@ -393,12 +404,12 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
             continue
         accepted["add"].append({
             "symbol_id": sid,
-            "name": str(item.get("name") or _name_of(ctx, sid))[:80],
+            "name": _text(item.get("name") or _name_of(ctx, sid), 80),
             "side": item["side"], "qty": qty, "price": price,
             "currency": _currency_of(ctx, sid),
             "conditions": conds,
             "expires_at": _expires(item.get("expires"), today),
-            "why": str(item.get("why") or "")[:2000],
+            "why": _text(item.get("why"), 2000),
             "unanchored": unanchored})
 
     # The prompt asks for the buys in descending confidence, so the ones that
@@ -426,7 +437,7 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
         if isinstance(item, dict) and item.get("symbol_id") in known_symbols:
             accepted["reanalyze"].append({
                 "symbol_id": item["symbol_id"],
-                "why": str(item.get("why") or "")[:500]})
+                "why": _text(item.get("why"), 500)})
 
     # ── one line per symbol; a card with nothing in it is worse than "none" ─
     notes = doc.get("notes_by_symbol")
@@ -442,9 +453,9 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
         stance = n.get("stance")
         out_notes[sid] = {
             "stance": stance if stance in STANCES else "none",
-            "line_ko": str(n["line_ko"])[:400]}
+            "line_ko": _text(n["line_ko"], 400)}
     accepted["notes_by_symbol"] = out_notes
-    accepted["portfolio_note"] = str(doc.get("portfolio_note") or "")[:2000]
+    accepted["portfolio_note"] = _text(doc.get("portfolio_note"), 2000)
     return accepted, rejected
 
 
