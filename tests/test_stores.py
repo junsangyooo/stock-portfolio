@@ -53,3 +53,30 @@ def test_period_sort_key():
     assert financials_store._period_sort_key("2024Q1") == (2024, 1)
     assert financials_store._period_sort_key("2024FY") == (2024, 5)
     assert financials_store._period_sort_key("bad") == (0, 0)
+
+
+def test_a_stampless_refetch_keeps_the_filing_date():
+    """The daily backfill calls write() without a filed_at. It must not erase
+    the disclosure date the event-driven fetch stamped — that column is how a
+    later run tells "we already have this filing" from "the company restated".
+    """
+    sid = "US:0000TEST"
+    financials_store.write(sid, [FinancialRow(period="2025Q1", revenue=1.0,
+                                              source="edgar")],
+                           filed_at="2025-05-02")
+    financials_store.write(sid, [FinancialRow(period="2025Q1", revenue=2.0,
+                                              source="edgar")])
+    from src.market.store.db import connect
+    with connect() as c:
+        row = c.execute("SELECT revenue, filed_at FROM financials"
+                        " WHERE symbol_id = ?", (sid,)).fetchone()
+    assert row[0] == 2.0                     # the numbers still update
+    assert row[1] == "2025-05-02"            # the stamp survives
+
+    # a newer filing date does replace it
+    financials_store.write(sid, [FinancialRow(period="2025Q1", revenue=3.0,
+                                              source="edgar")],
+                           filed_at="2025-08-01")
+    with connect() as c:
+        assert c.execute("SELECT filed_at FROM financials WHERE symbol_id = ?",
+                         (sid,)).fetchone()[0] == "2025-08-01"

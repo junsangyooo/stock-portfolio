@@ -49,7 +49,12 @@ def write(symbol_id: str, rows: Iterable[FinancialRow],
         return 0
     by_period = {r.period: r for r in rows}
     placeholders = ",".join(["?"] * (len(COLS) + 2))  # + symbol_id, filed_at
-    updates = ", ".join(f"{c}=excluded.{c}" for c in COLS[1:] + ["filed_at"])
+    # A batch that does not know the filing date must not erase one we already
+    # have: the daily backfill passes None, so `filed_at=excluded.filed_at`
+    # wiped the stamp on every symbol it touched, every day.
+    updates = ", ".join(
+        [f"{c}=excluded.{c}" for c in COLS[1:]]
+        + ["filed_at=COALESCE(excluded.filed_at, financials.filed_at)"])
     with connect() as c:
         marks = ",".join("?" * len(by_period))
         existing = {r[0] for r in c.execute(
