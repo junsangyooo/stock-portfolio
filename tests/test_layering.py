@@ -22,8 +22,10 @@ import pytest
 
 _SRC = Path(__file__).resolve().parents[1] / "src"
 
-# Layers that know nothing about who owns anything.
-SHARED = ("core", "universe", "market", "research")
+# Layers that know nothing about who owns anything. `ledger` defines the
+# account tables and assembles one account's situation, but it is handed the
+# connection and the id — it never picks a book.
+SHARED = ("core", "universe", "market", "research", "ledger")
 
 # The books they must not reach into.
 BOOKS = ("portfolio", "quant")
