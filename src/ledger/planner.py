@@ -103,13 +103,14 @@ SYSTEM_PLAN = """# 계획 작성자
 - 변경 0건도 답이다.
 - why는 "왜 이 값인가"가 보이게. "상승 여력이 있다"는 이유가 아니다.
   "invalidation 66,000이 평단 대비 -5.7%라 손절폭이 스윙에 맞는다"가 이유다.
-- 모든 활성 계획은 keep·modify·abandon·suggest 중 정확히 한 곳에 나타난다.
-  빠진 계획이 있으면 출력 전체가 기각된다.
+- 모든 활성 계획은 keep·modify·abandon·suggest 중 **정확히 한 곳에만** 나타난다.
+  `suggest`도 그 계획에 대한 판정이다 — 의견을 적었으면 `keep`에 또 넣지 마라.
+  빠진 계획이나 두 곳에 든 계획이 있으면 출력 전체가 기각된다.
 
 ## 출력
 JSON 하나. ```json 코드펜스. 그 뒤에 아무것도 쓰지 마라.
 {
-  "keep": [12],
+  "keep": [],
   "modify": [{"plan_id": 13, "conditions": {}, "qty": 10, "expires": "2026-09-30",
               "basis": {"stop": "invalidation"}, "why": ""}],
   "abandon": [{"plan_id": 14, "why": ""}],

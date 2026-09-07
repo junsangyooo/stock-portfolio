@@ -458,3 +458,36 @@ def test_the_models_own_html_escaping_does_not_reach_the_reader(ctx):
     assert accepted["portfolio_note"] == "TIGER 미국S&P500 정리"
     assert accepted["suggest"][0]["what"] == "A & B"
     assert accepted["suggest"][0]["why"] == "x < y"
+
+
+def test_the_example_the_prompt_shows_is_an_answer_validation_accepts():
+    """The output block in SYSTEM_PLAN is what the model copies. It once put
+    plan 12 in both keep and suggest — the shape its own rule refuses — so a
+    model that followed the example failed twice and the pass ended
+    'incomplete'."""
+    body = planner.SYSTEM_PLAN[planner.SYSTEM_PLAN.index('{\n  "keep"'):]
+    doc = json.loads(body)                        # no comments, no trailing prose
+    buckets = {
+        "keep": set(doc["keep"]),
+        "modify": {m["plan_id"] for m in doc["modify"]},
+        "abandon": {a["plan_id"] for a in doc["abandon"]},
+        "suggest": {s["plan_id"] for s in doc["suggest"]},
+    }
+    seen = [pid for b in buckets.values() for pid in b]
+    assert len(seen) == len(set(seen)), f"a plan judged twice: {buckets}"
+
+    ctx = {
+        "account": {"id": "acc", "date": TODAY, "base_currency": "KRW"},
+        "totals": {"KRW": {"cash": 10_000_000.0}},
+        "holdings": [{"symbol_id": "KR:005930", "name": "삼성전자", "qty": 10,
+                      "currency": "KRW", "analysis": _analysis()}],
+        "watch": [{"symbol_id": "US:GOOGL", "name": "Alphabet",
+                   "currency": "USD", "analysis": _analysis()}],
+        "plans": [{"plan_id": p, "symbol_id": "KR:005930", "side": "sell",
+                   "qty": 5, "source": "user" if p == 12 else "agent"}
+                  for p in sorted(set(seen))],
+    }
+    doc["notes_by_symbol"] = {"KR:005930": {"stance": "hold", "line_ko": "유지"},
+                              "US:GOOGL": {"stance": "watch", "line_ko": "관심"}}
+    accepted, rejected = planner.validate(doc, ctx)   # must not raise
+    assert accepted["portfolio_note"]
