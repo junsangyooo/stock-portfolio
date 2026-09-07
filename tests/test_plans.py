@@ -177,3 +177,82 @@ def test_plan_contract_reaches_an_ongoing_thread(client):
     assert "```plan" in sys_first
     assert sys_later == "", "a resumed session must not be re-seeded"
     assert "```plan" in user_later
+
+
+# ── proposals ────────────────────────────────────────────────────────
+# What an agent wrote for a human book. It waits: every executor matches on
+# `armed`, so until a person answers it, nothing can fill it.
+
+def _propose(aid="alice", **kw):
+    import time
+    now = int(time.time())
+    with pdb.connect() as c:
+        cur = c.execute(
+            "INSERT INTO plans (account_id, symbol_id, name, side, price, qty,"
+            " note, status, source, created_at, updated_at)"
+            " VALUES (?, 'KR:005930', '삼성전자', 'buy', 71000, 3,"
+            " '[agent 2026-09-07] 진입', 'proposed', ?, ?, ?)",
+            (aid, kw.get("source", "agent"), now, now))
+        c.commit()
+        return cur.lastrowid
+
+
+def test_a_proposal_is_not_a_candidate_for_a_trade(client):
+    """trade_store matches armed plans; a proposal must not be picked up by
+    recording a fill."""
+    from src.portfolio.store import trade_store
+    _propose()
+    r = trade_store.record("alice", symbol_id="KR:005930", side="buy", qty=3,
+                           price=71000, name="삼성전자", currency="KRW")
+    assert r["plan"] is None and r["plan_candidates"] == []
+
+
+def test_approving_a_proposal_arms_it(client):
+    pid = _propose()
+    r = client.patch(f"/api/accounts/alice/plans/{pid}",
+                     json={"status": "armed"}, cookies=_cookie())
+    assert r.status_code == 200 and r.json()["plan"]["status"] == "armed"
+
+
+def test_rejecting_a_proposal_abandons_it(client):
+    pid = _propose()
+    r = client.patch(f"/api/accounts/alice/plans/{pid}",
+                     json={"status": "abandoned"}, cookies=_cookie())
+    assert r.status_code == 200 and r.json()["plan"]["status"] == "abandoned"
+
+
+def test_a_proposal_takes_no_other_edit(client):
+    pid = _propose()
+    r = client.patch(f"/api/accounts/alice/plans/{pid}",
+                     json={"price": 60000}, cookies=_cookie())
+    assert r.status_code == 400
+
+
+def test_nothing_becomes_a_proposal(client):
+    p = _create(client)
+    r = client.patch(f"/api/accounts/alice/plans/{p['plan_id']}",
+                     json={"status": "proposed"}, cookies=_cookie())
+    assert r.status_code == 400
+
+
+def test_a_persons_own_plan_is_not_approvable_by_this_door(client):
+    """decide() only touches source='agent'. A user-written row in `proposed`
+    would be a bug elsewhere; it must not be closed here regardless."""
+    pid = _propose(source="user")
+    r = client.patch(f"/api/accounts/alice/plans/{pid}",
+                     json={"status": "armed"}, cookies=_cookie())
+    assert r.status_code == 404
+
+
+def test_another_account_cannot_approve_it(client):
+    pid = _propose("alice")
+    r = client.patch(f"/api/accounts/alice/plans/{pid}",
+                     json={"status": "armed"}, cookies=_cookie("bob"))
+    assert r.status_code == 403
+
+
+def test_the_plan_list_says_who_wrote_each_one(client):
+    _propose()
+    _create(client)
+    r = client.get("/api/accounts/alice/plans", cookies=_cookie())
+    assert {p["source"] for p in r.json()["plans"]} == {"agent", "user"}

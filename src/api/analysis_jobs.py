@@ -9,8 +9,12 @@ returns immediately; the browser polls GET /status until the result is stored,
 then loads it via GET /analysis/{m}/{c}.
 
 Single uvicorn worker (server.py runs uvicorn.run with no workers arg), so a
-plain in-memory registry is shared across requests. Jobs are keyed by
-symbol_id; a duplicate start while one is running is a no-op.
+plain in-memory registry is shared across requests. A duplicate start while
+one is running is a no-op.
+
+Keys are opaque strings, not symbol ids: the plan preview runs here too and
+namespaces itself as "plan:{account_id}" so an account and a symbol can never
+collide.
 """
 from __future__ import annotations
 
@@ -31,11 +35,11 @@ _lock = threading.Lock()
 _STALE_S = 2 * 1070
 
 
-def get_status(symbol_id: str) -> dict:
-    """Current job state for a symbol. 'idle' when never started; a
+def get_status(key: str) -> dict:
+    """Current job state for a key. 'idle' when never started; a
     'running' job past _STALE_S is reported 'stale' so the UI stops waiting."""
     with _lock:
-        j = _jobs.get(symbol_id)
+        j = _jobs.get(key)
         if not j:
             return {"state": "idle"}
         if j["state"] == "running" and (time.time() - j["_t"]) > _STALE_S:
@@ -43,12 +47,12 @@ def get_status(symbol_id: str) -> dict:
         return {k: v for k, v in j.items() if not k.startswith("_")}
 
 
-def start(symbol_id: str, fn: Callable[[], dict]) -> dict:
-    """Spawn `fn` (a blocking analyze.run) on a daemon thread unless an
+def start(key: str, fn: Callable[[], dict]) -> dict:
+    """Spawn `fn` (a blocking model call) on a daemon thread unless an
     identical job is already running. Returns {state: started|running}. The
     thread records done/error + the stored result's date into the registry.
     """
-    k = symbol_id
+    k = key
     with _lock:
         j = _jobs.get(k)
         if j and j["state"] == "running" and (time.time() - j["_t"]) <= _STALE_S:
@@ -75,5 +79,5 @@ def start(symbol_id: str, fn: Callable[[], dict]) -> dict:
                             "error": str(e)[:300],
                             "started_at": _jobs.get(k, {}).get("started_at")}
 
-    threading.Thread(target=_run, daemon=True, name=f"analysis:{k}").start()
+    threading.Thread(target=_run, daemon=True, name=f"job:{k}").start()
     return {"state": "started"}

@@ -86,6 +86,19 @@ def get(account_id: str) -> Optional[dict]:
         return d
 
 
+def list_ids(kind: str = "human") -> List[str]:
+    """Just the ids, in the order the page shows them — what a batch iterates.
+
+    Keyed on kind so a book that ever grows an auto row does not hand it to
+    the human morning pass.
+    """
+    with connect() as c:
+        rows = c.execute(
+            "SELECT account_id FROM accounts WHERE kind = ?"
+            " ORDER BY sort_order, account_id", (kind,)).fetchall()
+        return [r["account_id"] for r in rows]
+
+
 def list_all() -> List[dict]:
     with connect() as c:
         rows = c.execute(

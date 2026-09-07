@@ -23,11 +23,14 @@ from pydantic import BaseModel
 from ..core import security
 from ..research.news.mapping import ensure_theme_mapping
 from ..market.pipeline import gap_filler
+from ..ledger import planner
 from ..portfolio import service
 from ..portfolio.store import (
-    account_store, balance_store, holding_store, plan_store, snapshot_store,
-    trade_store,
+    account_store, balance_store, db, holding_store, plan_run_store,
+    plan_store, snapshot_store, trade_store,
 )
+from ..research.llm_backend import SLOW_MODEL
+from . import analysis_jobs
 from ..core.paths import split_symbol
 from ..universe import search as uni_search
 
@@ -385,10 +388,94 @@ def update_plan(account_id: str, plan_id: int, body: PlanPatch,
     if body.status is not None and body.status not in plan_store.HUMAN_STATUSES:
         raise HTTPException(400, "status must be one of "
                             + ", ".join(plan_store.HUMAN_STATUSES))
+    if body.status == "proposed":
+        # A proposal is something an agent wrote and a person has not answered
+        # yet. Letting anything become one would put an approved plan back in
+        # the queue and hide it from the executor.
+        raise HTTPException(400, "proposed is not a status anything moves into")
+    current = plan_store.get(account_id, plan_id)
+    if current is None:
+        raise HTTPException(404, "plan not found")
+    if current["status"] == "proposed":
+        # Approving or rejecting is the only edit a proposal takes: it is the
+        # agent's text, and a person who wants different numbers writes their
+        # own plan.
+        if body.status not in ("armed", "abandoned"):
+            raise HTTPException(400, "a proposal is approved (armed) or "
+                                     "rejected (abandoned)")
+        plan = plan_store.decide(account_id, plan_id, body.status)
+        if plan is None:
+            raise HTTPException(404, "plan not found")
+        return {"ok": True, "plan": plan}
     plan = plan_store.update(account_id, plan_id, **body.model_dump())
     if plan is None:
         raise HTTPException(404, "plan not found")
     return {"ok": True, "plan": plan}
+
+
+# ── plan_runs (계좌별 계획 판단) ──────────────────────────────────────
+# Declaration order matters: FastAPI matches top-down, so the literal paths
+# have to be declared before /{date} or "latest" is read as a date.
+
+@router.get("/{account_id}/plan_runs/latest")
+def latest_plan_run(account_id: str,
+                    _: str = Depends(require_account)) -> dict:
+    """The newest pass that produced something.
+
+    "Nothing yet" is an answer, not a 404 — the card grid asks this on every
+    load and a missing pass is the normal state of a new account.
+    """
+    return plan_run_store.latest(account_id) or {
+        "date": None, "slot": None, "status": None, "portfolio_note": "",
+        "notes_by_symbol": {}, "suggest": [], "n_rejected": 0,
+        "created_at": None}
+
+
+@router.post("/{account_id}/plan_runs/run")
+def run_plan_preview(account_id: str,
+                     _: str = Depends(require_account)) -> dict:
+    """A preview. Always dry: this writes a plan_runs row and nothing else.
+
+    The morning cron is what applies a pass. A button that writes to the book
+    would need its own PIN re-check and its own duplicate guard, and nothing
+    yet asks for one.
+    """
+    def _fn() -> dict:
+        with db.connect() as conn:
+            return planner.run(conn, account_id, slot="manual",
+                               model=SLOW_MODEL, dry=True)
+
+    job = analysis_jobs.start(_job_key(account_id), _fn)
+    return {"ok": True, "account_id": account_id, "job": job}
+
+
+@router.get("/{account_id}/plan_runs/status")
+def plan_preview_status(account_id: str,
+                        _: str = Depends(require_account)) -> dict:
+    return {"account_id": account_id,
+            **analysis_jobs.get_status(_job_key(account_id))}
+
+
+@router.get("/{account_id}/plan_runs")
+def list_plan_runs(account_id: str, limit: int = 30,
+                   _: str = Depends(require_account)) -> dict:
+    return {"account_id": account_id,
+            "dates": plan_run_store.dates(account_id, limit=max(1, min(limit, 90)))}
+
+
+@router.get("/{account_id}/plan_runs/{date}")
+def plan_run_on(account_id: str, date: str,
+                _: str = Depends(require_account)) -> dict:
+    got = plan_run_store.on(account_id, date)
+    if got is None:
+        raise HTTPException(404, "no pass on that date")
+    return got
+
+
+def _job_key(account_id: str) -> str:
+    """The preview shares the analysis job registry, which is keyed by symbol
+    id — the prefix is what keeps an account from colliding with one."""
+    return f"plan:{account_id}"
 
 
 @router.delete("/{account_id}/plans/{plan_id}")

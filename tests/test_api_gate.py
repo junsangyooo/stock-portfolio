@@ -135,3 +135,46 @@ class TestQuantSessionOnSharedData(unittest.TestCase):
         self.assertTrue(security.token_is_valid(f"{acct}|{issued}|{sig}"))
         self.assertFalse(security.token_is_valid(None))
         self.assertFalse(security.token_is_valid("garbage"))
+
+
+class TestPlanRunRoutes(unittest.TestCase):
+    """The plan pass is per account: every route is behind that account's own
+    session, and a preview spends a model call, so an open one is a bill."""
+
+    PATHS = (("GET", "/api/accounts/{a}/plan_runs/latest"),
+             ("GET", "/api/accounts/{a}/plan_runs"),
+             ("GET", "/api/accounts/{a}/plan_runs/2026-09-07"),
+             ("GET", "/api/accounts/{a}/plan_runs/status"),
+             ("POST", "/api/accounts/{a}/plan_runs/run"))
+
+    def setUp(self):
+        self.c = TestClient(app)
+
+    def test_closed_without_a_cookie(self):
+        for method, path in self.PATHS:
+            r = self.c.request(method, path.format(a="junisa"))
+            self.assertEqual(r.status_code, 403, f"{method} {path} not gated")
+
+    def test_closed_to_another_accounts_cookie(self):
+        import tempfile
+        from unittest import mock
+        from src.portfolio.store import account_store, db as pdb
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(pdb, "DB_PATH", f"{tmp}/portfolio.db"), \
+                mock.patch.object(pdb, "_initialized", False):
+            for a in ("mine", "yours"):
+                account_store.create(a, a, "GENERAL")
+                account_store.set_pin_hash(a, security.hash_pin(a, "123456"))
+            theirs = {security.COOKIE_PREFIX + "yours":
+                      security.make_session_token("yours")}
+            mine = {security.COOKIE_PREFIX + "mine":
+                    security.make_session_token("mine")}
+            for method, path in self.PATHS:
+                p = path.format(a="mine")
+                self.assertEqual(
+                    self.c.request(method, p, cookies=theirs).status_code, 403,
+                    f"{method} {p} open to another account")
+            # and the owner's own session is not refused
+            r = self.c.get("/api/accounts/mine/plan_runs/latest", cookies=mine)
+            self.assertEqual(r.status_code, 200)
+            self.assertIsNone(r.json()["date"])      # "nothing yet" is an answer
