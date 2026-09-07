@@ -191,11 +191,16 @@ def test_a_proposal_is_approved_or_rejected_by_patching_the_plan():
 
 
 def test_the_preview_is_a_job_not_a_blocking_call():
-    """A synchronous plan pass would die at Cloudflare's 100s ceiling."""
+    """A synchronous plan pass would die at Cloudflare's 100s ceiling. The
+    poller slows in a hidden tab and stops for good when the modal closes —
+    S.whenVisible cannot express the second half (its stop is undone by the
+    next visibilitychange)."""
     assert "API.runPlan()" in SRC and "API.planRunStatus()" in SRC
-    poll = SRC[SRC.index("  function poll(stock, btn, state)"):]
+    poll = SRC[SRC.index("  async function poll(stock, btn, state)"):]
     poll = poll[:poll.index("\n  function render(stock)")]
-    assert "S.whenVisible(" in poll
+    assert "document.hidden" in poll and "60000" in poll
+    assert "S.whenVisible(" not in poll
+    assert "mine !== pollToken" in poll
 
 
 def test_the_account_modal_does_not_dress_a_preview_as_the_book():

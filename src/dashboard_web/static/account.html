@@ -2806,12 +2806,12 @@ window.addEventListener('resize', () => {
   const closeBtn = document.getElementById('psm-close');
   let release = null;
   let current = null;      // the stock this modal is open on
-  let pollStop = null;
+  let pollToken = 0;       // bumping it retires whatever poller is in flight
 
   function close() {
     modal.hidden = true;
     if (release) { release(); release = null; }
-    if (pollStop) { pollStop(); pollStop = null; }
+    pollToken++;
     current = null;
   }
   closeBtn.addEventListener('click', close);
@@ -2956,21 +2956,44 @@ window.addEventListener('resize', () => {
     return el('div', { className: 'psm-foot' }, kids);
   }
 
-  // 탭이 숨으면 폴러도 잔다 (S.whenVisible 규칙).
-  function poll(stock, btn, state) {
-    if (pollStop) pollStop();
-    pollStop = S.whenVisible(async () => {
-      let st;
-      try { st = await S.api(API.planRunStatus()); } catch (_) { return; }
-      if (st.state === 'running') { state.textContent = '생성 중…'; return; }
-      if (pollStop) { pollStop(); pollStop = null; }
-      btn.disabled = false;
-      state.textContent = st.state === 'done' ? '' : '실패: ' + (st.error || st.state);
-      if (st.state === 'done') {
-        await loadPlanBadges();
-        if (current) render(current);
+  // 분석 잡 폴러와 같은 규칙: 숨은 탭은 60초 간격으로 늦추고, 다시 보이면 즉시
+  // 깨어난다. S.whenVisible은 여기 못 쓴다 — 그 stop()은 다음 visibilitychange가
+  // 되살려서, 모달을 닫아도 폴러가 부활한다.
+  async function poll(stock, btn, state) {
+    const mine = ++pollToken;
+    const POLL_MS = 4000, HIDDEN_MS = 60000, MAX_MS = 2 * 1070 * 1000;
+    const sleep = (ms) => new Promise(r => {
+      const t = setTimeout(done, ms);
+      function done() {
+        clearTimeout(t);
+        document.removeEventListener('visibilitychange', done);
+        r();
       }
-    }, 5000);
+      if (ms === HIDDEN_MS) document.addEventListener('visibilitychange', done);
+    });
+    const t0 = Date.now();
+    while (Date.now() - t0 < MAX_MS) {
+      await sleep(document.hidden ? HIDDEN_MS : POLL_MS);
+      if (mine !== pollToken) return;        // 모달이 닫혔거나 다시 눌렸다
+      let st;
+      try { st = await S.api(API.planRunStatus()); }
+      catch (_) { continue; }                // 일시적 네트워크 — 계속 본다
+      if (st.state === 'running') {
+        state.textContent = '생성 중… ' + Math.round((Date.now() - t0) / 1000) + '초';
+        continue;
+      }
+      btn.disabled = false;
+      if (st.state === 'done') {
+        state.textContent = '';
+        await loadPlanBadges();
+        if (mine === pollToken && current) render(current);
+      } else {
+        state.textContent = '실패: ' + (st.error || st.state);
+      }
+      return;
+    }
+    btn.disabled = false;
+    state.textContent = '시간 초과 — 잠시 후 다시 시도하세요.';
   }
 
   function render(stock) {
