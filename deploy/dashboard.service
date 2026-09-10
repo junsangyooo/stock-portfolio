@@ -8,13 +8,27 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/portfolio-dashboard
 EnvironmentFile=/home/ubuntu/dotclaude/secrets/.env
-Environment="ANTHROPIC_API_KEY="
-# pykrx logs into KRX at import time whenever these are set, so the web
-# process held a session and renewed it every hour — one login per restart,
-# 114 of them in the log. Bulk KRX queries are a cron's job; the server only
-# ever reads the parquet cache those leave behind (ops notes §8), and a
-# second session competes with the screener's for the same account.
-Environment="KRX_ID=" "KRX_PW="
+# UnsetEnvironment=, NOT Environment="X=". EnvironmentFile= is read at exec
+# and its values win over every Environment= line regardless of the order
+# they appear in, so `Environment="ANTHROPIC_API_KEY="` had been inert since
+# the day it was written — verified 2026-09-10 by reading /proc/PID/environ
+# on the running service, which still held the real key. UnsetEnvironment= is
+# the one directive systemd applies after everything else.
+#
+#   ANTHROPIC_API_KEY  a present key routes the Claude CLI to paid API
+#                      billing (ops notes §7). llm_backend.py pops it from
+#                      every subprocess env, which is what actually held the
+#                      line; this is the second layer, now real.
+#   KRX_ID / KRX_PW    pykrx logs into KRX at import time whenever these are
+#                      set, so the web process held a session and renewed it
+#                      hourly — one login per restart, 114 in the log. Bulk
+#                      KRX queries are a cron's job and the server only reads
+#                      the parquet cache they leave behind (§8); a second
+#                      session competes with the screener's for one account.
+#
+# core.secrets.get() still finds all three in the .env file, so anything that
+# asks for them on purpose is unaffected — only the implicit reads stop.
+UnsetEnvironment=ANTHROPIC_API_KEY KRX_ID KRX_PW
 ExecStart=/home/ubuntu/portfolio-dashboard/.venv/bin/python -m src.dashboard_web.server --port 8888 --host 127.0.0.1
 Restart=on-failure
 RestartSec=10
