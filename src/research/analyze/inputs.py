@@ -46,16 +46,43 @@ def _reference(domain: str) -> str:
     return _REFS[domain].read_text(encoding="utf-8")
 
 
+# A gap wider than this between the last stored bar and today is a stopped
+# feed, not a holiday. It has to clear a long KR closure (설·추석 plus the
+# weekends around it) and the day `asof` loses to UTC on a KR bar, so it is
+# deliberately loose — the real freeze this caught ran 12 days and counting.
+_BAR_STALE_DAYS = 8
+
+
+def _bar_age_days(asof: Optional[str], today: datetime) -> Optional[int]:
+    try:
+        last = datetime.strptime(asof, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+    return (today.date() - last).days
+
+
 def _chart(symbol_id: str, force: bool) -> tuple[Optional[dict], str, str]:
-    """Chart facts, computing them once if today's row is missing."""
+    """Chart facts, computing them once if today's row is missing.
+
+    `has_data` says a timeframe had enough bars, never how recent the last
+    one is — so a symbol whose feed stopped kept answering "ok" and the
+    analysis went out stamped with today's date. Length and recency are
+    different questions; both are asked here.
+    """
     from ..chart import chart_agent
     facts = chart_agent.collect_facts(symbol_id, force=force)
     tf = facts.get("timeframes") or {}
     if not any(v.get("has_data") for v in tf.values()):
         return None, "missing", "저장된 일봉이 없어 지표를 계산할 수 없다"
-    stale = [k for k, v in tf.items() if not v.get("has_data")]
-    return (facts, "partial" if stale else "ok",
-            f"{'·'.join(stale)} 타임프레임은 데이터 길이 부족" if stale else "")
+    notes = []
+    short = [k for k, v in tf.items() if not v.get("has_data")]
+    if short:
+        notes.append(f"{'·'.join(short)} 타임프레임은 데이터 길이 부족")
+    age = _bar_age_days(facts.get("asof"), datetime.now(KST))
+    if age is not None and age > _BAR_STALE_DAYS:
+        notes.append(f"마지막 일봉이 {facts['asof']}({age}일 전)이다 — "
+                     "아래 지표는 전부 그 시점 기준이고 현재가와 무관하다")
+    return (facts, "partial" if notes else "ok", " / ".join(notes))
 
 
 def _fundamental(symbol_id: str, name: str) -> tuple[Optional[dict], str, str]:

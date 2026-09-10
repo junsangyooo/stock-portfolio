@@ -235,7 +235,7 @@ def test_cycle_sets_the_account_env_for_each_book(monkeypatch):
     import os
     from src.quant import cycle_job
     seen = []
-    monkeypatch.setattr(cycle_job, "_phase0_data", lambda: {"ok": True})
+    monkeypatch.setattr(cycle_job, "_phase0_data", lambda ids: {"ok": True})
     monkeypatch.setattr(cycle_job, "run_account",
                         lambda aid, slot, **k: seen.append(
                             (aid, os.environ.get("QUANT_ACCOUNT"))) or 0)

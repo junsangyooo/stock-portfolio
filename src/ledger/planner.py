@@ -515,7 +515,17 @@ def validate(doc: dict, ctx: dict) -> tuple[dict, list[dict]]:
             kept_adds.append(a)
             continue
         ccy = a["currency"]
-        cash = (ctx["totals"].get(ccy) or {}).get("cash") or 0.0
+        bucket = ctx["totals"].get(ccy) or {}
+        # "we were never told" is not "there is none" — saying cash 0 for a
+        # balance nobody entered asserts a fact and hides the fix, which is
+        # to enter the balance rather than to write a smaller plan.
+        if not bucket.get("cash_known"):
+            rejected.append({"item": {"add": a},
+                             "why": f"{ccy} 잔액이 이 계좌에 입력되어 있지 않아 "
+                                    f"매수 여력을 판정할 수 없다 — 잔액을 먼저 "
+                                    f"기록하면 이 계획은 그대로 통과한다"})
+            continue
+        cash = bucket.get("cash") or 0.0
         want = a["qty"] * a["price"]
         if spend.get(ccy, 0.0) + want > cash:
             rejected.append({"item": {"add": a},

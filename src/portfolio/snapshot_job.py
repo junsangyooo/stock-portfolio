@@ -32,31 +32,42 @@ from .store import account_store, holding_store, snapshot_store
 _QUOTE_MAX_AGE_S = 600  # cron context: anything from the last 10min is fine
 
 
-def refresh_quotes(symbol_ids: set[str]) -> int:
-    """Fetch a fresh quote for each symbol (deduped across accounts)."""
+def refresh_quotes(symbol_ids: set[str]) -> tuple[int, list[str]]:
+    """Fetch a fresh quote for each symbol (deduped across accounts).
+
+    Returns (n_fresh, stale) — the symbols we could not price are named, not
+    swallowed. A silent failure here does not look like one: the previous
+    quote stays in the cache and every valuation keeps using it, so a dead
+    source shows up as a plausible number rather than a missing one.
+    """
     n = 0
+    stale: list[str] = []
     for sid in sorted(symbol_ids):
         if quote_store.get(sid, max_age_s=_QUOTE_MAX_AGE_S) is not None:
             n += 1
             continue
         src = for_symbol(sid)
         if src is None:
+            stale.append(f"{sid}: no source")
             continue
         try:
             q = src.get_quote(sid)
-            if q is not None:
-                quote_store.set_quote(q)
-                n += 1
-        except Exception:
-            pass
-    return n
+        except Exception as e:  # noqa: BLE001 — one dead source is not the job
+            stale.append(f"{sid}: {str(e)[:80]}")
+            continue
+        if q is None:
+            stale.append(f"{sid}: source returned nothing")
+            continue
+        quote_store.set_quote(q)
+        n += 1
+    return n, stale
 
 
 def main() -> int:
     accounts = account_store.list_all()
     held = {h["symbol_id"] for h in holding_store.list_all()}
     filled = gap_filler.fill_many(sorted(held))  # keep charts/sparklines current
-    quoted = refresh_quotes(held)
+    quoted, quote_stale = refresh_quotes(held)
 
     ok, failed = [], []
     for acc in accounts:
@@ -76,6 +87,7 @@ def main() -> int:
     print(json.dumps({
         "accounts_ok": ok, "accounts_failed": failed,
         "symbols": len(held), "quotes_fresh": quoted,
+        "quotes_stale": quote_stale,
         "ohlcv_bars_added": sum(n for n in filled.values() if n > 0),
         "ohlcv_errors": [s for s, n in filled.items() if n < 0],
     }, ensure_ascii=False))

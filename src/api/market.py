@@ -21,10 +21,13 @@ _INTRADAY = {"1m": ("5d", "1m"), "5m": ("60d", "5m"),
 
 @router.post("/refresh")
 def refresh_all() -> dict:
-    """Gap-fill OHLCV + warm quotes for every symbol held in ANY account.
+    """Gap-fill OHLCV + warm quotes for every symbol the HUMAN book holds.
 
-    Market data is per-symbol and account-agnostic (§1 단일 진실), so the
-    refresh button updates the whole book, not just the visible account.
+    This is the ↻ button behind account.html, so it covers portfolio.db —
+    every account of it, not just the visible one, because market data is
+    per-symbol and account-agnostic (§1 단일 진실). It is not "every account
+    in the system": the auto book supplies its own symbols the same way the
+    shared batches get theirs (§4), from src/quant/cycle_job.py phase [0].
     No require_account: nothing account-specific is returned.
     """
     from ..portfolio.store.db import connect
@@ -32,7 +35,7 @@ def refresh_all() -> dict:
         sids = [r[0] for r in conn.execute(
             "SELECT DISTINCT symbol_id FROM holdings ORDER BY symbol_id")]
     filled = gap_filler.fill_many(sids)
-    fresh = sum(1 for q in _warm(sids, max_age_s=10).values() if q is not None)
+    fresh = sum(1 for q in warm(sids, max_age_s=10).values() if q is not None)
     return {"ok": True, "symbols": len(sids),
             "filled": filled, "quotes_fresh": fresh}
 
@@ -73,7 +76,7 @@ def get_ohlcv(market: str, code: str, period: str = "day", n: int = 240,
             "bars": ohlcv_store.to_payload(df), "refresh_failed": stale}
 
 
-def _warm(symbol_ids, max_age_s: int) -> dict:
+def warm(symbol_ids, max_age_s: int) -> dict:
     """{symbol_id: Quote | None}: cached when fresh enough, else fetched —
     and every fetched quote stored with one flush. Never raises."""
     out = {sid: quote_store.get(sid, max_age_s=max_age_s) for sid in symbol_ids}
@@ -108,4 +111,4 @@ def get_quotes(symbols: str = "", max_age_s: int = 30) -> dict:
     """symbols = comma-separated 'KR:005930,US:AAPL'."""
     ids = [s.strip() for s in symbols.split(",") if s.strip()]
     return {"quotes": {sid: _quote_payload(q)
-                       for sid, q in _warm(ids, max_age_s).items()}}
+                       for sid, q in warm(ids, max_age_s).items()}}

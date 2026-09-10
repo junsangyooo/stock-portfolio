@@ -230,7 +230,7 @@ def test_resume_paper_registers_nothing(monkeypatch, sent):
 # ── cycle skips a paused account ─────────────────────────────────────────
 
 def test_cycle_skips_a_paused_account(monkeypatch, sent):
-    monkeypatch.setattr(cycle_job, "_phase0_data", lambda: {"ok": True})
+    monkeypatch.setattr(cycle_job, "_phase0_data", lambda ids: {"ok": True})
     monkeypatch.setattr(cycle_job.session, "run_main",
                         lambda *a, **k: (_ for _ in ()).throw(AssertionError("ran")))
     store.set_trade_mode("robo", "off")
@@ -281,7 +281,7 @@ def test_pause_between_plan_creation_and_arming_skips_the_broker(monkeypatch, se
     but before its entry watch is registered must still mean "no new
     entries": the plan is kept (unarmed, NULL watch id) and resume re-judges
     it with the rest."""
-    monkeypatch.setattr(cycle_job, "_phase0_data", lambda: {"ok": True})
+    monkeypatch.setattr(cycle_job, "_phase0_data", lambda ids: {"ok": True})
     monkeypatch.setattr(execute, "reconcile", lambda aid, cid: {})
     monkeypatch.setattr(execute, "execute_orders", lambda *a, **k: [])
     monkeypatch.setattr(execute, "cancel_conditionals", lambda *a, **k: None)

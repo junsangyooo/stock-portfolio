@@ -223,9 +223,15 @@ def build(conn: sqlite3.Connection, account_id: str, *,
     totals: dict[str, dict] = {}
 
     def _bucket(ccy: str) -> dict:
+        # cash starts as None, not 0.0: an account with no row in `cash` has
+        # not told us it is empty, it has told us nothing. They were the same
+        # value here, so a book whose balance was never entered read as broke
+        # and every buy came back rejected for "cash 0" — a fact nobody had
+        # established. `cash_known` is what the prompt and the guard read.
         return totals.setdefault(ccy, {
             "eval": 0.0, "cost": 0.0, "pnl": 0.0, "pnl_pct": 0.0,
-            "cash": 0.0, "total_assets": 0.0, "cash_pct": 0.0,
+            "cash": None, "cash_known": False,
+            "total_assets": 0.0, "cash_pct": 0.0,
             "n_held": 0, "n_cost_unknown": 0})
 
     def _resolve(sid: str, name_override=None, ccy_override=None):
@@ -233,7 +239,7 @@ def build(conn: sqlite3.Connection, account_id: str, *,
         missing[] for each of those we could not get. Every symbol the model
         sees goes through here, so 'we do not know' is never silent."""
         meta = uni_search.get(sid) or {}
-        q = quote_store.get(sid)
+        q = quote_store.get(sid, max_age_s=quote_store.STALE_S)
         price = _r(q.price) if q else None
         ana = _analysis(sid, price, today_d)
         if price is None:
@@ -313,15 +319,21 @@ def build(conn: sqlite3.Connection, account_id: str, *,
 
     # ── totals ────────────────────────────────────────────────────────────
     for ccy, amt in cash.items():
-        _bucket(ccy)["cash"] = amt
+        b = _bucket(ccy)
+        b["cash"], b["cash_known"] = amt, True
+    _bucket(base_ccy)   # the account's own currency answers even when empty
     for ccy, t in totals.items():
-        t["total_assets"] = t["eval"] + t["cash"]
+        c = t["cash"] or 0.0
+        t["total_assets"] = t["eval"] + c
         t["pnl_pct"] = (round(t["pnl"] / t["cost"] * 100, 2)
                         if t["cost"] > 0 else 0.0)
-        t["cash_pct"] = (round(t["cash"] / t["total_assets"] * 100, 2)
-                         if t["total_assets"] else 0.0)
+        t["cash_pct"] = (round(c / t["total_assets"] * 100, 2)
+                         if (t["cash_known"] and t["total_assets"]) else 0.0)
         for k in ("eval", "cost", "pnl", "cash", "total_assets"):
-            t[k] = round(t[k], 2)
+            if t[k] is not None:
+                t[k] = round(t[k], 2)
+        if not t["cash_known"]:
+            missing.append({"symbol_id": f"({ccy})", "why": "cash_unknown"})
 
     for h in held:
         ta = totals.get(h["currency"], {}).get("total_assets") or 0

@@ -142,7 +142,7 @@ def test_weights_close_against_cash_in_each_currency(book):
         assert round(invested + t["cash_pct"], 1) == 100.0
     krw = ctx["totals"]["KRW"]
     assert krw == {"eval": 810000.0, "cost": 800000.0, "pnl": 10000.0,
-                   "pnl_pct": 1.25, "cash": 100000.0,
+                   "pnl_pct": 1.25, "cash": 100000.0, "cash_known": True,
                    "total_assets": 910000.0, "cash_pct": 10.99,
                    "n_held": 2, "n_cost_unknown": 0}
     assert ctx["totals"]["USD"]["pnl_pct"] == 20.0

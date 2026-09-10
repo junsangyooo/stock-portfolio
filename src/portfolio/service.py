@@ -34,7 +34,7 @@ def aggregate(account_id: str, *, spark_n: int = 30) -> dict:
         sid = h["symbol_id"]
         meta = uni_search.get(sid) or {}
         ccy = meta.get("currency") or acc["base_currency"]
-        q = quote_store.get(sid)
+        q = quote_store.get(sid, max_age_s=quote_store.STALE_S)
         price = q.price if q else None
         prev = q.prev_close if q else None
         qty = h.get("qty")

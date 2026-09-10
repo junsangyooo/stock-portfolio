@@ -9,6 +9,12 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/portfolio-dashboard
 EnvironmentFile=/home/ubuntu/dotclaude/secrets/.env
 Environment="ANTHROPIC_API_KEY="
+# pykrx logs into KRX at import time whenever these are set, so the web
+# process held a session and renewed it every hour — one login per restart,
+# 114 of them in the log. Bulk KRX queries are a cron's job; the server only
+# ever reads the parquet cache those leave behind (ops notes §8), and a
+# second session competes with the screener's for the same account.
+Environment="KRX_ID=" "KRX_PW="
 ExecStart=/home/ubuntu/portfolio-dashboard/.venv/bin/python -m src.dashboard_web.server --port 8888 --host 127.0.0.1
 Restart=on-failure
 RestartSec=10

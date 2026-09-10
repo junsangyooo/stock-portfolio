@@ -175,7 +175,7 @@ def test_aggregate_draws_sparklines_from_one_read(monkeypatch):
     monkeypatch.setattr(service.snapshot_store, "maybe_snapshot_today",
                         lambda *a, **k: None)
     monkeypatch.setattr(service.uni_search, "get", lambda sid: {})
-    monkeypatch.setattr(service.quote_store, "get", lambda sid: None)
+    monkeypatch.setattr(service.quote_store, "get", lambda sid, **kw: None)
     asked = []
     monkeypatch.setattr(service.ohlcv_store, "read_closes",
                         lambda ids, n: asked.append(list(ids)) or {"KR:A": [1.0, 2.0]})

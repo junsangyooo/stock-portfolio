@@ -1,0 +1,28 @@
+# /etc/logrotate.d/portfolio-dashboard
+#
+# Nothing rotated data/logs, so every file only ever grew — dashboard.log
+# reached 10MB / 81k lines and fundamental.log 5MB by 2026-09. Install:
+#
+#   sudo cp deploy/logrotate-dashboard /etc/logrotate.d/portfolio-dashboard
+#   sudo logrotate -d /etc/logrotate.d/portfolio-dashboard   # dry run
+#   sudo logrotate    /etc/logrotate.d/portfolio-dashboard   # first pass
+#
+# One glob, not one block per file: a path may appear in only one stanza and
+# dashboard.log is inside this directory like the rest.
+#
+# copytruncate, not create: systemd holds dashboard.log open with `append:`,
+# so a rename would leave the service writing to an unlinked inode and the
+# new file would stay empty until the next restart. The cron jobs reopen
+# their log per run, but the same setting is harmless for them.
+/home/ubuntu/portfolio-dashboard/data/logs/*.log {
+    daily
+    rotate 7
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}
+# No `su` stanza: logrotate runs as root, and it has to — systemd creates
+# dashboard.log as root (it opens `append:` before dropping to User=ubuntu),
+# while the cron jobs' logs belong to ubuntu. Only root can truncate both.

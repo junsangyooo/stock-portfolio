@@ -13,7 +13,11 @@ def upsert(account_id: str, symbol_id: str, *,
     """`name` overrides the universe display name; omitting it keeps whatever
     override is already stored (the edit form only sends it when changed)."""
     now = int(time.time())
-    qty = 0 if qty is None else qty     # column is NOT NULL; 0 = watch-only
+    # The column is nullable (it predates this guard and SQLite cannot add
+    # NOT NULL to an existing one), so this is the only thing keeping NULL
+    # out. Readers coerce anyway — `float(qty or 0)` — because one row got in
+    # before it existed. 0 = watch-only, which is how the card grid draws it.
+    qty = 0 if qty is None else qty
     with connect() as c:
         c.execute(
             """

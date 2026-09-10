@@ -16,6 +16,19 @@ from ..source.base import Quote
 
 _FILE = QUOTE_DIR / "last.json"
 
+# The ceiling for "this is still a price". `get()` defaults to no limit
+# because the poller wants whatever is cached; anything that VALUES a
+# position or feeds a judgment must pass a limit, or a quote from a symbol
+# whose source died months ago reads as the current price and the numbers
+# built on it look ordinary. Measured: the cache held quotes 13 to 108 days
+# old while every reader treated them as live.
+#
+# 8 days, not one: a long KR holiday (설·추석 + the weekends around it) can
+# close the market for five straight sessions, and refusing a real price
+# through 추석 would empty the account page for a week. Everything the freeze
+# actually produced was older than this.
+STALE_S = 8 * 86400
+
 _lock = Lock()
 _cache: Dict[str, Quote] = {}
 _loaded = False
