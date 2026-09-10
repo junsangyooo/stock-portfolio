@@ -216,3 +216,46 @@ def test_chart_input_keeps_saying_when_a_timeframe_is_short(monkeypatch):
                                            "1M": {"has_data": False}}})
     _, status, note = inputs._chart("KR:005930", force=False)
     assert status == "partial" and "1M" in note
+
+
+# ── the diagnostic has to be readable, or it is not a diagnostic ─────────
+
+def test_phase0_log_line_shows_the_auto_counters(monkeypatch, capsys):
+    """`filled` holds one entry per symbol and used to consume the whole
+    line, truncating away the counters that say whether the auto book got
+    its bars — a diagnostic nobody can see is not one."""
+    from src.quant import cycle_job
+
+    monkeypatch.setattr(cycle_job, "_phase0_data", lambda ids: {
+        "ok": True, "symbols": 22,
+        "filled": {f"KR:{i:06d}": 0 for i in range(22)},   # the line-eater
+        "quotes_fresh": 22, "auto_symbols": 53, "auto_bars": 436,
+        "auto_failed": [], "auto_quotes": 53})
+    monkeypatch.setattr(cycle_job, "run_account", lambda *a, **k: 0)
+    monkeypatch.setattr(cycle_job.store, "account_ids", lambda: ["robo"])
+    monkeypatch.setattr(cycle_job.store, "trade_mode", lambda a: "live")
+    monkeypatch.setattr(cycle_job.store, "is_paused", lambda a: False)
+    monkeypatch.setattr(cycle_job.store, "tracked_symbols", lambda a: [])
+
+    cycle_job.run_cycle("evening")
+    line = next(l for l in capsys.readouterr().out.splitlines() if "[0] data" in l)
+    assert "53" in line and "436" in line, f"auto counters missing from: {line}"
+    assert "KR:000001" not in line, "the per-symbol dict is back in the line"
+
+
+def test_phase0_log_line_names_a_failed_symbol(monkeypatch, capsys):
+    from src.quant import cycle_job
+
+    monkeypatch.setattr(cycle_job, "_phase0_data", lambda ids: {
+        "ok": True, "symbols": 0, "filled": {}, "quotes_fresh": 0,
+        "auto_symbols": 2, "auto_bars": 1, "auto_quotes": 1,
+        "auto_failed": ["US:BWXT"]})
+    monkeypatch.setattr(cycle_job, "run_account", lambda *a, **k: 0)
+    monkeypatch.setattr(cycle_job.store, "account_ids", lambda: ["robo"])
+    monkeypatch.setattr(cycle_job.store, "trade_mode", lambda a: "live")
+    monkeypatch.setattr(cycle_job.store, "is_paused", lambda a: False)
+    monkeypatch.setattr(cycle_job.store, "tracked_symbols", lambda a: [])
+
+    cycle_job.run_cycle("evening")
+    line = next(l for l in capsys.readouterr().out.splitlines() if "[0] data" in l)
+    assert "US:BWXT" in line, f"a dead symbol must be named: {line}"
