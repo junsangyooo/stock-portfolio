@@ -5,15 +5,20 @@ fits comfortably in memory. Each refresh writes atomically (.tmp → replace)
 so a failed run never corrupts the previous good cache.
 
 Sources:
-  KR  — FinanceDataReader StockListing('KOSPI'|'KOSDAQ'|'ETF/KR')
+  KR  — pykrx (KOSPI|KOSDAQ) + FinanceDataReader StockListing('ETF/KR')
   US  — FinanceDataReader StockListing('NASDAQ'|'NYSE'|'AMEX')
+
+A build reports whether every one of its sources answered. A region whose
+sources partly failed never overwrites the previous master (see refresh):
+one dead exchange would otherwise drop every one of its symbols from the
+master while the file still looks freshly built.
 """
 from __future__ import annotations
 
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List
 
 from ..core.kst import KST
@@ -44,11 +49,16 @@ def _atomic_write(path, payload: dict) -> None:
 
 # ── KR ─────────────────────────────────────────────────────────────────
 
-def build_kr() -> List[dict]:
-    """KOSPI + KOSDAQ + KR ETF, deduped on (market, code)."""
+def build_kr() -> tuple[List[dict], bool]:
+    """KOSPI + KOSDAQ + KR ETF, deduped on (market, code).
+
+    Returns (items, all_sources_ok).
+    """
     import FinanceDataReader as fdr  # type: ignore
+    from pykrx import stock  # type: ignore
 
     out: dict[tuple[str, str], dict] = {}
+    ok = True
 
     def _add(market: str, code: str, name: str, sector: str = "",
              is_etf: bool = False, yf_suffix: str = ""):
@@ -69,29 +79,31 @@ def build_kr() -> List[dict]:
             "yf_ticker": f"{code}{yf_suffix}",   # yfinance fallback
         }
 
-    # KOSPI
+    # KOSPI + KOSDAQ — one call per market gives ticker + name. The window
+    # starts a week back so a pre-open run (cron is 07:30) still lands on a
+    # session with rows.
     try:
-        df = fdr.StockListing("KOSPI")
-        for _, r in df.iterrows():
-            _add("KOSPI",
-                 _safe(r.get("Code") or r.get("Symbol")),
-                 _safe(r.get("Name")),
-                 _safe(r.get("Sector")) if "Sector" in r else "",
-                 yf_suffix=".KS")
-    except Exception as e:  # noqa: BLE001 — one dead exchange must not kill the rest
-        log.error("universe KOSPI listing failed: %s", e)
-
-    # KOSDAQ
-    try:
-        df = fdr.StockListing("KOSDAQ")
-        for _, r in df.iterrows():
-            _add("KOSDAQ",
-                 _safe(r.get("Code") or r.get("Symbol")),
-                 _safe(r.get("Name")),
-                 _safe(r.get("Sector")) if "Sector" in r else "",
-                 yf_suffix=".KQ")
+        todate = stock.get_nearest_business_day_in_a_week()
+        fromdate = (datetime.strptime(todate, "%Y%m%d")
+                    - timedelta(days=7)).strftime("%Y%m%d")
     except Exception as e:  # noqa: BLE001
-        log.error("universe KOSDAQ listing failed: %s", e)
+        log.error("universe KRX business day lookup failed: %s", e)
+        todate = fromdate = ""
+        ok = False
+
+    if todate:
+        for market, suffix in (("KOSPI", ".KS"), ("KOSDAQ", ".KQ")):
+            try:
+                df = stock.get_market_price_change_by_ticker(
+                    fromdate, todate, market=market)
+                if df.empty:
+                    raise ValueError("empty listing")
+                for code, r in df.iterrows():
+                    _add(market, _safe(code), _safe(r.get("종목명")),
+                         yf_suffix=suffix)
+            except Exception as e:  # noqa: BLE001 — one dead source must not kill the rest
+                log.error("universe %s listing failed: %s", market, e)
+                ok = False
 
     # KR ETF
     try:
@@ -105,17 +117,19 @@ def build_kr() -> List[dict]:
                  yf_suffix=".KS")
     except Exception as e:  # noqa: BLE001
         log.error("universe KR ETF listing failed: %s", e)
+        ok = False
 
-    return list(out.values())
+    return list(out.values()), ok
 
 
 # ── US ─────────────────────────────────────────────────────────────────
 
-def build_us() -> List[dict]:
-    """NASDAQ + NYSE + AMEX."""
+def build_us() -> tuple[List[dict], bool]:
+    """NASDAQ + NYSE + AMEX. Returns (items, all_sources_ok)."""
     import FinanceDataReader as fdr  # type: ignore
 
     out: dict[tuple[str, str], dict] = {}
+    ok = True
 
     def _add(market: str, code: str, name: str, sector: str = ""):
         if not code or not name:
@@ -145,8 +159,9 @@ def build_us() -> List[dict]:
                      _safe(r.get("Sector")) if "Sector" in r else "")
         except Exception as e:  # noqa: BLE001 — one dead exchange must not kill the rest
             log.error("universe %s listing failed: %s", ex, e)
+            ok = False
 
-    return list(out.values())
+    return list(out.values()), ok
 
 
 # ── orchestrator ───────────────────────────────────────────────────────
@@ -159,13 +174,14 @@ def refresh(region: str = "all") -> dict:
     for reg, build in (("kr", build_kr), ("us", build_us)):
         if region not in ("all", reg):
             continue
-        items = build()
+        items, ok = build()
         path = UNIVERSE_DIR / f"{reg}.json"
-        # Every listing source can be down at once. Writing the resulting empty
-        # master over a good one would blank search until the next run, so the
-        # previous file wins and the run reports it instead of exiting clean.
-        if not items and path.exists():
-            log.error("universe %s built 0 items — keeping the previous file", reg)
+        # A listing source can be down while its siblings answer. Writing that
+        # partial master over a good one silently drops whole exchanges, so any
+        # source failure keeps the previous file and reports it.
+        if (not items or not ok) and path.exists():
+            log.error("universe %s incomplete (%d items, sources_ok=%s) — "
+                      "keeping the previous file", reg, len(items), ok)
             summary["kept_previous"].append(reg)
             continue
         _atomic_write(path, {"updated_at": _now_iso(), "region": reg,

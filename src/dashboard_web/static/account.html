@@ -2097,9 +2097,12 @@ let STOCKS = [];   // [{name, code, symbolId, market, currency, price, prevClose
 let TOTALS = {};   // {KRW: {eval, cost, pnl, pnl_pct, cash, total_assets, n_held, n_tracked}, USD: {...}}
 
 function holdingToStock(h) {
+  // a symbol missing from the universe master has no name/market/code — fall
+  // back to the symbol_id so the card reads the holding instead of 'null'
+  const sid = h.symbol_id || '';
   return {
-    name: h.name_kr || h.name_en || h.code,
-    code: h.code,
+    name: h.name_kr || h.name_en || h.code || sid,
+    code: h.code || sid.split(':')[1] || sid,
     symbolId: h.symbol_id,
     market: h.market || '—',
     currency: h.currency || 'KRW',
