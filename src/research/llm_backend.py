@@ -139,16 +139,18 @@ class LocalLlamaBackend:
 
     name = "local_llama"
 
-    def __init__(self, url: str = LOCAL_URL, model: str = "local"):
+    def __init__(self, url: str = LOCAL_URL, model: str = "local",
+                 max_tokens: int = 1200):
         self.url = url.rstrip("/")
         self.model = model
+        self.max_tokens = max_tokens
 
     def call(self, system: str, user: str, model: str | None = None) -> str:
         body = json.dumps({
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}],
             "temperature": 0.2,
-            "max_tokens": 1200,
+            "max_tokens": self.max_tokens,
         }).encode()
         req = urllib.request.Request(
             self.url + "/v1/chat/completions", data=body,

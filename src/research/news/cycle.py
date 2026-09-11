@@ -8,6 +8,7 @@ own last week.
 
     python -m src.research.news.cycle                    # collect + enrich + daily
     python -m src.research.news.cycle --no-collect       # re-enrich / rebuild only
+    python -m src.research.news.cycle --enrich-backend local   # force the on-host model
     python -m src.research.news.cycle --rollup weekly    # force a roll-up
     python -m src.research.news.cycle --date 2026-08-27
 
@@ -31,6 +32,17 @@ def _log(msg: str) -> None:
     print(f"[{datetime.now(KST):%H:%M:%S}] {msg}", file=sys.stderr, flush=True)
 
 
+def local_enrich(now: datetime) -> bool:
+    """Saturday and Sunday (KST) enrich on the on-host model.
+
+    Nothing trades until Monday — the weekend analysis, plan pass and cycles
+    are off in cron — so the slower local pass has the whole weekend, and the
+    Monday 06:00 run is back on Claude to pick up whatever a local batch left
+    pending. Saturday 06:00 is already local: it carries the US Friday session.
+    """
+    return now.weekday() >= 5
+
+
 def _notify(date: str, out: dict) -> None:
     """Never raises — a failed notification must not fail the run."""
     try:
@@ -40,7 +52,8 @@ def _notify(date: str, out: dict) -> None:
             f"- collect: written **{c.get('written', 0)}** "
             f"(stale {c.get('stale', 0)} / dup {c.get('dup', 0)} / "
             f"filtered {c.get('filtered', 0)})",
-            f"- enrich: **{e.get('enriched', 0)}**/{e.get('pending', 0)} "
+            f"- enrich ({e.get('backend', '?')}): "
+            f"**{e.get('enriched', 0)}**/{e.get('pending', 0)} "
             f"in {e.get('batches', 0)} batches, failed {e.get('failed', 0)}"
             + (f", backlog {e['backlog']:,}" if e.get("backlog") else ""),
             f"- daily: **{d.get('built', 0)}** themes "
@@ -69,6 +82,9 @@ def main() -> int:
     ap.add_argument("--no-enrich", action="store_true")
     ap.add_argument("--enrich-limit", type=int, default=None,
                     help="articles per run (0 = no cap; default enrich._RUN_CAP)")
+    ap.add_argument("--enrich-backend", choices=["auto", "claude", "local"],
+                    default="auto",
+                    help="auto = local on Saturday/Sunday KST, Claude otherwise")
     ap.add_argument("--theme", default=None, help="daily overview for one theme")
     ap.add_argument("--rollup", choices=["none", "auto", "weekly", "monthly"],
                     default="auto",
@@ -86,10 +102,14 @@ def main() -> int:
         _log(f"  {json.dumps({k: v for k, v in out['collect'].items() if k != 'detail'}, ensure_ascii=False)}")
 
     if not args.no_enrich:
-        _log("enrich …")
-        out["enrich"] = enrich.run(
-            catalog=catalog,
-            **({"limit": args.enrich_limit} if args.enrich_limit is not None else {}))
+        local = args.enrich_backend == "local" or (
+            args.enrich_backend == "auto" and local_enrich(now))
+        backend = "local" if local else "claude"
+        _log(f"enrich ({backend}) …")
+        out["enrich"] = {**enrich.run(
+            catalog=catalog, local=local,
+            **({"limit": args.enrich_limit} if args.enrich_limit is not None else {})),
+            "backend": backend}
         _log(f"  {json.dumps(out['enrich'], ensure_ascii=False)}")
 
     _log("daily overview …")

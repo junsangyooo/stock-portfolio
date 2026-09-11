@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from src.research.news import collect_all, daily, enrich, read, rollup
+from src.research.news import collect_all, cycle, daily, enrich, read, rollup
 from src.research.news.catalog import Feed, load_catalog, load_sources
 from src.research.news.db import connect
 from src.research.news.sources.base import RawItem
@@ -302,6 +302,34 @@ def test_enrichment_is_not_repeated(monkeypatch):
     enrich.run(now=NOW, backend=be)
     second = enrich.run(now=NOW, backend=be)
     assert second["pending"] == 0 and len(be.calls) == 1
+
+
+def test_the_weekend_enriches_on_the_local_model():
+    at = lambda day, hour: datetime(2026, 9, day, hour, 0, tzinfo=KST)
+    assert not cycle.local_enrich(at(11, 17))   # Fri 17:00 — Claude
+    assert cycle.local_enrich(at(12, 6))        # Sat 06:00 — local
+    assert cycle.local_enrich(at(13, 17))       # Sun 17:00 — local
+    assert not cycle.local_enrich(at(14, 6))    # Mon 06:00 — Claude
+
+
+def test_local_enrichment_batches_to_fit_the_on_host_context(monkeypatch):
+    _seed(monkeypatch, 25)
+    seen = []
+
+    class _Local:
+        def __init__(self, max_tokens):
+            seen.append(("max_tokens", max_tokens))
+
+        def call(self, system, user, model=None):
+            seen.append(("batch", user.count("\n    ")))
+            raise RuntimeError("local llama HTTP 500")
+
+    monkeypatch.setattr(enrich, "LocalLlamaBackend", _Local)
+    out = enrich.run(now=NOW, local=True)
+    assert seen[0] == ("max_tokens", enrich._LOCAL_MAX_TOKENS)
+    assert [n for k, n in seen if k == "batch"] == [10, 10, 5]
+    # no fallback: a failed local batch waits for the next run
+    assert out["failed"] == 25 and len(enrich.pending(now=NOW)) == 25
 
 
 # ── daily overview ──────────────────────────────────────────────────────────

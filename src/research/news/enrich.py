@@ -35,7 +35,8 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from ...core.kst import KST
-from ..llm_backend import FAST_MODEL, ClaudeCliBackend, _parse_json
+from ..llm_backend import (FAST_MODEL, ClaudeCliBackend, LocalLlamaBackend,
+                           _parse_json)
 from .catalog import Catalog, load_catalog
 from .db import connect
 
@@ -45,6 +46,11 @@ _BATCH = 80          # measured flat from 20 to 80; larger is untested
 _RUN_CAP = 800       # ~10 batches — a ceiling, not the usual load
 _WINDOW_DAYS = 7     # matches read._HORIZON_DAYS: nothing reads further back
 _BODY_TRUNC = 400    # chars of the source's own summary fed to the model
+
+# The on-host model serves a 16k context and the backend's default output cap
+# is 1200 tokens; a batch of 80 fits neither.
+_LOCAL_BATCH = 10
+_LOCAL_MAX_TOKENS = 2400
 
 _SYSTEM = ("너는 투자 정보 큐레이터다. 주어진 기사 목록을 빠짐없이 평가한다. "
            "JSON만 출력한다.")
@@ -195,9 +201,12 @@ def _apply(items: list[dict], parsed: list[dict], valid: set[str],
 
 def run(*, catalog: Optional[Catalog] = None, date: Optional[str] = None,
         limit: int = _RUN_CAP, batch: int = _BATCH, backend=None,
-        window_days: int = _WINDOW_DAYS,
+        window_days: int = _WINDOW_DAYS, local: bool = False,
         now: Optional[datetime] = None) -> dict:
-    """Enrich outstanding articles, newest first, up to `limit` (0 = no cap)."""
+    """Enrich outstanding articles, newest first, up to `limit` (0 = no cap).
+
+    `local` runs on the on-host model with no Claude fallback: a failed batch
+    stays pending for the next run like any other failure."""
     catalog = catalog or load_catalog()
     valid = set(catalog.themes)
     todo = pending(limit=limit, date=date, window_days=window_days, now=now)
@@ -206,6 +215,9 @@ def run(*, catalog: Optional[Catalog] = None, date: Optional[str] = None,
                 "backlog": 0}
     backlog = _backlog(date, window_days=window_days, now=now)
 
+    if local:
+        backend = LocalLlamaBackend(max_tokens=_LOCAL_MAX_TOKENS)
+        batch = _LOCAL_BATCH
     backend = backend or ClaudeCliBackend(model=FAST_MODEL)
     now_iso = (now or datetime.now(KST)).isoformat()
     enriched = batches = failed = 0
