@@ -3,7 +3,7 @@
 Replaces pandas-ta (which can't install on Oracle: 0.4.x needs py>=3.12, 0.3.x
 breaks on numpy>=2). Everything here is deterministic and dependency-free.
 
-Implementation traps handled (see chart-analysis-design.md):
+Implementation traps handled:
   - RSI/MFI use Wilder smoothing (alpha = 1/n), NOT a normal EMA.
   - ATR/ADX use Wilder (RMA) smoothing.
   - CCI uses mean ABSOLUTE deviation, not standard deviation.

@@ -119,4 +119,4 @@ ssh oracle-instance "cd ~/portfolio-dashboard && .venv/bin/python -m src.quant.p
 
 ## 문서
 
-- **`docs/`** — Obsidian Vault 원본의 심링크(`_STATUS.md`, `planning-*.md`, `ui-*.md`, `ui-open-decisions.md`). gitignore라 Oracle에는 없다
+- **`docs/`** — 개인 Obsidian Vault `001_projects/portfolio-dashboard/`의 설계 문서 심링크. 프로젝트 맥락은 같은 폴더의 `LOG.md`, 할 일은 `TODO.md`. gitignore라 Oracle에는 없다

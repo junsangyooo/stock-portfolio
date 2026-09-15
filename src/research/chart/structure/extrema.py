@@ -2,7 +2,7 @@
 
 This is the shared 1st building block for ALL structure analysis: support/
 resistance, trendlines, fibonacci anchors, and chart-pattern pivots all run on
-top of swing highs/lows (see docs/chart-analysis-design.md section 1, category 5).
+top of swing highs/lows.
 
 `order` is the sensitivity dial: a bar is a swing high if it is strictly the
 maximum within +/- `order` neighbours. Daily 5-10, weekly 3-5 are practical

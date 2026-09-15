@@ -30,8 +30,8 @@ _lock = threading.Lock()
 
 # Display rule, not a timeout: the analysis call itself is unbounded. A job
 # 'running' past this is reported 'stale' so the UI stops waiting. 2x the
-# measured p95 (~1,070s; n=26, 343–1,068s, mean 570s — docs/planning-00-brief.md
-# §4). Below the real p95 the UI gave up on live jobs.
+# measured p95 (~1,070s; n=26, 343–1,068s, mean 570s). Below the real p95 the
+# UI gave up on live jobs.
 _STALE_S = 2 * 1070
 
 
