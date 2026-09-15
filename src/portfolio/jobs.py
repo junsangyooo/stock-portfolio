@@ -26,6 +26,14 @@ from .store.holding_store import all_symbol_ids
 from .store.plan_store import all_active_symbol_ids
 
 
+# The reasoning budget for a symbol nothing is waiting on. Measured on
+# US:DHT (2026-09-15): the default spent 21,945 output tokens, `low` spent
+# 5,448 for an answer of the same shape — most of the default budget is
+# thinking that never reaches the stored result. A symbol carrying a live
+# plan keeps the default: that is where a changed stop moves money.
+LOW_EFFORT = "low"
+
+
 def held() -> list[str]:
     """Symbols this book holds (qty > 0), across every account."""
     return sorted(all_symbol_ids())
@@ -82,7 +90,9 @@ def main() -> int:
     jobs = {
         "fundamental": ("src.market.pipeline.fundamental_job", [], held),
         "etf": ("src.market.pipeline.etf_job", [], held),
-        "analysis": ("src.research.verdict_job", extra,
+        "analysis": ("src.research.verdict_job",
+                     extra + ["--effort", LOW_EFFORT,
+                              "--hot", ",".join(all_active_symbol_ids())],
                      lambda: to_analyze(force=args.force)),
     }
     todo = list(jobs) if args.job == "all" else [args.job]

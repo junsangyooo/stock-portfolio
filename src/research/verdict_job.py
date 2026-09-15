@@ -26,6 +26,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from typing import Optional
 
 from ..core.kst import KST as _KST
 from ..core.paths import ensure_dirs
@@ -40,7 +41,8 @@ def _name(symbol_id: str) -> str:
         return symbol_id
 
 
-def run_symbol(symbol_id: str, date: str, *, force: bool) -> dict:
+def run_symbol(symbol_id: str, date: str, *, force: bool,
+               effort: Optional[str] = None) -> dict:
     """One symbol's comprehensive analysis, skipped on a same-day hit.
     Never raises — failures land in the returned summary."""
     from . import analyze
@@ -53,7 +55,7 @@ def run_symbol(symbol_id: str, date: str, *, force: bool) -> dict:
         # One session holds the dictionaries for the whole batch; this
         # symbol's call forks it and sends only its own data.
         res = analyze.run(symbol_id, _name(symbol_id),
-                          root=analyze.batch_root())
+                          root=analyze.batch_root(), effort=effort)
         out["status"] = res.get("status", "ok")
         # A held symbol whose analysis shipped without its position is the
         # 2026-06 삼성전자 incident; the batch proves the context attached.
@@ -94,6 +96,12 @@ def main() -> int:
                     help="parallel symbols")
     ap.add_argument("--force", action="store_true",
                     help="regenerate even when today's analysis exists")
+    ap.add_argument("--effort", default=None,
+                    help="low|medium|high|xhigh|max — the reasoning budget "
+                         "for symbols not named in --hot")
+    ap.add_argument("--hot", default="",
+                    help="comma-separated symbols that keep the default "
+                         "budget — the ones carrying a live plan")
     args = ap.parse_args()
 
     ensure_dirs()
@@ -110,9 +118,12 @@ def main() -> int:
     print(f"analysis batch {date} — {len(symbols)} symbols, "
           f"workers={args.workers}", flush=True)
 
+    hot = {s.strip().upper() for s in args.hot.split(",") if s.strip()}
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as ex:
         results = list(ex.map(
-            lambda s: run_symbol(s, date, force=args.force), symbols))
+            lambda s: run_symbol(s, date, force=args.force,
+                                 effort=None if s in hot else args.effort),
+            symbols))
 
     ok = [r for r in results if not r["errors"]]
     summary = {

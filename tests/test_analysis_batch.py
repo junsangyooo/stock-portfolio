@@ -129,3 +129,30 @@ def test_a_dead_root_is_not_fatal(monkeypatch):
 
     monkeypatch.setattr(inputs, "references", lambda: [])
     assert engine.batch_root(backend=_Boom()) is None
+
+
+# ── the reasoning budget ────────────────────────────────────────────────────
+
+def test_a_cheaper_budget_is_asked_for_and_recorded(assembled):
+    """Measured: the default spends ~22,000 output tokens a call and `low`
+    ~5,400 for the same shape of answer. Which one judges better is for
+    `analyze.score` to say, so the level is stored with the result."""
+    be = _Backend()
+    out = engine.analyze("KR:005930", "삼성전자", backend=be, store=False,
+                         effort="low")
+    assert be.calls[0]["extra"] == ["--effort", "low"]
+    assert out["effort"] == "low"
+
+
+def test_a_fork_carries_the_budget_too(assembled):
+    be = _Backend()
+    engine.analyze("KR:005930", "삼성전자", backend=be, store=False,
+                   root="sess-1", effort="low")
+    assert be.calls[0]["extra"] == ["--resume", "sess-1", "--fork-session",
+                                    "--effort", "low"]
+
+
+def test_no_budget_asked_is_stored_as_the_default(assembled):
+    out = engine.analyze("KR:005930", "삼성전자", backend=_Backend(),
+                         store=False)
+    assert out["effort"] == "default" and out["status"] == "ok"

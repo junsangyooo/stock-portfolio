@@ -175,6 +175,7 @@ def report(symbol_ids: Optional[Iterable[str]] = None, *,
             graded[h].append({
                 "symbol_id": sid, "date": day, "label": body.get("label"),
                 "confidence": body.get("confidence"),
+                "effort": body.get("effort") or "default",
                 "ret_pct": round(fwd["ret_pct"], 2), "hit": hit,
             })
             out = _levels_outcome(body, fwd)
@@ -224,6 +225,10 @@ def report(symbol_ids: Optional[Iterable[str]] = None, *,
                 "by_label": _by(graded[h], lambda r: r["label"], base[h]),
                 "by_confidence": _by(
                     graded[h], lambda r: f"{int((r['confidence'] or 0) * 10) / 10:.1f}"),
+                # The reasoning budget is stored on each result, so the
+                # cheap ones and the expensive ones can be compared here
+                # rather than argued about.
+                "by_effort": _by(graded[h], lambda r: r["effort"]),
                 "levels_first": dict(levels[h]),
             } for h in horizons
         },

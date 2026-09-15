@@ -295,13 +295,23 @@ def batch_root(backend=None) -> Optional[str]:
 
 def analyze(symbol_id: str, name: Optional[str] = None, *,
             force_chart: bool = False, backend=None,
-            store: bool = True, root: Optional[str] = None) -> dict:
+            store: bool = True, root: Optional[str] = None,
+            effort: Optional[str] = None) -> dict:
     """The whole thing. One deterministic pass, one call, one stored result.
 
     `root` is a batch session holding the dictionaries (see `batch_root`); the
     first attempt forks it and sends only this symbol's data. The retry always
     sends the whole prompt — if the fork failed, the session is the first
     thing to suspect, and a symbol must not be lost to it.
+
+    `effort` is the CLI's reasoning budget (low|medium|high|xhigh|max).
+    Measured on US:DHT 2026-09-15: the default spent 21,945 output tokens,
+    `low` spent 5,448 for an answer of the same shape (14 observations, 8/8
+    prices anchored, same targets) — most of the default budget is thinking
+    that never reaches the stored result. It did not land on the same verdict
+    though (buy → neutral), so which is better is a question for
+    `analyze.score`, and the level used is stored on the result so it can
+    tell them apart.
     """
     t0 = time.monotonic()
     envelope = inputs.build(symbol_id, name, force_chart=force_chart)
@@ -316,7 +326,9 @@ def analyze(symbol_id: str, name: Optional[str] = None, *,
                 system, user = "", prompt.symbol_part(envelope)
                 extra = ["--resume", sid, "--fork-session"]
             else:
-                system, user, extra = prompt.SYSTEM, prompt.build(envelope), None
+                system, user, extra = prompt.SYSTEM, prompt.build(envelope), []
+            if effort:
+                extra = list(extra) + ["--effort", effort]
             try:
                 raw = backend.call(system, user, model=SLOW_MODEL,
                                    extra_args=extra)
@@ -328,6 +340,7 @@ def analyze(symbol_id: str, name: Optional[str] = None, *,
                             attempt, "fork" if sid else "full", err)
         if out is None:
             out = _facts_only(envelope, err)
+    out["effort"] = effort or "default"
     out["elapsed_s"] = round(time.monotonic() - t0, 1)
     out["generated_at"] = datetime.now(KST).isoformat()
     return persist(symbol_id, out["date"], out) if store else out

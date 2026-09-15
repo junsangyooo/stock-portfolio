@@ -23,12 +23,13 @@ START = datetime(2026, 9, 1, tzinfo=KST)
 
 def _store(sid: str, day: str, *, label="buy", confidence=0.6,
            invalidation=90.0, target=120.0, counter="이 결론이 틀린다면",
-           confirm=("종가 120 돌파",), status="ok") -> None:
+           confirm=("종가 120 돌파",), status="ok",
+           effort="default") -> None:
     d = paths.ANALYSIS_DIR / KIND / sid.replace(":", "_")
     d.mkdir(parents=True, exist_ok=True)
     (d / f"{day.replace('-', '')}.json").write_text(json.dumps({
         "symbol_id": sid, "date": day, "status": status, "label": label,
-        "confidence": confidence,
+        "confidence": confidence, "effort": effort,
         "counter": {"case_ko": counter, "what_would_show_it": []},
         "outlook": {"scenarios": [{"case": "bull", "confirm": list(confirm),
                                    "invalidate": []}]},
@@ -161,3 +162,15 @@ def test_calling_the_one_that_rose_in_a_falling_tape_is_edge():
     assert out["baseline"]["up"] == 0.25
     assert out["by_label"]["buy"] == {"n": 1, "hit_rate": 1.0,
                                       "mean_ret_pct": 12.0, "edge": 0.75}
+
+
+def test_the_scorecard_splits_by_reasoning_budget():
+    """The cheap calls and the expensive ones have to be comparable, or the
+    choice between them stays an argument."""
+    _store("KR:CHEAP", "2026-09-01", effort="low")
+    _bars("KR:CHEAP", [100, 101, 102, 103, 104, 110])
+    _store("KR:FULL", "2026-09-01")
+    _bars("KR:FULL", [100, 99, 98, 97, 96, 90])
+    out = score.report(horizons=[5])["horizons"][5]["by_effort"]
+    assert out["low"] == {"n": 1, "hit_rate": 1.0, "mean_ret_pct": 10.0}
+    assert out["default"]["hit_rate"] == 0.0
