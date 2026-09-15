@@ -2,7 +2,7 @@
 
     from src.research import analyze
 
-    if not analyze.is_fresh(sid):
+    for sid in analyze.due_among(symbols, hot=planned):
         analyze.run(sid)
     result = analyze.latest(sid)
 
@@ -28,10 +28,10 @@ is asking. That is what lets one stored result serve both.
 """
 from .inputs import build as assemble          # noqa: F401 — deterministic half
 from .read import (                            # noqa: F401
-    KIND, is_fresh, latest, latest_date, on, stale_among, summary,
+    KIND, latest, latest_date, on, summary,
 )
 from .due import due_among, due_detail          # noqa: F401 — what changed
 from .engine import analyze as run              # noqa: F401
 
-__all__ = ["run", "assemble", "latest", "on", "latest_date", "is_fresh",
-           "summary", "stale_among", "due_among", "due_detail", "KIND"]
+__all__ = ["run", "assemble", "latest", "on", "latest_date", "summary",
+           "due_among", "due_detail", "KIND"]

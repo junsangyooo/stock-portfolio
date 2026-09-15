@@ -138,9 +138,15 @@ def build(envelope: dict) -> str:
 
     The three dictionaries plus the output contract are ~38,000 characters
     that are the same for every symbol on every day; only the symbol's own
-    data changes. They lead, so the ~70 calls a day share one prefix. With the
-    symbol name on line 1 they shared nothing, and a prompt cache had no
-    handle to hold — the dictionaries were re-read from scratch 70 times.
+    data changes. They lead so that the two halves can be split across a
+    session boundary — dictionaries once in a root session, one symbol per
+    fork — which is what actually turns them into a cache hit.
+
+    Measured 2026-09-15, and worth writing down because the obvious guess is
+    wrong: reordering alone changes nothing. `claude -p` caches the user
+    message as ONE block, so two prompts that differ anywhere — even in the
+    last line — share no cache at all (identical prompt: 50,783 tokens read,
+    $0.036; last line changed: 30,861 created, $0.154).
 
     The pairing that ordering costs is restored by `id=`: each dictionary and
     its data block carry the same domain id, and the header says to read one

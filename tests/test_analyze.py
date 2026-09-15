@@ -263,17 +263,6 @@ def test_on_accepts_either_date_spelling(stored):
     assert stored.on("KR:005930", "20260830")["label"] == "neutral"
 
 
-def test_is_fresh_answers_the_question_an_orchestrator_asks(stored):
-    from datetime import datetime
-    from src.core.kst import KST
-    same_day = datetime(2026, 9, 1, 10, tzinfo=KST)
-    assert stored.is_fresh("KR:005930", now=same_day) is True
-    later = datetime(2026, 9, 5, 10, tzinfo=KST)
-    assert stored.is_fresh("KR:005930", now=later) is False
-    assert stored.is_fresh("KR:005930", days=5, now=later) is True
-    assert stored.is_fresh("KR:000000", now=same_day) is False
-
-
 def test_a_truncated_file_reads_as_missing_not_as_a_crash(stored, tmp_path):
     (tmp_path / "analysis" / "KR_005930" / "20260902.json").write_text(
         "{not json", encoding="utf-8")
@@ -288,19 +277,8 @@ def test_summary_answers_for_every_symbol_asked(stored):
     assert got["KR:000000"]["date"] is None
 
 
-def test_stale_among_is_the_shortlist_to_re_run(stored):
-    from datetime import datetime
-    from src.core.kst import KST
-    same_day = datetime(2026, 9, 1, tzinfo=KST)
-    later = datetime(2026, 9, 20, tzinfo=KST)
-    asked = ["KR:005930", "KR:000000"]
-    # fresh one drops out, order of the rest is kept
-    assert stored.stale_among(asked, now=same_day) == ["KR:000000"]
-    assert stored.stale_among(asked, now=later) == asked
-
-
 def test_the_package_exposes_one_entry_point():
     """A caller should not have to know which file a function lives in."""
     from src.research import analyze
-    for name in ("run", "assemble", "latest", "on", "is_fresh", "summary"):
+    for name in ("run", "assemble", "latest", "on", "due_among", "summary"):
         assert callable(getattr(analyze, name)), name

@@ -57,7 +57,7 @@ PRICES = {"KR:AAA": 72000.0, "KR:BBB": 18000.0, "US:CCC": 120.0,
 ANALYSES = {
     "KR:AAA": _analysis(_d(0), invalidation=66000.0, target=82000.0),
     "KR:BBB": _analysis(_d(2), label="sell"),
-    "US:CCC": _analysis(_d(5)),
+    "US:CCC": _analysis(_d(20)),      # past STALE_DAYS: no plan may quote it
     "KR:DDD": _analysis(_d(1), status="facts_only", label="neutral"),
 }
 

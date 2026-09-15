@@ -64,10 +64,10 @@ def _is_fragment(doc) -> bool:
     return not isinstance(doc, dict) or not any(k in doc for k in _DIFF_KEYS)
 
 
-def _head_tail(text: str, n: int = 300) -> str:
+def _head_tail(text: str) -> str:
     """Both ends of a failed answer — the head says what it was doing, the
     tail says where it stopped. Recording the head alone showed neither."""
-    t = (text or "").strip()
+    t, n = (text or "").strip(), 300
     return t[:n] if len(t) <= 2 * n else f"{t[:n]} …[{len(t):,}자 중 생략]… {t[-n:]}"
 
 
@@ -179,8 +179,8 @@ def _levels_of(ctx: dict, symbol_id: str) -> dict:
 
 
 def _freshness_of(ctx: dict, symbol_id: str):
-    """A four-day-old coordinate is not a coordinate — for a plan being
-    rewritten just as much as for one being written."""
+    """A coordinate past `context.STALE_DAYS` is not a coordinate — for a plan
+    being rewritten just as much as for one being written."""
     return _analysis_of(ctx, symbol_id).get("freshness")
 
 

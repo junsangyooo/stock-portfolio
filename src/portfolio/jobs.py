@@ -41,15 +41,20 @@ def to_analyze(*, force: bool = False) -> list[str]:
     them carry a plan, so the shared layer never reads an account.
     """
     from ..research import analyze
-    symbols = sorted(set(held()) | set(all_active_symbol_ids()))
+    active = all_active_symbol_ids()
+    symbols = sorted(set(held()) | set(active))
     if force:
         return symbols
-    return analyze.due_among(symbols, hot=all_active_symbol_ids())
+    rows = analyze.due_detail(symbols, hot=active)
+    for r in rows:
+        print(f"  due {r['symbol_id']}: {r['reason']} — {r['detail']}",
+              file=sys.stderr)
+    return [r["symbol_id"] for r in rows]
 
 
 def _run_module(module: str, symbols: list[str], extra: list[str]) -> int:
     if not symbols:
-        print(f"{module}: no held symbols — nothing to do")
+        print(f"{module}: 0 symbols — nothing to do")
         return 0
     return subprocess.run(
         [sys.executable, "-m", module, "--symbols", ",".join(symbols), *extra],

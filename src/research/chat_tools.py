@@ -80,10 +80,10 @@ def _ensure_tracked(symbol_id: str) -> None:
 
 
 def _cmd_chart(symbol_id: str) -> dict:
-    from ..api.analysis import get_analysis
+    from ..api.analysis import get_chart_facts
     market, code = _split(symbol_id)
     _ensure_tracked(f"{market}:{code}")
-    return get_analysis("chart", market, code)
+    return get_chart_facts(market, code)
 
 
 def _cmd_fundamental(symbol_id: str) -> dict:
@@ -106,7 +106,7 @@ def _cmd_fundamental(symbol_id: str) -> dict:
 def _cmd_verdict(symbol_id: str) -> dict:
     from ..api.analysis import get_analysis
     market, code = _split(symbol_id)
-    return get_analysis("analysis", market, code)
+    return get_analysis(market, code)
 
 
 def _cmd_news(symbol_id: str) -> dict:
@@ -250,33 +250,39 @@ _COMMANDS = {
 # of them. The ceiling sits above what the real tools return — a stored
 # analysis is 14~19KB, 200 candles ~12KB, the chart fact set is the largest
 # and still under it — so nothing an agent actually reads gets cut. What it
-# stops is the answer nobody sized: `stocks_all NASDAQ` is the whole market.
+# stops is the answer nobody sized — `stocks_all NASDAQ` (quant/tools.py)
+# is a whole market in one reply.
 _MAX_OUT_CHARS = 40_000
 
 
-def dump_capped(out, limit: int = _MAX_OUT_CHARS) -> str:
-    """Serialize one tool answer, trimming lists until it fits.
+def dump_capped(out) -> str:
+    """Serialize one tool answer, trimmed to fit.
 
-    Halving the longest list is crude but keeps the answer's shape: the model
-    still sees the keys, the first rows, and `_truncated` telling it what was
-    cut — which is the cue to narrow the query rather than assume it saw
-    everything. A silent cut would be read as "that is all there is".
+    Lists are halved first, so the answer keeps its shape: the model still
+    sees the keys, the first rows, and `_truncated` saying what was cut —
+    the cue to narrow the query. When there is nothing structural left to
+    trim the answer degrades to a head plus that same marker, never to a
+    sliced string: handing the model invalid JSON is worse than a silent cut,
+    and a silent cut already reads as "that is all there is".
     """
     s = json.dumps(out, ensure_ascii=False, default=str)
-    if len(s) <= limit or not isinstance(out, dict):
-        return s if len(s) <= limit else s[:limit]
-    sizes = {k: len(v) for k, v in out.items() if isinstance(v, list)}
-    trimmed, cut = dict(out), {}
-    while len(s) > limit:
-        key = max((k for k in sizes if len(trimmed[k]) > 1),
-                  key=lambda k: len(trimmed[k]), default=None)
-        if key is None:
-            return s[:limit]
-        trimmed[key] = trimmed[key][:max(1, len(trimmed[key]) // 2)]
-        cut[key] = f"{len(trimmed[key])}/{sizes[key]}"
-        s = json.dumps({**trimmed, "_truncated": cut},
-                       ensure_ascii=False, default=str)
-    return s
+    if len(s) <= _MAX_OUT_CHARS:
+        return s
+    if isinstance(out, dict):
+        sizes = {k: len(v) for k, v in out.items() if isinstance(v, list)}
+        trimmed, cut = dict(out), {}
+        while len(s) > _MAX_OUT_CHARS and any(len(trimmed[k]) > 1 for k in sizes):
+            key = max((k for k in sizes if len(trimmed[k]) > 1),
+                      key=lambda k: len(trimmed[k]))
+            trimmed[key] = trimmed[key][:max(1, len(trimmed[key]) // 2)]
+            cut[key] = f"{len(trimmed[key])}/{sizes[key]}"
+            s = json.dumps({**trimmed, "_truncated": cut},
+                           ensure_ascii=False, default=str)
+        if len(s) <= _MAX_OUT_CHARS:
+            return s
+    head = s[:_MAX_OUT_CHARS // 2]          # escaping can at most double it
+    return json.dumps({"_truncated": f"{len(head):,}/{len(s):,}자 — 질의를 좁혀라",
+                       "head": head}, ensure_ascii=False)
 
 
 def main(argv: list[str]) -> int:

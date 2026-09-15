@@ -13,12 +13,10 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Optional
 
-from ...core.kst import KST
 from ...core import paths
 from ..verdict import KIND  # noqa: F401 — re-exported by the package
 
@@ -45,8 +43,8 @@ def _as_date(stem: str) -> str:
 @lru_cache(maxsize=256)
 def _read_at(path: str, mtime_ns: int) -> Optional[dict]:
     # Keyed by mtime so a rewrite (same path, new mtime) is a miss: a stored
-    # result is ~100KB of chart facts, and summary() for a hundred symbols
-    # would otherwise parse all of it on every badge refresh.
+    # result is 14~19KB (measured over 244 of them) and summary() for a
+    # hundred symbols would otherwise parse all of it on every badge refresh.
     p = Path(path)
     try:
         body = json.loads(p.read_text(encoding="utf-8"))
@@ -98,24 +96,6 @@ def on(symbol_id: str, date: str) -> Optional[dict]:
     return _read(p) if p.exists() else None
 
 
-def is_fresh(symbol_id: str, days: int = 1,
-             now: Optional[datetime] = None) -> bool:
-    """True if a result exists and is at most `days` old (1 = today's).
-
-    The question an orchestrator asks before spending several minutes on a
-    call it may not need.
-    """
-    d = latest_date(symbol_id)
-    if not d:
-        return False
-    try:
-        stored = datetime.strptime(d, "%Y-%m-%d").date()
-    except ValueError:
-        return False
-    today = (now or datetime.now(KST)).date()
-    return (today - stored) <= timedelta(days=max(days, 1) - 1)
-
-
 def summary(symbol_ids: Iterable[str]) -> dict:
     """{symbol_id: {label, score, confidence, status, summary_ko, date}}.
 
@@ -133,10 +113,3 @@ def summary(symbol_ids: Iterable[str]) -> dict:
         out[sid] = {"date": body.get("date"),
                     **{f: body.get(f) for f in _SUMMARY_FIELDS}}
     return out
-
-
-def stale_among(symbol_ids: Iterable[str], days: int = 1,
-                now: Optional[datetime] = None) -> list[str]:
-    """Which of these need a fresh run — the shortlist an orchestrator hands
-    to verdict_job. Order is preserved so the caller keeps its own priority."""
-    return [s for s in symbol_ids if not is_fresh(s, days=days, now=now)]

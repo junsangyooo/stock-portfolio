@@ -156,8 +156,11 @@ def build(symbol_id: str, name: Optional[str] = None, *,
                         str(e)[:200])
             data, status, note = None, "missing", f"수집 실패: {str(e)[:150]}"
         domains.append({"id": did, "title_ko": _TITLE[did],
-                        "reference": _reference(did), "data": data,
-                        "status": status, "note_ko": note})
+                        # No data, no dictionary: the prompt drops the
+                        # reference for a missing domain, so reading its 11KB
+                        # here is work thrown away.
+                        "reference": _reference(did) if data is not None else "",
+                        "data": data, "status": status, "note_ko": note})
 
     return {
         "symbol": {"symbol_id": symbol_id, "name": name, "market": market},

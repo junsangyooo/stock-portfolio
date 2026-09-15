@@ -32,7 +32,9 @@ def test_the_longest_list_is_the_one_that_gives():
     assert "bars" in got["_truncated"] and "note" not in got["_truncated"]
 
 
-def test_a_single_huge_value_is_cut_rather_than_returned_whole():
-    """Nothing structural to trim — the ceiling still holds."""
+def test_a_single_huge_value_degrades_to_a_head_that_still_parses():
+    """Nothing structural to trim — the answer must still be JSON."""
     s = chat_tools.dump_capped({"blob": "가" * 100_000})
     assert len(s) <= chat_tools._MAX_OUT_CHARS
+    got = json.loads(s)
+    assert got["_truncated"].endswith("질의를 좁혀라") and got["head"]

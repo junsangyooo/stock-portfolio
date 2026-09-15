@@ -31,9 +31,15 @@ from ..universe import search as uni_search
 
 # How old a stored analysis may be and still carry a plan. `stale` still
 # plans, but the prompt makes the model say the age out loud; `missing` does
-# not plan at all, because a four-day-old level is not a level any more.
+# not plan at all.
+#
+# The ceiling follows the refresh cadence instead of fighting it. A held
+# symbol is re-analysed when something actually changed on it and otherwise
+# after 7 trading days (research/analyze/due.MAX_AGE_COLD) — about 11 calendar
+# days. A lower ceiling here would drop every quiet holding out of the plan
+# pass while its analysis was still true: nothing had happened to it.
 FRESH_DAYS = 1
-STALE_DAYS = 3
+STALE_DAYS = 12
 
 RECENT_TRADE_DAYS = 14
 TOP_THEMES = 8
