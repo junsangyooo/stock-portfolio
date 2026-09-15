@@ -29,8 +29,11 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
+
+from ..core import usage
 
 
 FAST_MODEL = "claude-haiku-4-5-20251001"
@@ -80,8 +83,9 @@ class ClaudeCliBackend:
 
     name = "claude_cli"
 
-    def __init__(self, model: str = SLOW_MODEL):
+    def __init__(self, model: str = SLOW_MODEL, stage: str = "?"):
         self.model = model
+        self.stage = stage      # what the usage ledger calls this call site
         self.bin = _find_claude()
         if not self.bin:
             raise RuntimeError("`claude` CLI not found (PATH or nvm/usr/local)")
@@ -107,12 +111,17 @@ class ClaudeCliBackend:
         # --resume --fork-session prompt-cache inheritance all work under
         # it. (--bare is stronger but never reads OAuth → breaks §7
         # subscription-only billing, so it is not an option.)
+        t0 = time.monotonic()
+        # json, not text: the envelope carries this call's own token counts,
+        # and they are the only place per-call usage exists. The answer is
+        # the `result` field, so callers see no difference.
         r = subprocess.run(
             [self.bin, "-p", "--safe-mode",
-             "--output-format", "text", "--model", m]
+             "--output-format", "json", "--model", m]
             + (extra_args or []),
             input=prompt, capture_output=True, text=True, env=env,
         )
+        elapsed = time.monotonic() - t0
         if r.returncode != 0:
             # Surface stdout too — CLI often emits errors there (e.g.,
             # "Credit balance is too low" was on stdout, leaving stderr empty).
@@ -120,11 +129,28 @@ class ClaudeCliBackend:
             # 401 / expired subscription token → tag as AUTH so log scans and
             # alerting can distinguish "needs `claude login` on the host" from
             # transient failures (17-day silent outage of 2026-06/07).
+            usage.record(self.stage, m, ok=False, error=err_blob,
+                         elapsed_s=elapsed)
             if "401" in err_blob or "authenticate" in err_blob.lower():
                 raise RuntimeError(
                     f"claude CLI AUTH error (re-login needed): {err_blob}")
             raise RuntimeError(f"claude CLI exit {r.returncode}: {err_blob}")
-        return r.stdout.strip()
+        text = r.stdout.strip()
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, dict) and "result" in data:
+            usage.record(self.stage, m, usage=data.get("usage"),
+                         cost_usd=data.get("total_cost_usd"),
+                         elapsed_s=elapsed,
+                         extra={"turns": data.get("num_turns")})
+            return str(data.get("result") or "").strip()
+        # An envelope we cannot read is not a lost generation — the answer is
+        # still on stdout. Only the accounting for that call is lost.
+        usage.record(self.stage, m, elapsed_s=elapsed,
+                     extra={"envelope": "unreadable"})
+        return text
 
 
 class LocalLlamaBackend:
@@ -140,10 +166,11 @@ class LocalLlamaBackend:
     name = "local_llama"
 
     def __init__(self, url: str = LOCAL_URL, model: str = "local",
-                 max_tokens: int = 1200):
+                 max_tokens: int = 1200, stage: str = "?"):
         self.url = url.rstrip("/")
         self.model = model
         self.max_tokens = max_tokens
+        self.stage = stage
 
     def call(self, system: str, user: str, model: str | None = None) -> str:
         body = json.dumps({
@@ -155,6 +182,7 @@ class LocalLlamaBackend:
         req = urllib.request.Request(
             self.url + "/v1/chat/completions", data=body,
             headers={"Content-Type": "application/json"})
+        t0 = time.monotonic()
         try:
             with urllib.request.urlopen(req) as r:
                 data = json.load(r)
@@ -180,6 +208,10 @@ class LocalLlamaBackend:
         if "\ufffd" in content:
             raise RuntimeError(
                 "local llama produced invalid UTF-8 (U+FFFD) — corrupt generation")
+        # Free, but not weightless: this is the hour the box spent.
+        usage.record(self.stage, self.model, backend="local_llama",
+                     usage=data.get("usage"), cost_usd=0.0,
+                     elapsed_s=time.monotonic() - t0)
         return content
 
 
@@ -224,7 +256,7 @@ def local_or_claude(system: str, user: str, *, claude_model: str,
     """
     for attempt in (1, 2):
         try:
-            out = LocalLlamaBackend().call(system, user)
+            out = LocalLlamaBackend(stage=stage).call(system, user)
             if validate is not None:
                 validate(out)
             return out, "local_llama"
@@ -235,7 +267,9 @@ def local_or_claude(system: str, user: str, *, claude_model: str,
                 f"— {'retrying locally' if retrying else f'falling back to Claude ({claude_model})'}")
             if not retrying:
                 break
-    out = ClaudeCliBackend(model=claude_model).call(system, user, model=claude_model)
+    out = ClaudeCliBackend(model=claude_model,
+                           stage=f"{stage}:fallback").call(system, user,
+                                                          model=claude_model)
     _get_log().warning(f"[{stage}] served by claude_cli ({claude_model})")
     return out, "claude_cli"
 

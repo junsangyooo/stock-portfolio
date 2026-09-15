@@ -740,7 +740,8 @@ def run(conn: sqlite3.Connection, account_id: str, *, slot: str,
     status = "llm_error"
     for attempt in (1, 2):
         try:
-            text = ClaudeCliBackend(model).call(SYSTEM_PLAN, payload)
+            text = ClaudeCliBackend(model, stage="plan").call(SYSTEM_PLAN,
+                                                             payload)
         except Exception as e:  # noqa: BLE001 — a dead CLI is a run outcome
             out["error"] = str(e)[:200]
             status = "llm_error"

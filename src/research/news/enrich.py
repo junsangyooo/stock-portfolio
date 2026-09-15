@@ -216,9 +216,11 @@ def run(*, catalog: Optional[Catalog] = None, date: Optional[str] = None,
     backlog = _backlog(date, window_days=window_days, now=now)
 
     if local:
-        backend = LocalLlamaBackend(max_tokens=_LOCAL_MAX_TOKENS)
+        backend = LocalLlamaBackend(max_tokens=_LOCAL_MAX_TOKENS,
+                                    stage="news:enrich")
         batch = _LOCAL_BATCH
-    backend = backend or ClaudeCliBackend(model=FAST_MODEL)
+    backend = backend or ClaudeCliBackend(model=FAST_MODEL,
+                                          stage="news:enrich")
     now_iso = (now or datetime.now(KST)).isoformat()
     enriched = batches = failed = 0
     for i in range(0, len(todo), batch):

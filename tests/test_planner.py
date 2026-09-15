@@ -119,7 +119,7 @@ def _answer(monkeypatch, *docs):
 
     monkeypatch.setattr(llm_backend.ClaudeCliBackend, "call", _call)
     monkeypatch.setattr(llm_backend.ClaudeCliBackend, "__init__",
-                        lambda self, model=None: setattr(self, "model", model))
+                        lambda self, model=None, stage="?": setattr(self, "model", model))
     return calls
 
 
@@ -679,7 +679,7 @@ def test_a_pass_claims_its_slot_before_spending_the_call(book, monkeypatch):
 
     monkeypatch.setattr(llm_backend.ClaudeCliBackend, "call", _call)
     monkeypatch.setattr(llm_backend.ClaudeCliBackend, "__init__",
-                        lambda self, model=None: None)
+                        lambda self, model=None, stage="?": None)
     out = planner.run(book, "acc", slot="morning", today=TODAY)
     assert out["status"] == "ok"
     assert seen == [{"status": "skipped", "account_id": "acc", "date": TODAY}]

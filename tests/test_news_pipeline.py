@@ -317,7 +317,7 @@ def test_local_enrichment_batches_to_fit_the_on_host_context(monkeypatch):
     seen = []
 
     class _Local:
-        def __init__(self, max_tokens):
+        def __init__(self, max_tokens, stage="?"):
             seen.append(("max_tokens", max_tokens))
 
         def call(self, system, user, model=None):

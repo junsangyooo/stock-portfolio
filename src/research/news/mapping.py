@@ -75,7 +75,8 @@ def tag_stock_by_llm(name: str, market: str, catalog: Catalog,
     `backend` must expose ``call(system, user, model=...)``; defaults to
     ClaudeCliBackend. Returns {"primary": [...], "related": [...]}.
     """
-    backend = backend or ClaudeCliBackend(model=SLOW_MODEL)
+    backend = backend or ClaudeCliBackend(model=SLOW_MODEL,
+                                          stage="news:mapping")
     raw = backend.call(_SYSTEM, _build_user_prompt(name, market, catalog),
                        model=SLOW_MODEL)
     data = _parse_json(raw)

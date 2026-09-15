@@ -306,7 +306,7 @@ def chat(account_id: str, body: ChatIn,
     def _run() -> None:
         try:
             system, user = _build(account_id, msg, seeded)
-            reply = ClaudeCliBackend(model=SLOW_MODEL).call(
+            reply = ClaudeCliBackend(model=SLOW_MODEL, stage="chat").call(
                 system, user, extra_args=TOOL_ARGS + session_args)
             chat_store.append(account_id, body.session_id, "assistant", reply)
             with _lock:

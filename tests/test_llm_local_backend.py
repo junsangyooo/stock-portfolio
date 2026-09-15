@@ -156,7 +156,7 @@ class TestClaudeCliNoTimeout(unittest.TestCase):
             return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
 
         b = LB.ClaudeCliBackend.__new__(LB.ClaudeCliBackend)
-        b.bin, b.model = "claude", "m"
+        b.bin, b.model, b.stage = "claude", "m", "test"
         with patch.object(LB.subprocess, "run", side_effect=fake_run):
             self.assertEqual(_REAL_CLI_CALL(b, "s", "u"), "ok")
         self.assertNotIn("timeout", seen)

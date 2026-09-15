@@ -43,25 +43,25 @@ SYSTEM = (
 _SCHEMA = """{
   "observations": [
     {"domain": "chart|fundamental|news|peer",
-     "fact_ko": "데이터가 말하는 것 하나. 해석 금지, 수치 포함",
-     "cite": "어느 필드에서 왔는지"}
+     "fact_ko": "데이터가 말하는 것 하나. 해석 금지, 수치 포함. 80자 이내",
+     "cite": "timeframes.1d.rsi14"}   // 필드 경로만. 문장 금지
   ],                                    // 10~14개. 도메인마다 최소 2개
   "readings": [
-    {"claim_ko": "관찰에서 읽어낸 것",
+    {"claim_ko": "관찰에서 읽어낸 것. 90자 이내",
      "from": [0, 3],
      "confidence": 0.0}
   ],                                    // 4~7개
   "counter": {
-    "case_ko": "내 결론이 틀렸다면 그 이유. 가장 강한 반대 논거를 성실히",
-    "what_would_show_it": ["반증이 사실로 드러나는 신호"]
+    "case_ko": "내 결론이 틀렸다면 그 이유. 가장 강한 반대 논거. 250자 이내",
+    "what_would_show_it": ["반증이 사실로 드러나는 신호"]   // 최대 3개
   },
   "verdict": {
     "score": 0.0,
     "label": "strong_sell|sell|neutral|buy|strong_buy",
     "confidence": 0.0,
-    "summary_ko": "비전문가용 2~3문장 결론",
-    "drivers": ["긍정 동인"],
-    "risks": ["위험"],
+    "summary_ko": "비전문가용 2~3문장 결론. 200자 이내",
+    "drivers": ["긍정 동인"],                 // 최대 3개, 각 40자 이내
+    "risks": ["위험"],                       // 최대 3개, 각 40자 이내
     "domain_view": {
       "chart":       {"one_line_ko": "", "lean": "bullish|neutral|bearish"},
       "fundamental": {"one_line_ko": "", "lean": "bullish|neutral|bearish"},
@@ -71,24 +71,24 @@ _SCHEMA = """{
   },
   "outlook": {
     "horizon": "immediate|near|mid|long",
-    "base_ko": "가장 그럴듯한 전개 2~3문장",
+    "base_ko": "가장 그럴듯한 전개. 150자 이내",
     "scenarios": [
       {"case": "bull|base|bear",
-       "narrative_ko": "이렇게 전개된다면",
+       "narrative_ko": "이렇게 전개된다면. 70자 이내",
        "confirm": ["맞다는 신호"],
        "invalidate": ["틀렸다는 신호"]}
     ]
   },
   "levels": {
     "current": 0,
-    "support":    [{"price": 0, "basis_ko": "근거", "strength": "weak|medium|strong"}],  // 최대 3
+    "support":    [{"price": 0, "basis_ko": "근거 50자 이내", "strength": "weak|medium|strong"}],  // 최대 3
     "resistance": [{"price": 0, "basis_ko": "", "strength": ""}],                        // 최대 3
-    "entry_zone":   {"low": 0, "high": 0, "rationale_ko": ""},
-    "invalidation": {"price": 0, "rationale_ko": "이 아래로 내려가면 논지가 깨진다"},
+    "entry_zone":   {"low": 0, "high": 0, "rationale_ko": "60자 이내"},
+    "invalidation": {"price": 0, "rationale_ko": "논지가 깨지는 이유. 60자 이내"},
     "targets":    [{"price": 0, "basis_ko": ""}]        // 최대 2
   },
-  "reassess_when": ["이런 일이 생기면 이 분석은 다시 해야 한다"],
-  "limitations": ["못 본 것·근사한 것을 솔직하게"]
+  "reassess_when": ["이런 일이 생기면 이 분석은 다시 해야 한다"],   // 최대 4개
+  "limitations": ["못 본 것·근사한 것을 솔직하게"]   // 최대 3개
 }"""
 
 _GUIDE_KO = """
@@ -115,6 +115,12 @@ _GUIDE_KO = """
 
 문장은 짧게. 같은 말을 두 칸에 나눠 쓰지 마라 — observations 에 쓴 수치를
 readings 에서 반복하지 말고 인덱스로 가리켜라. 확신은 근거만큼만.
+
+- **분량도 계약이다.** 각 칸에 적힌 글자수·개수 상한을 지켜라. 넘기면 넘긴 만큼
+  잘려서 저장되므로 문장이 중간에서 끊긴다.
+- **`cite` 는 설명이 아니라 필드 경로다.** `timeframes.1d.rsi14`, `structure.pivots.S1`,
+  `financials_series[0].revenue` 처럼 적어라. 한국어 문장으로 쓰지 마라.
+- 줄일 것은 **문장의 길이**이지 관찰·해석의 **개수**가 아니다. 근거를 덜 대지 마라.
 """
 
 

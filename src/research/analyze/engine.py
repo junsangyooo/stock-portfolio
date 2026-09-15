@@ -110,7 +110,7 @@ def _levels(raw, anchors: Optional[list] = None) -> dict:
             if px is None:
                 continue
             row = {**_anchor(px, anchors),
-                   "basis_ko": str(it.get("basis_ko") or "")[:200]}
+                   "basis_ko": str(it.get("basis_ko") or "")[:100]}
             if with_strength:
                 row["strength"] = _enum(it.get("strength"), _STRENGTH, "medium")
             out.append(row)
@@ -127,7 +127,7 @@ def _levels(raw, anchors: Optional[list] = None) -> dict:
         # anchoring, and neither should have to know about the other
         return {**{k: out[k]["price"] for k in keys},
                 "anchoring": out,
-                "rationale_ko": str(d.get("rationale_ko") or "")[:300]}
+                "rationale_ko": str(d.get("rationale_ko") or "")[:120]}
 
     return {
         "current": _num(raw.get("current")),
@@ -151,13 +151,13 @@ def _outlook(raw) -> dict:
             continue
         scenarios.append({
             "case": case,
-            "narrative_ko": str(sc.get("narrative_ko") or "")[:600],
-            "confirm": [str(x)[:200] for x in (sc.get("confirm") or [])][:5],
-            "invalidate": [str(x)[:200] for x in (sc.get("invalidate") or [])][:5],
+            "narrative_ko": str(sc.get("narrative_ko") or "")[:150],
+            "confirm": [str(x)[:120] for x in (sc.get("confirm") or [])][:4],
+            "invalidate": [str(x)[:120] for x in (sc.get("invalidate") or [])][:4],
         })
     return {
         "horizon": _enum(raw.get("horizon"), _HORIZONS),
-        "base_ko": str(raw.get("base_ko") or "")[:800],
+        "base_ko": str(raw.get("base_ko") or "")[:300],
         "scenarios": scenarios,
     }
 
@@ -186,13 +186,13 @@ def normalize(data: dict, envelope: dict) -> dict:
     for o in (data.get("observations") or [])[:16]:
         if isinstance(o, dict) and str(o.get("fact_ko") or "").strip():
             obs.append({"domain": str(o.get("domain") or "")[:20],
-                        "fact_ko": str(o["fact_ko"])[:400],
-                        "cite": str(o.get("cite") or "")[:120]})
+                        "fact_ko": str(o["fact_ko"])[:150],
+                        "cite": str(o.get("cite") or "")[:60]})
     readings = []
     for r in (data.get("readings") or [])[:8]:
         if isinstance(r, dict) and str(r.get("claim_ko") or "").strip():
             readings.append({
-                "claim_ko": str(r["claim_ko"])[:400],
+                "claim_ko": str(r["claim_ko"])[:150],
                 "from": [i for i in (r.get("from") or [])
                          if isinstance(i, int) and 0 <= i < len(obs)][:8],
                 "confidence": clamp_confidence(r.get("confidence", 0.5)),
@@ -209,22 +209,22 @@ def normalize(data: dict, envelope: dict) -> dict:
         "observations": obs,
         "readings": readings,
         "counter": {
-            "case_ko": str(counter.get("case_ko") or "")[:800],
-            "what_would_show_it": _strs(counter.get("what_would_show_it"), 5),
+            "case_ko": str(counter.get("case_ko") or "")[:400],
+            "what_would_show_it": _strs(counter.get("what_would_show_it"), 3),
         },
         "score": score,
         "label": label,
         "confidence": clamp_confidence(v.get("confidence", 0.5)),
-        "summary_ko": str(v.get("summary_ko") or "")[:800],
-        "drivers": _strs(v.get("drivers"), 8),
-        "risks": _strs(v.get("risks"), 8),
+        "summary_ko": str(v.get("summary_ko") or "")[:400],
+        "drivers": _strs(v.get("drivers"), 3, 80),
+        "risks": _strs(v.get("risks"), 3, 80),
         "domain_view": domain_view,
         "disagreement_ko": (str(v["disagreement_ko"])[:400]
                             if v.get("disagreement_ko") else None),
         "outlook": _outlook(data.get("outlook")),
         "levels": _levels(data.get("levels"), anchors_from(envelope)),
-        "reassess_when": _strs(data.get("reassess_when"), 8),
-        "limitations": _strs(data.get("limitations"), 8),
+        "reassess_when": _strs(data.get("reassess_when"), 4),
+        "limitations": _strs(data.get("limitations"), 3),
     }
 
 
@@ -281,7 +281,8 @@ def batch_root(backend=None) -> Optional[str]:
             return _root[1]
         sid = str(uuid.uuid4())
         try:
-            (backend or ClaudeCliBackend(model=SLOW_MODEL)).call(
+            (backend or ClaudeCliBackend(model=SLOW_MODEL,
+                                         stage="analyze:root")).call(
                 prompt.SYSTEM, prompt.root_context(inputs.references()),
                 model=SLOW_MODEL, extra_args=["--session-id", sid])
         except Exception as e:  # noqa: BLE001 — a dead root is a slower batch
@@ -307,7 +308,8 @@ def analyze(symbol_id: str, name: Optional[str] = None, *,
     if not envelope["available"]:
         out = _facts_only(envelope, "수집된 데이터가 전혀 없습니다")
     else:
-        backend = backend or ClaudeCliBackend(model=SLOW_MODEL)
+        backend = backend or ClaudeCliBackend(model=SLOW_MODEL,
+                                              stage="analyze")
         out, err = None, ""
         for attempt, sid in ((1, root), (2, None)):
             if sid:
