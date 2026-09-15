@@ -60,6 +60,21 @@ def test_a_symbol_never_analysed_is_always_due(sources):
     assert _reason("KR:AAA") == "missing"
 
 
+def test_a_result_with_no_judgment_is_always_due(sources):
+    """`facts_only` is a failed call that kept the numbers: no verdict, no
+    coordinates, so no other trigger can fire on it. It must not sit there
+    until it ages out — 49 of 81 symbols were in that state after the weekly
+    limit ran out."""
+    _store("KR:AAA", YESTERDAY)
+    path = (paths.ANALYSIS_DIR / KIND / "KR_AAA" /
+            f"{YESTERDAY.replace('-', '')}.json")
+    body = json.loads(path.read_text(encoding="utf-8"))
+    body["status"] = "facts_only"
+    path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+    sources["closes"] = {"KR:AAA": [10_000.0]}
+    assert _reason("KR:AAA") == "facts_only"
+
+
 def test_a_quiet_symbol_is_left_alone(sources):
     _store("KR:AAA", YESTERDAY)
     sources["closes"] = {"KR:AAA": [10_050.0]}       # +0.5%, no coordinate

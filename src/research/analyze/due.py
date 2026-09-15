@@ -39,7 +39,7 @@ DAILY_LIMIT = 20          # ceiling per run, highest-priority first
 
 # Priority order when the limit bites. A broken premise outranks a number
 # going up, and age outranks nothing.
-_REASONS = ("missing", "level", "filing", "news", "move", "age")
+_REASONS = ("missing", "facts_only", "level", "filing", "news", "move", "age")
 
 
 def _as_date(s) -> Optional[date]:
@@ -123,6 +123,16 @@ def due_detail(symbol_ids: Iterable[str], *, hot: Iterable[str] = (),
         if body is None:
             out.append({"symbol_id": sid, "reason": "missing",
                         "detail": "저장된 분석 없음", "age_days": None})
+            continue
+        if body.get("status") != "ok":
+            # A `facts_only` result is a failed call with the calculated
+            # numbers kept — it has no judgment and no coordinates, so no
+            # other trigger here can ever fire on it. Without this it would
+            # sit unjudged until it aged out: 49 of 81 symbols were in that
+            # state after the weekly limit ran out on 2026-09-15.
+            out.append({"symbol_id": sid, "reason": "facts_only",
+                        "detail": f"판정 없는 결과({body.get('status')})",
+                        "age_days": None})
             continue
         day = _as_date(body.get("date"))
         age = _weekdays_since(day, today) if day else None
