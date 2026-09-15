@@ -141,10 +141,17 @@ class ClaudeCliBackend:
         except json.JSONDecodeError:
             data = None
         if isinstance(data, dict) and "result" in data:
+            # `is_error` is recorded, not raised on. The CLI exits 0 and still
+            # hands back whatever it produced; discarding that would lose a
+            # generation over a label, and every caller already validates the
+            # shape it needs. `stop_reason` is the honest answer to "was this
+            # cut off at the output ceiling" — the plan pass has to guess.
             usage.record(self.stage, m, usage=data.get("usage"),
                          cost_usd=data.get("total_cost_usd"),
-                         elapsed_s=elapsed,
-                         extra={"turns": data.get("num_turns")})
+                         elapsed_s=elapsed, ok=not data.get("is_error"),
+                         error=data.get("subtype") if data.get("is_error") else None,
+                         extra={"turns": data.get("num_turns"),
+                                "stop_reason": data.get("stop_reason")})
             return str(data.get("result") or "").strip()
         # An envelope we cannot read is not a lost generation — the answer is
         # still on stdout. Only the accounting for that call is lost.
@@ -183,6 +190,16 @@ class LocalLlamaBackend:
             self.url + "/v1/chat/completions", data=body,
             headers={"Content-Type": "application/json"})
         t0 = time.monotonic()
+
+        def _fail(msg: str):
+            """Record, then raise. A dead local model shows up in the ledger
+            as the row before a `:fallback` — otherwise the subscription
+            spend appears out of nowhere and the box looks innocent."""
+            usage.record(self.stage, self.model, backend="local_llama",
+                         ok=False, error=msg,
+                         elapsed_s=time.monotonic() - t0)
+            raise RuntimeError(msg)
+
         try:
             with urllib.request.urlopen(req) as r:
                 data = json.load(r)
@@ -190,15 +207,14 @@ class LocalLlamaBackend:
             # HTTPError subclasses URLError — split it out, or a generation-side
             # 500 ("output does not match the expected format") gets logged as
             # "unreachable" and sends the next debugger after the network.
-            raise RuntimeError(
-                f"local llama HTTP {e.code} from {self.url}: "
-                f"{e.read(300).decode('utf-8', 'replace')}")
+            _fail(f"local llama HTTP {e.code} from {self.url}: "
+                  f"{e.read(300).decode('utf-8', 'replace')}")
         except urllib.error.URLError as e:
-            raise RuntimeError(f"local llama unreachable at {self.url}: {e}")
+            _fail(f"local llama unreachable at {self.url}: {e}")
         try:
             content = data["choices"][0]["message"]["content"].strip()
         except (KeyError, IndexError, AttributeError):
-            raise RuntimeError(f"local llama bad response: {str(data)[:200]}")
+            _fail(f"local llama bad response: {str(data)[:200]}")
         # U+FFFD means the model emitted a byte sequence that is not valid
         # UTF-8 — a quantised 4B writing Korean does this occasionally. It is
         # never legitimate here (no collected signal or digest on disk has ever
@@ -206,8 +222,7 @@ class LocalLlamaBackend:
         # parses as JSON, it just drops the field. Treat it as a failed
         # generation so the caller retries instead of storing bad data.
         if "\ufffd" in content:
-            raise RuntimeError(
-                "local llama produced invalid UTF-8 (U+FFFD) — corrupt generation")
+            _fail("local llama produced invalid UTF-8 (U+FFFD) — corrupt generation")
         # Free, but not weightless: this is the hour the box spent.
         usage.record(self.stage, self.model, backend="local_llama",
                      usage=data.get("usage"), cost_usd=0.0,
@@ -254,9 +269,13 @@ def local_or_claude(system: str, user: str, *, claude_model: str,
     blows up in the caller — where there is no retry and no Claude to fall back
     to, so the theme is simply lost for the day.
     """
+    # The ledger groups by stage, so the key has to be the stage and not the
+    # item: callers label per theme ("daily:semiconductor") for the logs,
+    # which would otherwise put 69 rows in a report meant to be read.
+    ledger = stage.split(":")[0]
     for attempt in (1, 2):
         try:
-            out = LocalLlamaBackend(stage=stage).call(system, user)
+            out = LocalLlamaBackend(stage=ledger).call(system, user)
             if validate is not None:
                 validate(out)
             return out, "local_llama"
@@ -268,8 +287,8 @@ def local_or_claude(system: str, user: str, *, claude_model: str,
             if not retrying:
                 break
     out = ClaudeCliBackend(model=claude_model,
-                           stage=f"{stage}:fallback").call(system, user,
-                                                          model=claude_model)
+                           stage=f"{ledger}:fallback").call(
+                               system, user, model=claude_model)
     _get_log().warning(f"[{stage}] served by claude_cli ({claude_model})")
     return out, "claude_cli"
 

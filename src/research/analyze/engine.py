@@ -286,8 +286,13 @@ def batch_root(backend=None) -> Optional[str]:
                 prompt.SYSTEM, prompt.root_context(inputs.references()),
                 model=SLOW_MODEL, extra_args=["--session-id", sid])
         except Exception as e:  # noqa: BLE001 — a dead root is a slower batch
+            # Remember the failure for the same TTL. Without this a caller
+            # asking per symbol retries root creation for every one of them,
+            # and an outage (expired auth, overload — both have happened)
+            # turns a 20-symbol batch into 40 failing calls.
             log.warning("batch root failed, full prompts instead: %s",
                         str(e)[:200])
+            _root = (time.monotonic(), None)
             return None
         _root = (time.monotonic(), sid)
         return sid

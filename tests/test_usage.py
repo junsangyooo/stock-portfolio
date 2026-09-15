@@ -129,3 +129,33 @@ def test_a_torn_line_costs_one_call_not_the_file(log_file):
 
 def test_an_empty_ledger_reports_nothing_rather_than_failing():
     assert usage.report(days=7)["total"]["calls"] == 0
+
+
+def test_an_errored_envelope_is_recorded_but_its_answer_is_kept(log_file, monkeypatch):
+    """The CLI exits 0 and still hands back what it produced. Throwing that
+    away over a label would lose a generation; the row says what happened."""
+    envelope = json.dumps({"result": "부분적인 답", "is_error": True,
+                           "subtype": "error_max_turns", "stop_reason": "max_tokens",
+                           "usage": {"output_tokens": 32000}})
+    b, run = _backend(envelope)
+    monkeypatch.setattr(llm_backend.subprocess, "run", run)
+    assert _REAL_CALL(b, "sys", "user") == "부분적인 답"
+    row = json.loads(log_file.read_text(encoding="utf-8").strip())
+    assert row["ok"] is False and row["error"] == "error_max_turns"
+    assert row["stop_reason"] == "max_tokens" and row["out"] == 32000
+
+
+def test_a_dead_local_model_leaves_a_row_too(log_file, monkeypatch):
+    """Otherwise the subscription spend beside it (`…:fallback`) appears out of
+    nowhere and the box that caused it looks innocent."""
+    import urllib.error
+
+    def _boom(req, *a, **kw):
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(llm_backend.urllib.request, "urlopen", _boom)
+    with pytest.raises(RuntimeError):
+        llm_backend.LocalLlamaBackend(stage="daily").call("sys", "user")
+    row = json.loads(log_file.read_text(encoding="utf-8").strip())
+    assert row["backend"] == "local_llama" and row["stage"] == "daily"
+    assert row["ok"] is False and "unreachable" in row["error"]

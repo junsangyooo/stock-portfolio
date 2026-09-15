@@ -30,6 +30,9 @@ def temp_books(tmp_path, monkeypatch):
     # production output: test_api_analysis asserted exists=False for KR:005930
     # and failed on Oracle alone, where 20260901.json sits in the real tree.
     monkeypatch.setattr(paths, "ANALYSIS_DIR", tmp_path / "analysis")
+    # The usage ledger is billing evidence, not test output: a suite run on
+    # the server would otherwise append rows for calls nobody made.
+    monkeypatch.setattr(paths, "LOGS_DIR", tmp_path / "logs")
     monkeypatch.setattr(paths, "ensure_dirs", lambda: None)
     return tmp_path
 

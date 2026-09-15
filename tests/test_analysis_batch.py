@@ -156,3 +156,27 @@ def test_no_budget_asked_is_stored_as_the_default(assembled):
     out = engine.analyze("KR:005930", "삼성전자", backend=_Backend(),
                          store=False)
     assert out["effort"] == "default" and out["status"] == "ok"
+
+
+def test_a_dead_root_is_remembered_for_the_same_ttl(monkeypatch):
+    """Asked per symbol, a root that cannot be made would be attempted again
+    for every one of them — an outage turns a 20-symbol batch into 40 failing
+    calls."""
+    tries = []
+
+    class _Boom:
+        def call(self, *a, **kw):
+            tries.append(1)
+            raise RuntimeError("claude CLI exit 1")
+
+    monkeypatch.setattr(inputs, "references", lambda: [])
+    clock = [1000.0]
+    monkeypatch.setattr(engine.time, "monotonic", lambda: clock[0])
+
+    assert engine.batch_root(backend=_Boom()) is None
+    assert engine.batch_root(backend=_Boom()) is None      # still inside the TTL
+    assert len(tries) == 1
+
+    clock[0] += engine._ROOT_TTL_S + 1
+    assert engine.batch_root(backend=_Boom()) is None
+    assert len(tries) == 2

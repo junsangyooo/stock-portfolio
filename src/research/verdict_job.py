@@ -41,8 +41,16 @@ def _name(symbol_id: str) -> str:
         return symbol_id
 
 
+# A root session costs about what one full prompt costs to write into cache
+# ($0.15~0.22 measured), and each fork after it saves more than that — so it
+# pays from the second symbol on. A one-symbol batch sends the whole prompt,
+# which is what `due_among` makes the common case.
+_ROOT_MIN_BATCH = 2
+
+
 def run_symbol(symbol_id: str, date: str, *, force: bool,
-               effort: Optional[str] = None) -> dict:
+               effort: Optional[str] = None,
+               root: Optional[str] = None) -> dict:
     """One symbol's comprehensive analysis, skipped on a same-day hit.
     Never raises — failures land in the returned summary."""
     from . import analyze
@@ -52,10 +60,10 @@ def run_symbol(symbol_id: str, date: str, *, force: bool,
         return out
     t0 = time.monotonic()
     try:
-        # One session holds the dictionaries for the whole batch; this
-        # symbol's call forks it and sends only its own data.
-        res = analyze.run(symbol_id, _name(symbol_id),
-                          root=analyze.batch_root(), effort=effort)
+        # `root` holds the dictionaries for the whole batch; this symbol's
+        # call forks it and sends only its own data.
+        res = analyze.run(symbol_id, _name(symbol_id), root=root,
+                          effort=effort)
         out["status"] = res.get("status", "ok")
         # A held symbol whose analysis shipped without its position is the
         # 2026-06 삼성전자 incident; the batch proves the context attached.
@@ -119,9 +127,14 @@ def main() -> int:
           f"workers={args.workers}", flush=True)
 
     hot = {s.strip().upper() for s in args.hot.split(",") if s.strip()}
+    from . import analyze
+    todo = [s for s in symbols if args.force or analyze.on(s, date) is None]
+    root = analyze.batch_root() if len(todo) >= _ROOT_MIN_BATCH else None
+    print(f"batch root: {'yes' if root else 'no'} ({len(todo)} to run)",
+          flush=True)
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as ex:
         results = list(ex.map(
-            lambda s: run_symbol(s, date, force=args.force,
+            lambda s: run_symbol(s, date, force=args.force, root=root,
                                  effort=None if s in hot else args.effort),
             symbols))
 

@@ -153,7 +153,7 @@ def build(symbol_id: str, name: Optional[str] = None, *,
     name = name or symbol_id
     market, _ = split_symbol(symbol_id)
     domains = []
-    for did in ("chart", "fundamental", "news"):
+    for did in DOMAINS:
         try:
             if did == "chart":
                 data, status, note = _chart(symbol_id, force_chart)

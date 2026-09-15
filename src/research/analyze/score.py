@@ -30,7 +30,6 @@ from typing import Iterable, Optional
 from ...core import paths
 from ...core.kst import KST
 from ..verdict import KIND
-from .read import _as_date as _stem_date  # noqa: F401 — kept for symmetry
 
 HORIZONS = (5, 10, 20)          # trading days
 FLAT_PCT = 3.0                  # a neutral call is right while price stays here
@@ -237,7 +236,6 @@ def report(symbol_ids: Optional[Iterable[str]] = None, *,
 
 def main() -> int:
     import argparse
-    import sys
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbols", default=None, help="comma-separated; default all")
     ap.add_argument("--since", default=None, help="YYYY-MM-DD")
