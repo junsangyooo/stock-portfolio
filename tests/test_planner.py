@@ -740,3 +740,28 @@ def test_a_non_finite_number_in_a_rejection_row_stays_readable(book,
 
 def _no_constants(name):
     raise ValueError(f"bare {name} in stored JSON")
+
+
+# ── a runaway answer is not retried ───────────────────────────────────────
+
+def test_an_answer_cut_off_at_the_ceiling_is_not_asked_for_twice(book, monkeypatch):
+    """The CLI stops the model at its output ceiling, so the JSON never closes
+    and `extract_json` comes back with some inner object. A retry is not a
+    second chance at the same answer — it is the same runaway billed again,
+    which is how one account burned two ceilings for one empty pass."""
+    runaway = ("이 계좌를 살펴보면 " * 4000
+               + '```json\n{"stance": "hold", "line_ko": "조각"}')
+    calls = _answer(monkeypatch, runaway, _doc())
+    r = planner.run(book, "acc", slot="morning", model="m", today=TODAY)
+    assert r["status"] == "parse_error" and len(calls) == 1
+    row = book.execute("SELECT status, diff FROM plan_runs WHERE date = ?",
+                       (TODAY,)).fetchone()
+    assert row[0] == "parse_error" and row[1] is None    # a fragment is not a diff
+    assert "…" in r["error"]                             # both ends recorded
+
+
+def test_a_short_answer_with_no_json_still_gets_its_retry(book, monkeypatch):
+    """A formatting slip is cheap to ask again; only the runaway is not."""
+    calls = _answer(monkeypatch, "미안, JSON을 빠뜨렸다", _doc())
+    r = planner.run(book, "acc", slot="morning", model="m", today=TODAY)
+    assert r["status"] == "ok" and len(calls) == 2

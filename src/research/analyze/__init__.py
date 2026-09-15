@@ -30,7 +30,8 @@ from .inputs import build as assemble          # noqa: F401 — deterministic ha
 from .read import (                            # noqa: F401
     KIND, is_fresh, latest, latest_date, on, stale_among, summary,
 )
+from .due import due_among, due_detail          # noqa: F401 — what changed
 from .engine import analyze as run              # noqa: F401
 
 __all__ = ["run", "assemble", "latest", "on", "latest_date", "is_fresh",
-           "summary", "stale_among", "KIND"]
+           "summary", "stale_among", "due_among", "due_detail", "KIND"]

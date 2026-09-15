@@ -197,6 +197,19 @@ def test_each_domain_arrives_paired_with_its_own_dictionary():
     assert text.index("# chart 사전") < text.index("# fundamental 사전")
 
 
+def test_the_invariant_half_of_the_prompt_comes_first():
+    """The dictionaries and the output contract are ~38,000 characters that
+    never change; only the symbol's data does. With the symbol name on line 1
+    no two of the ~70 daily calls shared a prefix, so a cache had nothing to
+    hold onto."""
+    text = prompt.build(_envelope(_STRUCT))
+    head = text.index("여기부터가 이 종목이다")
+    assert text.index("# chart 사전") < head          # dictionaries lead
+    assert text.index('"observations"') < head        # so does the contract
+    assert head < text.index("삼성전자")               # then this symbol
+    assert head < text.index("데이터: chart")          # and its numbers
+
+
 def test_a_missing_domain_says_so_instead_of_vanishing():
     env = _envelope(_STRUCT)
     env["domains"][1].update(status="missing", data=None, note_ko="재무 없음")

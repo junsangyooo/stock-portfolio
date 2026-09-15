@@ -29,6 +29,19 @@ HUMAN_STATUSES = ("armed", "entered", "done", "abandoned", "proposed")
 _FROM_PROPOSED = {"armed": "approve", "abandoned": "reject"}
 
 
+def all_active_symbol_ids() -> List[str]:
+    """Distinct symbol_ids under a live plan, across all accounts.
+
+    A proposal counts: somebody is about to read its coordinates and decide,
+    so it is exactly the symbol whose analysis must not be a week old.
+    """
+    with connect() as c:
+        rows = c.execute(
+            "SELECT DISTINCT symbol_id FROM plans "
+            "WHERE status IN ('armed', 'entered', 'proposed')").fetchall()
+        return [r["symbol_id"] for r in rows]
+
+
 def _conditions(raw):
     try:
         return json.loads(raw) if raw else None

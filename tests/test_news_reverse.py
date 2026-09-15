@@ -6,6 +6,10 @@ parent company it was never told about.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
+from src.core.kst import KST
+from src.research.news import reverse
 from src.research.news.reverse import _count_masked, _strip_html
 
 
@@ -110,3 +114,56 @@ def test_us_names_match_without_legal_suffix_and_by_ticker():
     corpus = "Broadcom beats estimates; AVGO up 5% after hours"
     hits = _count_masked(corpus, entries)
     assert hits.get("US:AVGO") == 2
+
+
+# ── "did anything important name this company since?" ─────────────────────
+
+def _signal(title: str, day: str, importance: int) -> None:
+    from src.research.news.db import connect
+    with connect() as c:
+        c.execute(
+            "INSERT INTO signals (dedup_key, title, source_id, source_group,"
+            " lead_lag, fetched_at, collected_on, importance)"
+            " VALUES (?, ?, 's1', 'news', 'lagging', ?, ?, ?)",
+            (f"{title}|{day}", title, day + "T09:00:00+09:00", day, importance))
+        c.commit()
+
+
+def _entries(monkeypatch) -> None:
+    monkeypatch.setattr(reverse, "_name_entries",
+                        lambda: [("삼성전자", "KR:005930"),
+                                 ("에스케이하이닉스", "KR:000660")])
+
+
+def test_only_the_asked_symbols_and_only_important_articles_count(monkeypatch):
+    _entries(monkeypatch)
+    today = datetime.now(KST).date().isoformat()
+    _signal("삼성전자 신규 공장 착공", today, 5)
+    _signal("에스케이하이닉스 주가 소폭 상승", today, 2)      # below the floor
+    got = reverse.recent_mentions(["KR:005930", "KR:000660"],
+                                  days=7, min_importance=4)
+    assert got == {"KR:005930": today}
+
+
+def test_a_symbol_nobody_asked_about_is_not_scanned_for(monkeypatch):
+    _entries(monkeypatch)
+    today = datetime.now(KST).date().isoformat()
+    _signal("삼성전자 신규 공장 착공", today, 5)
+    assert reverse.recent_mentions(["KR:000660"], days=7) == {}
+    assert reverse.recent_mentions([], days=7) == {}
+
+
+def test_an_article_older_than_the_window_does_not_count(monkeypatch):
+    _entries(monkeypatch)
+    old = (datetime.now(KST).date() - timedelta(days=30)).isoformat()
+    _signal("삼성전자 사업 재편", old, 5)
+    assert reverse.recent_mentions(["KR:005930"], days=7) == {}
+
+
+def test_the_newest_naming_day_is_the_one_returned(monkeypatch):
+    _entries(monkeypatch)
+    today = datetime.now(KST).date()
+    _signal("삼성전자 수주", (today - timedelta(days=3)).isoformat(), 4)
+    _signal("삼성전자 실적", today.isoformat(), 4)
+    got = reverse.recent_mentions(["KR:005930"], days=7)
+    assert got == {"KR:005930": today.isoformat()}

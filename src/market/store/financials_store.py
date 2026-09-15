@@ -103,3 +103,23 @@ def rows_as_dicts(symbol_id: str, n: int = 0) -> List[dict]:
     return [_row_to_dict(df.iloc[i]) for i in range(len(df))]
 
 
+def latest_filed_at(symbol_ids: Iterable[str]) -> dict:
+    """{symbol_id: newest filed_at}, in ONE query, for those that have one.
+
+    `filed_at` is the disclosure's own receipt date, which is what lets a
+    caller ask "has a filing landed since we last looked at this symbol?"
+    without calling DART or EDGAR. Rows migrated before the column existed
+    carry NULL and simply do not answer.
+    """
+    ids = list(dict.fromkeys(symbol_ids))
+    if not ids:
+        return {}
+    marks = ",".join("?" * len(ids))
+    with connect() as c:
+        rows = c.execute(
+            "SELECT symbol_id, MAX(filed_at) FROM financials "
+            "WHERE filed_at IS NOT NULL AND symbol_id IN (" + marks + ") "
+            "GROUP BY symbol_id", ids).fetchall()
+    return {str(sid): str(f) for sid, f in rows if f}
+
+

@@ -171,6 +171,45 @@ def _count_masked(corpus: str, entries: Iterable[tuple[str, str]]) -> dict[str, 
     return hits
 
 
+def recent_mentions(symbol_ids: Iterable[str], days: int = 14,
+                    min_importance: int = 4) -> dict:
+    """{symbol_id: newest collected_on} for these symbols named in a
+    high-importance article inside the window.
+
+    One pass for all of them: a caller asking about sixty symbols would
+    otherwise scan the same titles sixty times. Restricting the name table to
+    the symbols asked about is also what makes it cheap — the whole universe
+    is ~20,000 name variants, these are a few hundred.
+
+    Titles only, like the rest of this module: a name in a headline is the
+    story's subject, a name in the body is often a passing clause.
+    """
+    from datetime import datetime, timedelta
+
+    from ...core.kst import KST
+    from .db import connect
+
+    wanted = {s for s in symbol_ids}
+    if not wanted:
+        return {}
+    entries = [(n, s) for n, s in _name_entries() if s in wanted]
+    if not entries:
+        return {}
+    since = (datetime.now(KST).date()
+             - timedelta(days=max(days - 1, 0))).isoformat()
+    with connect() as c:
+        rows = c.execute(
+            "SELECT title, collected_on FROM signals "
+            "WHERE collected_on >= ? AND importance >= ?",
+            (since, min_importance)).fetchall()
+    out: dict = {}
+    for title, day in rows:
+        for sid in _count_masked(_strip_html(title or ""), entries):
+            if day and day > out.get(sid, ""):
+                out[sid] = day
+    return out
+
+
 def _tagged(theme_id: str) -> list[dict]:
     """symbol_themes reversed — symbols somebody already mapped to this theme."""
     from ...market.store import theme_store

@@ -118,29 +118,63 @@ readings 에서 반복하지 말고 인덱스로 가리켜라. 확신은 근거�
 """
 
 
-def _domain_block(d: dict) -> str:
-    head = f"━━━━━ 도메인: {d['title_ko']}  [{d['status']}] ━━━━━"
+def _reference_block(d: dict) -> str:
+    """One domain's dictionary — byte-identical for every symbol."""
+    return (f"━━━━━ 해석 기준(사전): {d['title_ko']}  [id={d['id']}] ━━━━━\n"
+            f"{d['reference']}\n")
+
+
+def _data_block(d: dict) -> str:
+    head = f"━━━━━ 데이터: {d['title_ko']}  [id={d['id']}] [{d['status']}] ━━━━━"
     if d["note_ko"]:
         head += f"\n※ {d['note_ko']}"
     if d["status"] == "missing" or d["data"] is None:
         return f"{head}\n(데이터 없음 — 이 도메인은 판단에서 제외하고 신뢰도에만 반영)\n"
-    return (f"{head}\n"
-            f"\n[해석 기준 — 이 도메인의 사전]\n{d['reference']}\n"
-            f"\n[데이터 — 이 종목의 실제 값]\n"
-            f"{json.dumps(d['data'], ensure_ascii=False, default=str)}\n")
+    return f"{head}\n{json.dumps(d['data'], ensure_ascii=False, default=str)}\n"
 
 
 def build(envelope: dict) -> str:
+    """The prompt, invariant half first.
+
+    The three dictionaries plus the output contract are ~38,000 characters
+    that are the same for every symbol on every day; only the symbol's own
+    data changes. They lead, so the ~70 calls a day share one prefix. With the
+    symbol name on line 1 they shared nothing, and a prompt cache had no
+    handle to hold — the dictionaries were re-read from scratch 70 times.
+
+    The pairing that ordering costs is restored by `id=`: each dictionary and
+    its data block carry the same domain id, and the header says to read one
+    through the other.
+
+    A domain with no data still ships no dictionary — there is nothing to read
+    through it, and 11,000 characters of reference for an absent domain is the
+    same waste in a different place.
+    """
     sym = envelope["symbol"]
     parts = [
+        "이 프롬프트는 세 부분이다: ① 도메인별 해석 기준(사전) ② 출력 계약 "
+        "③ 이 종목의 데이터.",
+        "①과 ②는 어느 종목이든 같다. 각 데이터 블록은 같은 `id`를 가진 사전으로 "
+        "읽어라.",
+        "",
+    ]
+    parts += [_reference_block(d) for d in envelope["domains"]
+              if d["status"] != "missing" and d["data"] is not None]
+
+    parts += [
+        "━━━━━ 작성 순서 ━━━━━",
+        "① 관찰 → ② 해석 → ③ 반증 → ④ 결론 → ⑤ 전망 → ⑥ 좌표.",
+        "이 순서로 생각하고, 아래 JSON 한 덩이로만 답한다.",
+        "",
+        _SCHEMA,
+        _GUIDE_KO,
+        "",
+        "━━━━━ 여기부터가 이 종목이다 ━━━━━",
         f"종목: {sym['name']} ({sym['symbol_id']})",
         f"기준일: {envelope['asof']}",
         "",
-        "아래에 도메인이 하나씩 온다. 각 도메인은 **해석 기준(사전)** 과 "
-        "**데이터** 가 짝을 이룬다 — 그 도메인의 값은 그 도메인의 사전으로 읽어라.",
-        "",
     ]
-    parts += [_domain_block(d) for d in envelope["domains"]]
+    parts += [_data_block(d) for d in envelope["domains"]]
 
     ctx = envelope.get("context") or {}
     parts += [
@@ -148,12 +182,5 @@ def build(envelope: dict) -> str:
         "어느 사전에도 속하지 않는다 — 동종 대비 위치다.",
         "",
         f"[동종 백분위]\n{json.dumps(ctx.get('peer'), ensure_ascii=False, default=str)}",
-        "",
-        "━━━━━ 작성 순서 ━━━━━",
-        "① 관찰 → ② 해석 → ③ 반증 → ④ 결론 → ⑤ 전망 → ⑥ 좌표.",
-        "이 순서로 생각하고, 아래 JSON 한 덩이로만 답한다.",
-        "",
-        _SCHEMA,
-        _GUIDE_KO,
     ]
     return "\n".join(parts)

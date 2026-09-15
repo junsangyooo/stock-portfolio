@@ -245,6 +245,40 @@ _COMMANDS = {
 }
 
 
+# A tool answer is not paid for once. It joins the agent's transcript and is
+# re-sent on every later turn, so one oversized reply is billed again on each
+# of them. The ceiling sits above what the real tools return — a stored
+# analysis is 14~19KB, 200 candles ~12KB, the chart fact set is the largest
+# and still under it — so nothing an agent actually reads gets cut. What it
+# stops is the answer nobody sized: `stocks_all NASDAQ` is the whole market.
+_MAX_OUT_CHARS = 40_000
+
+
+def dump_capped(out, limit: int = _MAX_OUT_CHARS) -> str:
+    """Serialize one tool answer, trimming lists until it fits.
+
+    Halving the longest list is crude but keeps the answer's shape: the model
+    still sees the keys, the first rows, and `_truncated` telling it what was
+    cut — which is the cue to narrow the query rather than assume it saw
+    everything. A silent cut would be read as "that is all there is".
+    """
+    s = json.dumps(out, ensure_ascii=False, default=str)
+    if len(s) <= limit or not isinstance(out, dict):
+        return s if len(s) <= limit else s[:limit]
+    sizes = {k: len(v) for k, v in out.items() if isinstance(v, list)}
+    trimmed, cut = dict(out), {}
+    while len(s) > limit:
+        key = max((k for k in sizes if len(trimmed[k]) > 1),
+                  key=lambda k: len(trimmed[k]), default=None)
+        if key is None:
+            return s[:limit]
+        trimmed[key] = trimmed[key][:max(1, len(trimmed[key]) // 2)]
+        cut[key] = f"{len(trimmed[key])}/{sizes[key]}"
+        s = json.dumps({**trimmed, "_truncated": cut},
+                       ensure_ascii=False, default=str)
+    return s
+
+
 def main(argv: list[str]) -> int:
     # Dependencies print to stdout (pykrx: "KRX 로그인 실패: ..."), which would
     # sit in front of the JSON the model has to read. Swallow anything the
@@ -259,7 +293,7 @@ def main(argv: list[str]) -> int:
                 out = _COMMANDS[argv[0]](*argv[1:])
     except Exception as e:  # noqa: BLE001 — the model reads the error and retries
         out = {"error": f"{type(e).__name__}: {e}"[:400]}
-    print(json.dumps(out, ensure_ascii=False, default=str))
+    print(dump_capped(out))
     return 0
 
 

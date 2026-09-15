@@ -46,6 +46,31 @@ _COND_KEYS = ("entry", "take_profit", "stop")
 _NO_NOTE = {"stance": "none", "line_ko": "(판단 없음)"}
 
 
+# The keys a real answer carries. A cut-off answer has none of them: the outer
+# object never closed, so `extract_json` returns whichever inner object it
+# could still parse — a single note, say.
+_DIFF_KEYS = ("keep", "modify", "abandon", "suggest", "add", "reanalyze",
+              "notes_by_symbol")
+
+# Past this length a failed answer was not a formatting slip. Passes that
+# succeed here write a fraction of it; the ones that failed ran to the CLI's
+# 32,000-token output ceiling and were discarded whole — twice over, because
+# the retry spent the same runaway again for the same nothing.
+_RUNAWAY_CHARS = 30_000
+
+
+def _is_fragment(doc) -> bool:
+    """True when what came back is not a diff at all."""
+    return not isinstance(doc, dict) or not any(k in doc for k in _DIFF_KEYS)
+
+
+def _head_tail(text: str, n: int = 300) -> str:
+    """Both ends of a failed answer — the head says what it was doing, the
+    tail says where it stopped. Recording the head alone showed neither."""
+    t = (text or "").strip()
+    return t[:n] if len(t) <= 2 * n else f"{t[:n]} …[{len(t):,}자 중 생략]… {t[-n:]}"
+
+
 class IncompleteDiff(Exception):
     """The model left an active plan unjudged. The whole answer is refused —
     a diff that silently drops a plan reads as "keep" and nothing says so."""
@@ -113,7 +138,9 @@ SYSTEM_PLAN = """# 계획 작성자
   빠진 계획이나 두 곳에 든 계획이 있으면 출력 전체가 기각된다.
 
 ## 출력
-JSON 하나. ```json 코드펜스. 그 뒤에 아무것도 쓰지 마라.
+JSON 하나. ```json 코드펜스. **코드펜스 앞에도 뒤에도 아무것도 쓰지 마라** — 생각은
+JSON 안의 why·line_ko·portfolio_note로만 나온다. 분량은 why 200자, line_ko 80자,
+portfolio_note 세 문장 이내. 길게 쓴다고 좋은 판단이 되지 않는다.
 {
   "keep": [],
   "modify": [{"plan_id": 13, "qty": 10, "expires": "2026-09-30",
@@ -719,9 +746,15 @@ def run(conn: sqlite3.Connection, account_id: str, *, slot: str,
             status = "llm_error"
             break
         doc = extract_json(text)
-        if doc is None:
+        if _is_fragment(doc):
             status = "parse_error"
-            out["error"] = text[:200]
+            out["error"] = _head_tail(text)
+            doc = None                     # a fragment is not a diff to store
+            if len(text) > _RUNAWAY_CHARS:
+                # Cut off at the output ceiling. The retry is not a second
+                # chance at the same answer, it is the same runaway billed
+                # again — one account spent two of them for one empty pass.
+                break
             continue
         try:
             accepted, rejected = validate(doc, ctx)
