@@ -10,7 +10,9 @@ receives a made-up stop is worse off than one that receives none.
 from __future__ import annotations
 
 import logging
+import threading
 import time
+import uuid
 from datetime import datetime
 from typing import Optional
 
@@ -251,27 +253,77 @@ def _facts_only(envelope: dict, reason: str) -> dict:
     }
 
 
+# How long a batch root is reused before a fresh one is made. A fork off a
+# 13-minute-old root still read its dictionaries from cache (measured
+# 2026-09-15); past that nothing was measured, so the refresh sits below it.
+# One refresh is one cheap call — a cold root would cost the whole prompt on
+# every symbol after it.
+_ROOT_TTL_S = 20 * 60
+_root: Optional[tuple] = None
+_root_lock = threading.Lock()
+
+
+def batch_root(backend=None) -> Optional[str]:
+    """A session that already holds the dictionaries, for a batch to fork.
+
+    Measured: a fork reads 50,743 tokens from cache and pays only for the
+    symbol's own data — $0.086 a symbol against $0.20~0.24 for the whole
+    prompt each time. `claude -p` caches a user message as one block, so this
+    session boundary is the only place the saving can come from; reordering
+    inside one message saves nothing.
+
+    None means the root call failed. The caller then sends the full prompt,
+    which is exactly what every call did before this existed.
+    """
+    global _root
+    with _root_lock:
+        if _root and time.monotonic() - _root[0] < _ROOT_TTL_S:
+            return _root[1]
+        sid = str(uuid.uuid4())
+        try:
+            (backend or ClaudeCliBackend(model=SLOW_MODEL)).call(
+                prompt.SYSTEM, prompt.root_context(inputs.references()),
+                model=SLOW_MODEL, extra_args=["--session-id", sid])
+        except Exception as e:  # noqa: BLE001 — a dead root is a slower batch
+            log.warning("batch root failed, full prompts instead: %s",
+                        str(e)[:200])
+            return None
+        _root = (time.monotonic(), sid)
+        return sid
+
+
 def analyze(symbol_id: str, name: Optional[str] = None, *,
             force_chart: bool = False, backend=None,
-            store: bool = True) -> dict:
-    """The whole thing. One deterministic pass, one call, one stored result."""
+            store: bool = True, root: Optional[str] = None) -> dict:
+    """The whole thing. One deterministic pass, one call, one stored result.
+
+    `root` is a batch session holding the dictionaries (see `batch_root`); the
+    first attempt forks it and sends only this symbol's data. The retry always
+    sends the whole prompt — if the fork failed, the session is the first
+    thing to suspect, and a symbol must not be lost to it.
+    """
     t0 = time.monotonic()
     envelope = inputs.build(symbol_id, name, force_chart=force_chart)
     if not envelope["available"]:
         out = _facts_only(envelope, "수집된 데이터가 전혀 없습니다")
     else:
         backend = backend or ClaudeCliBackend(model=SLOW_MODEL)
-        user = prompt.build(envelope)
         out, err = None, ""
-        for attempt in (1, 2):
+        for attempt, sid in ((1, root), (2, None)):
+            if sid:
+                system, user = "", prompt.symbol_part(envelope)
+                extra = ["--resume", sid, "--fork-session"]
+            else:
+                system, user, extra = prompt.SYSTEM, prompt.build(envelope), None
             try:
-                raw = backend.call(prompt.SYSTEM, user, model=SLOW_MODEL)
+                raw = backend.call(system, user, model=SLOW_MODEL,
+                                   extra_args=extra)
                 out = normalize(_parse_json(raw), envelope)
                 break
             except Exception as e:  # noqa: BLE001 — retry once, then be honest
                 err = str(e)[:300]
-                log.warning("analyze %s attempt %d failed: %s", symbol_id,
-                            attempt, err)
+                log.warning("analyze %s attempt %d (%s) failed: %s", symbol_id,
+                            attempt, "fork" if sid else "full", err)
         if out is None:
             out = _facts_only(envelope, err)
     out["elapsed_s"] = round(time.monotonic() - t0, 1)

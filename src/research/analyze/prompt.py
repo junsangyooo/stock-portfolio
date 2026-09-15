@@ -156,7 +156,6 @@ def build(envelope: dict) -> str:
     through it, and 11,000 characters of reference for an absent domain is the
     same waste in a different place.
     """
-    sym = envelope["symbol"]
     parts = [
         "이 프롬프트는 세 부분이다: ① 도메인별 해석 기준(사전) ② 출력 계약 "
         "③ 이 종목의 데이터.",
@@ -166,27 +165,63 @@ def build(envelope: dict) -> str:
     ]
     parts += [_reference_block(d) for d in envelope["domains"]
               if d["status"] != "missing" and d["data"] is not None]
+    parts += _contract()
+    return "\n".join(parts + ["", symbol_part(envelope)])
 
-    parts += [
+
+def _contract() -> list[str]:
+    return [
         "━━━━━ 작성 순서 ━━━━━",
         "① 관찰 → ② 해석 → ③ 반증 → ④ 결론 → ⑤ 전망 → ⑥ 좌표.",
         "이 순서로 생각하고, 아래 JSON 한 덩이로만 답한다.",
         "",
         _SCHEMA,
         _GUIDE_KO,
-        "",
+    ]
+
+
+def symbol_part(envelope: dict) -> str:
+    """Only what changes: this symbol's header, its data, its peer position.
+
+    Sent on its own it is a fork's whole message — the dictionaries and the
+    contract are already in the session it forked from.
+    """
+    sym = envelope["symbol"]
+    parts = [
         "━━━━━ 여기부터가 이 종목이다 ━━━━━",
         f"종목: {sym['name']} ({sym['symbol_id']})",
         f"기준일: {envelope['asof']}",
         "",
     ]
     parts += [_data_block(d) for d in envelope["domains"]]
-
     ctx = envelope.get("context") or {}
     parts += [
         "━━━━━ 도메인 밖 맥락 ━━━━━",
         "어느 사전에도 속하지 않는다 — 동종 대비 위치다.",
         "",
         f"[동종 백분위]\n{json.dumps(ctx.get('peer'), ensure_ascii=False, default=str)}",
+        "",
+        "위 순서(① 관찰 → ⑥ 좌표)로 생각하고, 계약된 JSON 한 덩이로만 답하라.",
     ]
+    return "\n".join(parts)
+
+
+def root_context(references: list[dict]) -> str:
+    """The half a whole batch shares — every dictionary, plus the contract.
+
+    Sent once into a session that each symbol then forks, so it must be
+    byte-identical across the batch: that is the only thing a prompt cache can
+    hold (measured — a message that differs anywhere shares nothing). It
+    therefore carries all three dictionaries even for a batch whose symbols
+    are missing a domain; the fork's own data block says what is missing.
+    """
+    parts = [
+        "이 세션은 종목 분석용 참고 자료다. 아래는 도메인별 해석 기준(사전)과 "
+        "출력 계약이고, **분석할 종목의 데이터는 다음 메시지로 온다.**",
+        "각 데이터 블록은 같은 `id`를 가진 사전으로 읽어라.",
+        "",
+    ]
+    parts += [_reference_block(d) for d in references]
+    parts += _contract()
+    parts += ["", "지금은 아무것도 분석하지 마라. `준비됨` 한 단어만 답하라."]
     return "\n".join(parts)

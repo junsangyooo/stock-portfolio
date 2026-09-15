@@ -46,6 +46,16 @@ def _reference(domain: str) -> str:
     return _REFS[domain].read_text(encoding="utf-8")
 
 
+DOMAINS = ("chart", "fundamental", "news")
+
+
+def references() -> list[dict]:
+    """Every domain dictionary, in prompt order — the half of the prompt that
+    does not depend on the symbol. A batch sends these once."""
+    return [{"id": d, "title_ko": _TITLE[d], "reference": _reference(d)}
+            for d in DOMAINS]
+
+
 # A gap wider than this between the last stored bar and today is a stopped
 # feed, not a holiday. It has to clear a long KR closure (설·추석 plus the
 # weekends around it) and the day `asof` loses to UTC on a KR bar, so it is

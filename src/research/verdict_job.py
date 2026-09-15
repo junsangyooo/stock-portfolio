@@ -50,7 +50,10 @@ def run_symbol(symbol_id: str, date: str, *, force: bool) -> dict:
         return out
     t0 = time.monotonic()
     try:
-        res = analyze.run(symbol_id, _name(symbol_id))
+        # One session holds the dictionaries for the whole batch; this
+        # symbol's call forks it and sends only its own data.
+        res = analyze.run(symbol_id, _name(symbol_id),
+                          root=analyze.batch_root())
         out["status"] = res.get("status", "ok")
         # A held symbol whose analysis shipped without its position is the
         # 2026-06 삼성전자 incident; the batch proves the context attached.

@@ -31,7 +31,7 @@ from .read import (                            # noqa: F401
     KIND, latest, latest_date, on, summary,
 )
 from .due import due_among, due_detail          # noqa: F401 — what changed
-from .engine import analyze as run              # noqa: F401
+from .engine import analyze as run, batch_root  # noqa: F401
 
 __all__ = ["run", "assemble", "latest", "on", "latest_date", "summary",
-           "due_among", "due_detail", "KIND"]
+           "due_among", "due_detail", "batch_root", "KIND"]
