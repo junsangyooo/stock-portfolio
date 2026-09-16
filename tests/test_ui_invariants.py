@@ -576,7 +576,7 @@ def test_label_dictionary_exported():
     js = SHARED_JS.read_text()
     m = re.search(r"const LABELS\s*=\s*\{([^}]*)\}", js)
     assert m, "shared.js defines LABELS"
-    for word in ("삭제", "취소", "확인", "저장", "닫기", "다시 분석", "정지", "재개", "전체 보기", "접기"):
+    for word in ("삭제", "취소", "확인", "저장", "닫기", "다시 분석", "가동", "끔", "전체 보기", "접기"):
         assert f"'{word}'" in m.group(1), word
     assert "제거" not in m.group(1)
     assert re.search(r"window\.S\s*=\s*\{[^}]*\bLABELS\b", js)

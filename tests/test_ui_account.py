@@ -236,3 +236,46 @@ def test_the_approval_shows_what_is_being_approved():
     assert "plan.conditions" in fn
     for word in ("'진입 '", "'손절 '", "'목표 '"):
         assert word in fn
+
+
+# ── modal bodies scroll ──────────────────────────────────────────────────
+def _css_block(name: str) -> str:
+    """Declarations of the first `.name { … }` rule."""
+    m = re.search(r"^\." + re.escape(name) + r"\s*\{([^}]*)\}", SRC, re.M)
+    return m.group(1) if m else ""
+
+
+def test_every_modal_body_can_scroll():
+    """A dialog is a flex column with `overflow: hidden`, so its body has to
+    be able to shrink (`min-height: 0`) and scroll. `.plan-body` had neither
+    and `.curve-body` had only the second half, so both lists simply grew past
+    the bottom of the screen with no way to reach them. Read per element, not
+    per class: a body that is a grid is exempt because its panes scroll on
+    their own, and that grid may come from a second class on the same tag."""
+    bad = []
+    for attr in re.findall(r'class="([^"]*)"', SRC):
+        names = attr.split()
+        if not any(n.endswith("-body") for n in names):
+            continue
+        css = " ".join(_css_block(n) for n in names)
+        if not css.strip() or "display: grid" in css:
+            continue
+        if "overflow-y: auto" not in css or "min-height: 0" not in css:
+            bad.append(f'class="{attr}" — {" ".join(css.split())[:90]}')
+    assert not bad, ("modal body that cannot scroll:\n" + "\n".join(bad)
+                     + "\n(needs `flex: 1; min-height: 0; overflow-y: auto`)")
+
+
+def test_a_scrolling_flex_item_can_shrink():
+    """`flex: 1` + `overflow-y: auto` without `min-height: 0` does not scroll:
+    a flex item refuses to shrink below its content, so the pane grows past
+    its parent and the overflow rule never fires. Four places had it — the
+    plan note, the asset curve, the chat log and the theme panel."""
+    bad = []
+    for sel, body in re.findall(r"^(\.[^{\n]+)\{([^}]*)\}", SRC, re.M):
+        css = " ".join(body.split())
+        if ("overflow-y: auto" in css and "flex: 1" in css
+                and "min-height: 0" not in css):
+            bad.append(f"{sel.strip()} — {css[:90]}")
+    assert not bad, ("scrollable flex item that cannot shrink:\n"
+                     + "\n".join(bad) + "\n(add `min-height: 0`)")

@@ -1,8 +1,9 @@
 """The paper account — same pipeline as the real one, fills in the ledger.
 
 What must hold: the bootstrap is idempotent, the two books never mix, a met
-condition fills at the plan price without a broker call, a buy the cash cannot
-cover is rejected, a stop returns the cash, and the API reads either book by
+condition fills without a broker call (an entry at the plan price, a stop at
+the price it was seen at), a buy the cash cannot cover is rejected, a stop
+returns the cash, and the API reads either book by
 `?account=` while refusing broker-only writes for the paper one.
 """
 import re
@@ -34,7 +35,7 @@ def _tmp_db(tmp_path, monkeypatch):
 
     def _no_broker(*a, **k):
         raise AssertionError(f"paper account reached the broker: {a}")
-    for fn in ("place_order", "place_conditional", "place_oco", "buyable",
+    for fn in ("place_order", "place_conditional", "buyable",
                "balance", "cancel_conditional", "conditional", "quote",
                "pending", "conditionals"):
         monkeypatch.setattr(broker, fn, _no_broker)
@@ -172,7 +173,7 @@ def test_paper_sell_beyond_holding_is_rejected():
 
 # ── (e) stop → stopped, cash back ────────────────────────────────────────
 
-def test_paper_stop_returns_the_cash_at_the_stop_price(monkeypatch):
+def test_paper_stop_returns_the_cash_at_the_observed_price(monkeypatch):
     pid = _plan(PAPER, qty=3, price=70000)
     monkeypatch.setattr(keeper, "_quote", lambda sid: 69000.0)
     keeper.run_account(PAPER)                          # entered @ 70,000
@@ -184,8 +185,8 @@ def test_paper_stop_returns_the_cash_at_the_stop_price(monkeypatch):
     assert plans.get(pid)["status"] == "stopped"
     assert store.position(PAPER, "KR:005930") is None
     sell = store.trades_recent(PAPER)[0]
-    assert sell["side"] == "sell" and sell["price"] == 60000   # stop price, not 55,000
-    assert store.cash(PAPER)["KRW"] == pytest.approx(after_buy + 180000 * (1 - 0.0015))
+    assert sell["side"] == "sell" and sell["price"] == 55000   # a market stop sells where it is
+    assert store.cash(PAPER)["KRW"] == pytest.approx(after_buy + 165000 * (1 - 0.0015))
 
 
 def test_paper_sell_clamps_to_the_holding(monkeypatch):
@@ -204,7 +205,7 @@ def test_paper_sell_clamps_to_the_holding(monkeypatch):
     assert plans.get(pid)["status"] == "stopped"
     assert store.position(PAPER, "KR:005930") is None
     sell = store.trades_recent(PAPER)[0]
-    assert sell["qty"] == 2 and sell["price"] == 60000
+    assert sell["qty"] == 2 and sell["price"] == 55000
     assert store.orders_recent(PAPER)[0]["filled_qty"] == 2
 
 

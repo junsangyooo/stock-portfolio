@@ -27,11 +27,20 @@ from .store import account_store, db
 # anything happens. The money path (quant) picks its own model.
 MODEL = SLOW_MODEL
 
+# The reasoning budget. Measured on the analysis call (2026-09-15): the
+# default spends ~4x the output tokens of `low` for an answer of the same
+# shape, but it did move the verdict. These notes are a person's reference,
+# not an order — `medium` is the middle of that trade, and the biggest book
+# here was taking 27 minutes a morning at the default.
+EFFORT = "medium"
+
 _BAD = ("llm_error", "parse_error", "incomplete")
 
 
 def _line(r: dict) -> str:
     acct = r["account_id"]
+    if r["status"] == "skipped":
+        return f"- {acct}: 건너뜀 (보유·계획·현금 없음)"
     if r["status"] != "ok":
         return f"- {acct}: **{r['status']}** {r.get('error', '')[:80]}"
     return (f"- {acct}: 추가 {r['n_add']} · 수정 {r['n_modify']} · 철회 "
@@ -58,7 +67,7 @@ def main() -> int:
         with db.connect() as conn:
             try:
                 r = planner.run(conn, account_id, slot=slot, model=MODEL,
-                                dry=args.dry)
+                                dry=args.dry, effort=EFFORT)
             except Exception as e:  # noqa: BLE001 — one account never stops the rest
                 r = {"account_id": account_id, "status": "llm_error",
                      "error": str(e)[:200]}
