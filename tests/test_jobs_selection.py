@@ -33,6 +33,7 @@ def seen_due(monkeypatch):
 @pytest.fixture
 def quant_book(monkeypatch):
     monkeypatch.setattr(qjobs, "account_ids", lambda: ["robo", "robo_paper"])
+    monkeypatch.setattr(qjobs, "active_markets", lambda a: {"KR", "US"})
     monkeypatch.setattr(qjobs, "analysis_symbols",
                         lambda a: ["KR:HELD", "KR:PLANNED"] if a == "robo"
                         else ["KR:PLANNED"])

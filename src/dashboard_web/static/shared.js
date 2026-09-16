@@ -83,7 +83,7 @@ function newsThemeIcon(id) {
 //    the word from here instead of picking a synonym (삭제, never 제거).
 const LABELS = {
   delete: '삭제', cancel: '취소', confirm: '확인', save: '저장', close: '닫기',
-  reanalyze: '다시 분석', pause: '정지', resume: '재개',
+  reanalyze: '다시 분석', marketOn: '가동', marketOff: '끔',
   approve: '승인', reject: '거절',
   showAll: '전체 보기', collapse: '접기',
 };

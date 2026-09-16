@@ -79,9 +79,9 @@ def test_cycle_phase0_survives_a_dead_shared_refresh(monkeypatch):
     assert out["auto_bars"] == 1, "the auto book still gets its bars"
 
 
-def test_a_paused_account_still_gets_its_data(monkeypatch):
-    """Paused is not off: exits are still guarded and a resume reads the
-    analysis this keeps current, so the fetch must not be skipped."""
+def test_an_account_with_its_markets_off_still_gets_its_data(monkeypatch):
+    """A disabled market is not off: its exits are still guarded and watched
+    on these prices, so the fetch must not be skipped."""
     from src.quant import cycle_job
 
     calls: list[list[str]] = []
@@ -90,11 +90,10 @@ def test_a_paused_account_still_gets_its_data(monkeypatch):
     monkeypatch.setattr(cycle_job, "run_account", lambda *a, **k: 0)
     monkeypatch.setattr(cycle_job.store, "account_ids", lambda: ["robo"])
     monkeypatch.setattr(cycle_job.store, "trade_mode", lambda a: "live")
-    monkeypatch.setattr(cycle_job.store, "is_paused", lambda a: True)
     monkeypatch.setattr(cycle_job.store, "tracked_symbols", lambda a: [])
 
     cycle_job.run_cycle("evening")
-    assert calls == [["robo"]], "a paused account's data must still refresh"
+    assert calls == [["robo"]], "a market-off account's data must still refresh"
 
 
 def test_the_kill_switch_still_skips_the_fetch(monkeypatch):
@@ -106,7 +105,6 @@ def test_the_kill_switch_still_skips_the_fetch(monkeypatch):
     monkeypatch.setattr(cycle_job, "run_account", lambda *a, **k: 0)
     monkeypatch.setattr(cycle_job.store, "account_ids", lambda: ["robo"])
     monkeypatch.setattr(cycle_job.store, "trade_mode", lambda a: "off")
-    monkeypatch.setattr(cycle_job.store, "is_paused", lambda a: False)
     monkeypatch.setattr(cycle_job.store, "tracked_symbols", lambda a: [])
 
     cycle_job.run_cycle("evening")
@@ -234,7 +232,6 @@ def test_phase0_log_line_shows_the_auto_counters(monkeypatch, capsys):
     monkeypatch.setattr(cycle_job, "run_account", lambda *a, **k: 0)
     monkeypatch.setattr(cycle_job.store, "account_ids", lambda: ["robo"])
     monkeypatch.setattr(cycle_job.store, "trade_mode", lambda a: "live")
-    monkeypatch.setattr(cycle_job.store, "is_paused", lambda a: False)
     monkeypatch.setattr(cycle_job.store, "tracked_symbols", lambda a: [])
 
     cycle_job.run_cycle("evening")
@@ -253,7 +250,6 @@ def test_phase0_log_line_names_a_failed_symbol(monkeypatch, capsys):
     monkeypatch.setattr(cycle_job, "run_account", lambda *a, **k: 0)
     monkeypatch.setattr(cycle_job.store, "account_ids", lambda: ["robo"])
     monkeypatch.setattr(cycle_job.store, "trade_mode", lambda a: "live")
-    monkeypatch.setattr(cycle_job.store, "is_paused", lambda a: False)
     monkeypatch.setattr(cycle_job.store, "tracked_symbols", lambda a: [])
 
     cycle_job.run_cycle("evening")

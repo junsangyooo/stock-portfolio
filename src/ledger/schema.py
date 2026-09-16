@@ -38,8 +38,6 @@ CREATE TABLE IF NOT EXISTS accounts (
   base_currency  TEXT NOT NULL DEFAULT 'KRW',
   pin_hash       TEXT,                  -- secret-salted sha256 of a 6-digit PIN
   mode           INTEGER,               -- auto only: 1 off | 2 dry-run | 3 live
-  paused_at      INTEGER,               -- auto only: NULL = running; set = no
-                                        -- new entries, exits still guarded
   sort_order     INTEGER NOT NULL DEFAULT 0,
   note           TEXT,
   created_at     INTEGER NOT NULL
@@ -197,7 +195,6 @@ INDEXES = """\nCREATE INDEX IF NOT EXISTS idx_holdings_symbol ON holdings(symbol
 _ADDED = {
     "accounts": [("kind", "TEXT NOT NULL DEFAULT 'human'"),
                  ("account_type", "TEXT"), ("mode", "INTEGER"),
-                 ("paused_at", "INTEGER"),
                  ("sort_order", "INTEGER NOT NULL DEFAULT 0")],
     "holdings": [("name", "TEXT"), ("currency", "TEXT"),
                  ("entry_plan_id", "INTEGER"), ("entry_rationale", "TEXT"),
