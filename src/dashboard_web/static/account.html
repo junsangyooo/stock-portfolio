@@ -1317,7 +1317,9 @@ body.chat-open .chat-panel { transform: translateX(0); }
 }
 .chat-threads .btn { white-space: nowrap; }
 .chat-log {
-  flex: 1; overflow-y: auto;
+  /* min-height: 0 — a flex item will not shrink below its content,
+     so without it the log grows past the pane instead of scrolling. */
+  flex: 1; min-height: 0; overflow-y: auto;
   padding: var(--space-3); display: flex; flex-direction: column; gap: 10px;
 }
 .chat-msg {
@@ -1419,7 +1421,7 @@ body.chat-open .chat-panel { transform: translateX(0); }
   background: var(--bg); border: 1px solid var(--line); color: var(--fg);
   font: inherit; font-size: var(--text-sm); padding: var(--space-1) var(--space-2);
 }
-.th-list { flex: 1; overflow-y: auto; padding: 0 var(--space-4) var(--space-4); }
+.th-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--space-4) var(--space-4); }
 /* ── 계좌×종목 모달: "이 계좌에서 이 종목을 오늘 어떻게 볼 것인가" ── */
 .psm-sec { border-top: 1px solid var(--line); padding: var(--space-3) 0; }
 .psm-sec:first-child { border-top: 0; }

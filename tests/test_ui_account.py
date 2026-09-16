@@ -264,3 +264,18 @@ def test_every_modal_body_can_scroll():
             bad.append(f'class="{attr}" — {" ".join(css.split())[:90]}')
     assert not bad, ("modal body that cannot scroll:\n" + "\n".join(bad)
                      + "\n(needs `flex: 1; min-height: 0; overflow-y: auto`)")
+
+
+def test_a_scrolling_flex_item_can_shrink():
+    """`flex: 1` + `overflow-y: auto` without `min-height: 0` does not scroll:
+    a flex item refuses to shrink below its content, so the pane grows past
+    its parent and the overflow rule never fires. Four places had it — the
+    plan note, the asset curve, the chat log and the theme panel."""
+    bad = []
+    for sel, body in re.findall(r"^(\.[^{\n]+)\{([^}]*)\}", SRC, re.M):
+        css = " ".join(body.split())
+        if ("overflow-y: auto" in css and "flex: 1" in css
+                and "min-height: 0" not in css):
+            bad.append(f"{sel.strip()} — {css[:90]}")
+    assert not bad, ("scrollable flex item that cannot shrink:\n"
+                     + "\n".join(bad) + "\n(add `min-height: 0`)")
