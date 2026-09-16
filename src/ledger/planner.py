@@ -707,12 +707,16 @@ def _record(conn: sqlite3.Connection, account_id: str, *, day: str, slot: str,
 
 def run(conn: sqlite3.Connection, account_id: str, *, slot: str,
         model: str = SLOW_MODEL, dry: bool = False,
-        today: str | None = None) -> dict:
+        today: str | None = None, effort: str | None = None) -> dict:
     """One pass over one account. Never raises: every outcome is a row.
 
     `dry` writes the run but not the plans — the preview button. A `manual`
     slot always re-runs and replaces its row; `morning` is written once a day,
     so a re-run after a crash resumes rather than re-judging.
+
+    `effort` is the CLI's reasoning budget. An empty book is skipped before
+    the call: with nothing held, nothing planned and no cash there is no
+    diff to write, and a row saying so is cheaper than a model saying it.
     """
     day = today or _kst_today()
     done = conn.execute(
@@ -733,6 +737,12 @@ def run(conn: sqlite3.Connection, account_id: str, *, slot: str,
 
     ctx = context.build(conn, account_id, today=day)
     payload = USER_PLAN + context.as_json(ctx)
+    if not (ctx["holdings"] or ctx["watch"] or ctx["plans"]
+            or any((t or {}).get("cash") for t in ctx["totals"].values())):
+        _record(conn, account_id, day=day, slot=slot, status="skipped",
+                model=model, elapsed=0.0, ctx_chars=len(payload))
+        return {"status": "skipped", "account_id": account_id, "date": day,
+                "slot": slot, "elapsed_s": 0.0}
     out = {"status": None, "account_id": account_id, "date": day, "slot": slot}
     t0 = time.monotonic()
 
@@ -740,8 +750,9 @@ def run(conn: sqlite3.Connection, account_id: str, *, slot: str,
     status = "llm_error"
     for attempt in (1, 2):
         try:
-            text = ClaudeCliBackend(model, stage="plan").call(SYSTEM_PLAN,
-                                                             payload)
+            text = ClaudeCliBackend(model, stage="plan").call(
+                SYSTEM_PLAN, payload,
+                extra_args=["--effort", effort] if effort else None)
         except Exception as e:  # noqa: BLE001 — a dead CLI is a run outcome
             out["error"] = str(e)[:200]
             status = "llm_error"

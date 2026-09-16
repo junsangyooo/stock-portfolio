@@ -133,4 +133,5 @@ def test_dry_runs_the_manual_slot(book, monkeypatch):
     monkeypatch.setattr(planner_job.discord, "send", lambda t, **k: True)
     monkeypatch.setattr("sys.argv", ["planner_job", "--dry", "--account", "isa"])
     assert planner_job.main() == 0
-    assert seen == [{"slot": "manual", "model": planner_job.MODEL, "dry": True}]
+    assert seen == [{"slot": "manual", "model": planner_job.MODEL,
+                     "dry": True, "effort": planner_job.EFFORT}]

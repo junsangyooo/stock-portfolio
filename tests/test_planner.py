@@ -765,3 +765,45 @@ def test_a_short_answer_with_no_json_still_gets_its_retry(book, monkeypatch):
     calls = _answer(monkeypatch, "미안, JSON을 빠뜨렸다", _doc())
     r = planner.run(book, "acc", slot="morning", model="m", today=TODAY)
     assert r["status"] == "ok" and len(calls) == 2
+
+
+# ── an empty book is not worth a call ─────────────────────────────────────
+
+def test_a_book_with_nothing_in_it_is_skipped_before_the_call(book, monkeypatch):
+    """No holdings, no watch, no plans, no cash — there is no diff to write,
+    and a row saying so is cheaper than a model saying it."""
+    book.execute("DELETE FROM holdings")
+    book.execute("DELETE FROM plans")
+    book.execute("DELETE FROM cash")
+    book.commit()
+    calls = _answer(monkeypatch, _doc())
+    r = planner.run(book, "acc", slot="morning", model="m", today=TODAY)
+    assert r["status"] == "skipped" and calls == []
+    row = book.execute("SELECT status, context_chars FROM plan_runs"
+                       " WHERE date = ?", (TODAY,)).fetchone()
+    assert row[0] == "skipped" and row[1] > 0      # the row says what was seen
+
+
+def test_cash_alone_is_reason_enough_to_look(book, monkeypatch):
+    """Money with nothing bought is exactly when a new entry gets proposed."""
+    book.execute("DELETE FROM holdings")
+    book.execute("DELETE FROM plans")
+    book.commit()
+    calls = _answer(monkeypatch, _doc(keep=[], suggest=[], notes_by_symbol={}))
+    r = planner.run(book, "acc", slot="morning", model="m", today=TODAY)
+    assert r["status"] != "skipped" and len(calls) == 1
+
+
+def test_the_reasoning_budget_reaches_the_cli(book, monkeypatch):
+    seen = {}
+
+    def _call(self, system, user, model=None, extra_args=None):
+        seen["extra"] = extra_args
+        return "```json\n" + json.dumps(_doc(), ensure_ascii=False) + "\n```"
+
+    monkeypatch.setattr(llm_backend.ClaudeCliBackend, "call", _call)
+    monkeypatch.setattr(llm_backend.ClaudeCliBackend, "__init__",
+                        lambda self, model=None, stage="?": None)
+    planner.run(book, "acc", slot="morning", model="m", today=TODAY,
+                effort="medium")
+    assert seen["extra"] == ["--effort", "medium"]
