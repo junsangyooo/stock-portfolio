@@ -2548,14 +2548,16 @@ async function renderAll() {
   loadAnalysisBadges();
 }
 
-// GET /api/analysis/summary 1번으로 전 종목 배지 채움 (카드 25개가 각각 fan-out 금지)
-async function loadAnalysisBadges() {
-  if (!STOCKS.length) return;
+// GET /api/analysis/summary 1번으로 전 종목 배지 + 좌표 줄 채움 (카드 25개가 각각 fan-out 금지).
+// only = 종목 하나 — 「다시 분석」이 끝난 카드를 새로고침과 같은 경로로 다시 그린다.
+async function loadAnalysisBadges(only) {
+  const list = only ? STOCKS.filter(s => s.symbolId === only) : STOCKS;
+  if (!list.length) return;
   try {
-    const ids = STOCKS.map(s => s.symbolId).join(',');
+    const ids = list.map(s => s.symbolId).join(',');
     const d = await S.api(API.analysisSummary(ids));
     const map = (d && d.symbols) || {};
-    STOCKS.forEach(s => {
+    list.forEach(s => {
       const entry = map[s.symbolId] || map[s.symbolId.toUpperCase()];
       window._setAnalysisBadge(s.symbolId, entry || null);
       const line = window._coordLineEls[s.symbolId];
@@ -3358,8 +3360,12 @@ window.openTradeHistory = async function () {
     const prog = makeJobProgress('종합 분석');
     pane.appendChild(prog.root);
     window._setAnalysisBadge(sym, { running: true });
+    // 새 판정을 바로 보이고, 이어서 배지·좌표 줄을 새로고침과 같은 summary 한 번으로
+    // 다시 그린다 — 모달을 닫았거나 다른 종목을 보고 있어도 카드가 최신이 된다.
     const finish = (body, date) => {
-      window._setAnalysisBadge(sym, { label: body.label, date: date || body.date });
+      window._setAnalysisBadge(sym, { label: body.label, status: body.status,
+                                      date: date || body.date });
+      loadAnalysisBadges(sym);
     };
     const common = {
       sym,
@@ -3369,7 +3375,7 @@ window.openTradeHistory = async function () {
       onProgress: prog.update,
       onError: (m) => {
         clear(pane);
-        loadAnalysisBadges();   // 실행 전 배지 상태로 복원
+        loadAnalysisBadges(sym);   // 실행 전 배지·좌표 줄로 복원
         pane.appendChild(el('div', { className: 'ca-empty' },
           ['종합 분석 실패: ' + m + ' — 상단 「다시 분석」으로 다시 시도하세요.']));
       },

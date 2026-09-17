@@ -191,6 +191,24 @@ def test_card_coord_line_fills_in_place_from_the_summary_batch():
     assert "line.hidden = !line.textContent" in loader and "renderCard" not in loader
 
 
+def test_a_rerun_redraws_the_card_the_way_a_reload_would():
+    """「다시 분석」 finishing must leave the card exactly as the next page load
+    would: badge (facts_only included) and coordinate line from the same
+    summary request, for that one symbol — whether the modal is still on it
+    or the user moved on."""
+    fn = SRC[SRC.index("function watchAnalysisJob("):]
+    fn = fn[:fn.index("\n  }\n")]
+    finish = fn[fn.index("const finish ="):]
+    finish = finish[:finish.index("};")]
+    assert "status: body.status" in finish, "a facts_only result must not hide the badge"
+    assert "loadAnalysisBadges(sym)" in finish
+    assert "onBackgroundDone: finish" in fn
+    assert "loadAnalysisBadges(sym)" in fn[fn.index("onError"):], "a failed run restores that card"
+    loader = SRC[SRC.index("async function loadAnalysisBadges"):]
+    loader = loader[:loader.index("\n}\n")]
+    assert "loadAnalysisBadges(only)" in loader and "only" in loader
+
+
 def test_modal_coord_line_sits_next_to_the_hint():
     fn = SRC[SRC.index("function renderAnalysis(pane, body, date)"):]
     fn = fn[:fn.index("// ── 자세히 보기")]
