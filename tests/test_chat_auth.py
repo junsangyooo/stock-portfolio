@@ -22,8 +22,6 @@ from src.portfolio.store import account_store, db as pdb
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(pdb, "DB_PATH", str(tmp_path / "chat.db"))
     monkeypatch.setattr(pdb, "_initialized", False)
-    monkeypatch.setattr(security, "_SECRET_PATH", tmp_path / ".session_secret",
-                        raising=False)
     monkeypatch.setattr(chat, "_jobs", {})
     # No CLI transcript on disk in tests → every turn is a first turn unless a
     # case says otherwise.

@@ -22,7 +22,8 @@ from src.research.llm_backend import ClaudeCliBackend
 
 @pytest.fixture(autouse=True)
 def temp_books(tmp_path, monkeypatch):
-    """Fresh empty market.db, news.db and analysis tree per test."""
+    """Fresh empty books (market, news, portfolio, quant), analysis tree and
+    session secret per test."""
     monkeypatch.setattr(paths, "MARKET_DB_PATH", tmp_path / "market.db")
     monkeypatch.setattr(paths, "NEWS_DB_PATH", tmp_path / "news.db")
     # Stored analyses are read by existence (analyze.read globs the folder), so
@@ -34,6 +35,26 @@ def temp_books(tmp_path, monkeypatch):
     # the server would otherwise append rows for calls nobody made.
     monkeypatch.setattr(paths, "LOGS_DIR", tmp_path / "logs")
     monkeypatch.setattr(paths, "ensure_dirs", lambda: None)
+    # The two account books and the session secret are bound when their own
+    # modules import, so they are redirected there. Without it a test that
+    # opened the app wrote data/portfolio.db and read or wrote
+    # data/.session_secret — on the server, the live ones.
+    from src.core import security
+    from src.market.store import quote_store
+    from src.portfolio.store import db as pdb
+    from src.quant import db as qdb
+    from src.research import verdict_job
+    from src.universe import builder
+    for mod, attr, name in ((pdb, "DB_PATH", "portfolio.db"),
+                            (qdb, "QUANT_DB_PATH", "quant.db")):
+        monkeypatch.setattr(mod, attr, tmp_path / name)
+        monkeypatch.setattr(mod, "_initialized", False)
+    # …and every module that imported ensure_dirs by name, which otherwise
+    # still creates the real data/ tree.
+    for mod in (pdb, qdb, quote_store, verdict_job, builder):
+        monkeypatch.setattr(mod, "ensure_dirs", lambda: None)
+    monkeypatch.setattr(security, "_SECRET_FILE", tmp_path / ".session_secret")
+    monkeypatch.setattr(security, "_secret_cache", None)
     return tmp_path
 
 

@@ -19,8 +19,6 @@ from src.portfolio.store import (
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(pdb, "DB_PATH", str(tmp_path / "trades.db"))
     monkeypatch.setattr(pdb, "_initialized", False)
-    monkeypatch.setattr(security, "_SECRET_PATH", tmp_path / ".session_secret",
-                        raising=False)
     monkeypatch.setattr(portfolio_api.uni_search, "get", lambda sid: {
         "currency": "USD" if sid.startswith("US:") else "KRW",
         "name_kr": "이름 " + sid, "market": sid.split(":")[0]})

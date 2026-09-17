@@ -34,7 +34,7 @@ def _secret() -> bytes:
     if _SECRET_FILE.exists():
         _secret_cache = _SECRET_FILE.read_bytes()
         return _secret_cache
-    DATA.mkdir(parents=True, exist_ok=True)
+    _SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
     s = secrets.token_bytes(32)
     _SECRET_FILE.write_bytes(s)
     try:
