@@ -10,7 +10,7 @@ never "how old is it".
       the day someone last backfilled by hand and valuation — derived from
       those bars — stopped with them
   [1] quote_store.get() with no ceiling handed out prices up to 108 days old
-      to the planner, to the account valuation and to the cockpit
+      to the account valuation and to the cockpit
   [2] the chart input checked bar COUNT, never bar DATE, so an analysis
       computed on stale bars went out stamped with today and status ok
   [3] an account with no `cash` row read as an account with no money, so a
@@ -139,7 +139,6 @@ def test_the_ceiling_clears_a_long_holiday(_clean_quotes):
 
 
 @pytest.mark.parametrize("module,attr", [
-    ("src.ledger.context", None),
     ("src.portfolio.service", None),
     ("src.quant.service", None),
     ("src.api.quant", None),

@@ -210,16 +210,12 @@ def test_account_page_has_one_analysis_run_trigger():
     """The only thing that starts an analysis job is the modal header's
     「다시 분석」. Per-domain runs are gone from the server (B7), and a second
     button in an empty/error state re-created the double-run bug.
-
-    The account's own plan preview (/plan_runs/run) is a different job on a
-    different registry key, so it is excluded by name rather than by counting
-    every path that happens to end in /run.
     """
     src = ACCOUNT.read_text()
     assert "runChartAnalysis" not in src
     assert "watchChartJob" not in src
     assert len(re.findall(r"API\.runAnalysis\(", src)) == 1
-    starts = [m for m in re.findall(r"[\w/]*/run'", src) if "plan_runs" not in m]
+    starts = re.findall(r"[\w/]*/run'", src)
     assert len(starts) == 1, starts
     assert "['다시 시도']" not in src and "전체 분석 실행" not in src
 
@@ -263,7 +259,7 @@ def test_account_page_trade_flow_uses_trades_route():
     body = src[src.index("async function submit() {\n    if (!currentStock) return;"):]
     body = body[:body.index("// edit — a direct correction")]
     assert "d.holding.removed" in body
-    assert "plan_id" in body
+    assert "plan_id" not in body
     for gone in ("API.removeHolding(", "API.addHolding("):
         assert gone not in body, gone
 
@@ -441,7 +437,7 @@ def test_ohlcv_and_analysis_fetches_fail_loudly():
     src = ACCOUNT.read_text()
     for call in ("API.ohlcv(", "API.quotes(need", "API.analysisSummary(",
                  "API.analysisStatus(", "API.snapshots(", "API.reorderHoldings(",
-                 "API.marketRefresh(", "API.plans(", "API.analysisResult(",
+                 "API.marketRefresh(", "API.analysisResult(",
                  "API.chartAnalysis(", "API.newsSignals(", "API.fundamentalFacts(",
                  "API.balances(", "API.listAccounts(", "API.search("):
         assert re.search(r"S\.api\(\s*" + re.escape(call), src), call

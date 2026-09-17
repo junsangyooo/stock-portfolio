@@ -23,14 +23,13 @@ import subprocess
 import sys
 
 from .store.holding_store import all_symbol_ids
-from .store.plan_store import all_active_symbol_ids
 
 
-# The reasoning budget for a symbol nothing is waiting on. Measured on
-# US:DHT (2026-09-15): the default spent 21,945 output tokens, `low` spent
-# 5,448 for an answer of the same shape — most of the default budget is
-# thinking that never reaches the stored result. A symbol carrying a live
-# plan keeps the default: that is where a changed stop moves money.
+# The reasoning budget for this book's analyses. Measured on US:DHT
+# (2026-09-15): the default spent 21,945 output tokens, `low` spent 5,448 for
+# an answer of the same shape — most of the default budget is thinking that
+# never reaches the stored result. Nothing in this book is an order (a person
+# decides and trades), so no symbol is `--hot`.
 LOW_EFFORT = "low"
 
 
@@ -40,20 +39,19 @@ def held() -> list[str]:
 
 
 def to_analyze(*, force: bool = False) -> list[str]:
-    """The symbols an analysis call is spent on today — held or under a live
-    plan, and only those something changed on.
+    """The symbols an analysis call is spent on today — held, and only those
+    something changed on.
 
     What counts as change is decided by `analyze.due_among` from stored market
-    data (a price through a coordinate, a new filing, a naming article, a 5%
-    move, age). This book only says which symbols it cares about and which of
-    them carry a plan, so the shared layer never reads an account.
+    data (a price crossing a coordinate since the analysis, a new filing, a
+    naming article, a 5% move, age). This book only says which symbols it
+    cares about, so the shared layer never reads an account.
     """
     from ..research import analyze
-    active = all_active_symbol_ids()
-    symbols = sorted(set(held()) | set(active))
+    symbols = held()
     if force:
         return symbols
-    rows = analyze.due_detail(symbols, hot=active)
+    rows = analyze.due_detail(symbols)
     for r in rows:
         print(f"  due {r['symbol_id']}: {r['reason']} — {r['detail']}",
               file=sys.stderr)
@@ -91,8 +89,7 @@ def main() -> int:
         "fundamental": ("src.market.pipeline.fundamental_job", [], held),
         "etf": ("src.market.pipeline.etf_job", [], held),
         "analysis": ("src.research.verdict_job",
-                     extra + ["--effort", LOW_EFFORT,
-                              "--hot", ",".join(all_active_symbol_ids())],
+                     extra + ["--effort", LOW_EFFORT],
                      lambda: to_analyze(force=args.force)),
     }
     todo = list(jobs) if args.job == "all" else [args.job]

@@ -1,6 +1,6 @@
 """거래 기록 — POST /api/accounts/{id}/trades writes a `trades` row and, in
-the same transaction, moves holdings (qty · weighted avg), cash and the
-linked plan (ops notes §3.1: a trade row is what transitions plan.status).
+the same transaction, moves holdings (qty · weighted avg) and cash
+(ops notes §3.1). The human book keeps no plans.
 
 The SQLite DB is redirected to a tmp file so tests never touch data/.
 """
@@ -11,8 +11,7 @@ from fastapi.testclient import TestClient
 from src.api import portfolio_api
 from src.core import security
 from src.portfolio.store import (
-    account_store, balance_store, db as pdb, holding_store, plan_store,
-    trade_store,
+    account_store, balance_store, db as pdb, holding_store, trade_store,
 )
 
 
@@ -113,35 +112,14 @@ def test_us_symbol_settles_usd(client):
     assert balance_store.get_all("alice") == {"USD": 4000}
 
 
-def test_entry_rationale_written_once(client):
-    """entry_* is written when the position opens and never overwritten."""
-    p = plan_store.create("alice", symbol_id="KR:005930", name="삼성전자",
-                          side="buy", price=70000, qty=10, note="첫 이유")
-    _trade(client, plan_id=p["plan_id"])
-    assert _holding()["entry_rationale"] == "첫 이유"
-    assert _holding()["entry_plan_id"] == p["plan_id"]
-    p2 = plan_store.create("alice", symbol_id="KR:005930", name="삼성전자",
-                           side="buy", price=60000, qty=10, note="두번째")
-    _trade(client, plan_id=p2["plan_id"])
-    assert _holding()["entry_rationale"] == "첫 이유"
-    assert _holding()["entry_plan_id"] == p["plan_id"]
-
-
 def test_buy_after_full_sell_creates_a_fresh_row(client):
-    """The sell-out took the row with it, so the next buy opens a new card
-    carrying the new plan's context, not the closed-out one's."""
-    p = plan_store.create("alice", symbol_id="KR:005930", name="삼성전자",
-                          side="buy", price=70000, qty=10, note="첫 이유")
-    _trade(client, plan_id=p["plan_id"])
+    """The sell-out took the row with it, so the next buy opens a new card."""
+    _trade(client)
     _trade(client, side="sell", qty=10, price=71000)
     assert holding_store.list_by_account("alice") == []
-    p2 = plan_store.create("alice", symbol_id="KR:005930", name="삼성전자",
-                           side="buy", price=60000, qty=5, note="두번째 이유")
-    _trade(client, plan_id=p2["plan_id"], qty=5, price=60000)
+    _trade(client, qty=5, price=60000)
     h = _holding()
     assert h["qty"] == 5 and h["avg_cost"] == 60000
-    assert h["entry_rationale"] == "두번째 이유"
-    assert h["entry_plan_id"] == p2["plan_id"]
 
 
 # ── validation ────────────────────────────────────────────────────────
@@ -152,107 +130,12 @@ def test_bad_input_400(client, bad):
     assert _trade(client, **bad).status_code == 400
 
 
-# ── plan transitions ──────────────────────────────────────────────────
-
-def _plan(aid="alice", **kw):
-    b = dict(symbol_id="KR:005930", name="삼성전자", side="buy",
-             price=70000, qty=10)
-    b.update(kw)
-    return plan_store.create(aid, **b)
-
-
-def test_buy_transitions_single_armed_plan(client):
-    p = _plan()
-    d = _trade(client).json()
-    assert d["plan"]["plan_id"] == p["plan_id"]
-    assert d["plan"]["status"] == "entered"
-    assert plan_store.get("alice", p["plan_id"])["status"] == "entered"
-    assert d["plan_candidates"] == []
-
-
-def test_full_sell_moves_entered_plan_to_done_partial_keeps(client):
-    p = _plan()
-    _trade(client, qty=10)                                   # → entered
-    d = _trade(client, side="sell", qty=4, price=80000).json()
-    # the partial exit is linked to the plan (its history), status unchanged
-    assert d["plan"]["status"] == "entered" and d["trade"]["plan_id"] == p["plan_id"]
-    assert plan_store.get("alice", p["plan_id"])["status"] == "entered"
-    d = _trade(client, side="sell", qty=6, price=80000).json()
-    assert d["plan"]["status"] == "done"
-    assert plan_store.get("alice", p["plan_id"])["status"] == "done"
-    assert [t["plan_id"] for t in trade_store.list_by_account("alice")] == [p["plan_id"]] * 3
-
-
-def test_explicit_plan_must_take_the_trade(client):
-    """An explicit plan_id is checked with the same predicate as the auto
-    match: an armed BUY plan is not closed by a sell."""
-    p = _plan()                                                # armed buy
-    holding_store.upsert("alice", "KR:005930", avg_cost=70000, qty=10)
-    r = _trade(client, side="sell", qty=10, price=80000, plan_id=p["plan_id"])
-    assert r.status_code == 400 and "does not take" in r.text
-    assert plan_store.get("alice", p["plan_id"])["status"] == "armed"
-    assert trade_store.list_by_account("alice") == []          # nothing written
-
-
 def test_float_dust_sell_is_flat(client):
     holding_store.upsert("alice", "US:AAPL", avg_cost=100, qty=0.1 + 0.2)   # 0.30000000000000004
     r = _trade(client, symbol_id="US:AAPL", side="sell", qty=0.3, price=200)
     assert r.status_code == 200, r.text
     assert r.json()["holding"] == {"qty": 0, "avg_cost": None, "removed": True}
 
-
-def test_sell_plan_done_on_full_sell(client):
-    _trade(client, qty=10)
-    p = _plan(side="sell", price=80000)
-    d = _trade(client, side="sell", qty=10, price=80000).json()
-    assert d["plan"]["plan_id"] == p["plan_id"]
-    assert plan_store.get("alice", p["plan_id"])["status"] == "done"
-
-
-def test_sell_with_only_armed_buy_plan_transitions_nothing(client):
-    holding_store.upsert("alice", "KR:005930", avg_cost=70000, qty=10)
-    p = _plan()
-    d = _trade(client, side="sell", qty=10, price=80000).json()
-    assert d["plan"] is None and d["plan_candidates"] == []
-    assert plan_store.get("alice", p["plan_id"])["status"] == "armed"
-
-
-def test_two_candidates_transition_nothing_and_list_them(client):
-    a, b = _plan(), _plan(price=65000)
-    r = _trade(client)
-    assert r.status_code == 200, r.text
-    d = r.json()
-    assert d["plan"] is None
-    assert sorted(d["plan_candidates"]) == sorted([a["plan_id"], b["plan_id"]])
-    assert all(plan_store.get("alice", p["plan_id"])["status"] == "armed"
-               for p in (a, b))
-    assert _holding()["qty"] == 10                          # trade still recorded
-
-
-def test_explicit_plan_id_wins_over_ambiguity(client):
-    a, b = _plan(), _plan(price=65000)
-    d = _trade(client, plan_id=b["plan_id"]).json()
-    assert d["plan"]["plan_id"] == b["plan_id"]
-    assert plan_store.get("alice", a["plan_id"])["status"] == "armed"
-    assert plan_store.get("alice", b["plan_id"])["status"] == "entered"
-
-
-def test_plan_symbol_mismatch_400(client):
-    p = _plan(symbol_id="KR:000660", name="하이닉스")
-    r = _trade(client, plan_id=p["plan_id"])
-    assert r.status_code == 400
-    assert trade_store.list_by_account("alice") == []
-
-
-def test_other_accounts_plan_rejected(client):
-    p = _plan(aid="bob")
-    r = _trade(client, plan_id=p["plan_id"])
-    assert r.status_code == 404
-    assert trade_store.list_by_account("alice") == []
-    assert plan_store.get("bob", p["plan_id"])["status"] == "armed"
-
-
-# ── auth ──────────────────────────────────────────────────────────────
 
 def test_wrong_account_cookie_403(client):
     r = client.post("/api/accounts/alice/trades",
@@ -301,14 +184,43 @@ def test_partial_sell_keeps_the_row(client):
 
 def test_buy_onto_a_watch_row_opens_it(client):
     """A qty-0 watch row (added without a trade) becomes a position on the
-    first buy and takes that buy's plan as its entry context."""
+    first buy and keeps its note."""
     holding_store.upsert("alice", "KR:005930", note="지켜보는 중")
-    p = _plan()
-    r = _trade(client, plan_id=p["plan_id"])
+    r = _trade(client)
     assert r.status_code == 200, r.text
     h = _holding()
     assert h["qty"] == 10 and h["note"] == "지켜보는 중"
-    assert h["entry_plan_id"] == p["plan_id"]
+
+
+def test_a_trade_answers_without_plan_fields_and_ignores_a_plan_id(client):
+    d = _trade(client, plan_id=7).json()
+    assert "plan" not in d and "plan_candidates" not in d
+    assert d["trade"]["plan_id"] is None
+
+
+def test_an_old_book_loses_its_plans_once(tmp_path, monkeypatch):
+    """A portfolio.db from when this book wrote plans: plans, passes and the
+    plan links on holdings and trades go on first open; later rows stay."""
+    import sqlite3
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path)
+    from src.ledger import apply as apply_ledger
+    apply_ledger(conn)
+    conn.execute("CREATE TABLE plan_runs (run_id INTEGER PRIMARY KEY)")
+    conn.execute("INSERT INTO accounts (account_id, name, created_at) VALUES ('a', 'a', 0)")
+    conn.execute("INSERT INTO plans (account_id, symbol_id, name, side, price, qty,"
+                 " status, created_at, updated_at) VALUES ('a','KR:1','x','buy',1,1,'proposed',0,0)")
+    conn.execute("INSERT INTO holdings (account_id, symbol_id, qty, entry_plan_id,"
+                 " entry_rationale, added_at, updated_at) VALUES ('a','KR:1',1,1,'노트',0,0)")
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(pdb, "DB_PATH", str(path))
+    monkeypatch.setattr(pdb, "_initialized", False)
+    with pdb.connect() as c:
+        assert c.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 0
+        assert c.execute("SELECT name FROM sqlite_master WHERE name = 'plan_runs'").fetchone() is None
+        h = c.execute("SELECT entry_plan_id, entry_rationale FROM holdings").fetchone()
+        assert tuple(h) == (None, None)
 
 
 # ── trade history filters ─────────────────────────────────────────────
@@ -401,16 +313,3 @@ def test_record_holds_the_write_lock_from_the_first_read(tmp_path, monkeypatch):
     other.rollback()
     assert _holding()["qty"] == 10 and "KRW" not in balance_store.get_all("alice")
 
-
-# ── plan status by hand ────────────────────────────────────────────────
-
-def test_plan_status_patch_for_the_persons_own_exits(client):
-    pid = plan_store.create("alice", symbol_id="KR:005930", name="n", side="buy",
-                            price=70000, qty=10, note="")["plan_id"]
-    r = client.patch(f"/api/accounts/alice/plans/{pid}", json={"status": "abandoned"},
-                     cookies=_cookie())
-    assert r.status_code == 200, r.text
-    assert r.json()["plan"]["status"] == "abandoned"
-    r = client.patch(f"/api/accounts/alice/plans/{pid}", json={"status": "stopped"},
-                     cookies=_cookie())
-    assert r.status_code == 400                    # quant vocabulary, not a person's

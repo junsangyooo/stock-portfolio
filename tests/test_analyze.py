@@ -277,6 +277,20 @@ def test_summary_answers_for_every_symbol_asked(stored):
     assert got["KR:000000"]["date"] is None
 
 
+def test_summary_carries_the_coordinates_a_card_reads(stored, tmp_path):
+    """The human book keeps no plans: a card states the analysis's own stop,
+    target and entry zone against the holding, so the batch carries them."""
+    (tmp_path / "analysis" / "KR_005930" / "20260903.json").write_text(json.dumps({
+        "date": "2026-09-03", "label": "sell", "status": "ok",
+        "levels": {"current": 7520, "invalidation": {"price": 7930},
+                   "targets": [{"price": 6563}, {"price": 6000}],
+                   "entry_zone": {"low": 7000, "high": 7100}}}), encoding="utf-8")
+    got = stored.summary(["KR:005930", "KR:000000"])
+    assert got["KR:005930"]["coords"] == {"stop": 7930, "target": 6563,
+                                          "entry_low": 7000, "entry_high": 7100}
+    assert got["KR:000000"]["coords"] is None
+
+
 def test_the_package_exposes_one_entry_point():
     """A caller should not have to know which file a function lives in."""
     from src.research import analyze

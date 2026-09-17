@@ -97,7 +97,7 @@ def on(symbol_id: str, date: str) -> Optional[dict]:
 
 
 def summary(symbol_ids: Iterable[str]) -> dict:
-    """{symbol_id: {label, score, confidence, status, summary_ko, date}}.
+    """{symbol_id: {label, score, confidence, status, summary_ko, date, coords}}.
 
     Symbols with nothing stored appear with `date: None` rather than being
     dropped — a caller asking about twenty symbols wants twenty answers, and
@@ -107,9 +107,20 @@ def summary(symbol_ids: Iterable[str]) -> dict:
     for sid in symbol_ids:
         body = latest(sid)
         if body is None:
-            out[sid] = {"date": None,
+            out[sid] = {"date": None, "coords": None,
                         **{f: None for f in _SUMMARY_FIELDS}}
             continue
-        out[sid] = {"date": body.get("date"),
+        out[sid] = {"date": body.get("date"), "coords": _coords(body),
                     **{f: body.get(f) for f in _SUMMARY_FIELDS}}
     return out
+
+
+def _coords(body: dict) -> dict:
+    """The analysis's own stop, first target and entry zone — what a card
+    states against a holding in place of a plan. Missing ones are None."""
+    lv = body.get("levels") or {}
+    ez = lv.get("entry_zone") or {}
+    t = (lv.get("targets") or [None])[0]
+    return {"stop": (lv.get("invalidation") or {}).get("price"),
+            "target": t.get("price") if isinstance(t, dict) else None,
+            "entry_low": ez.get("low"), "entry_high": ez.get("high")}

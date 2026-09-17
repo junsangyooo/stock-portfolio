@@ -150,7 +150,7 @@ def test_full_sell_confirms_then_deletes_the_card():
 
 
 def test_trade_history_has_symbol_and_date_filters():
-    fn = SRC[SRC.index("window.openTradeHistory"):SRC.index("// PLAN NOTE MODAL")]
+    fn = SRC[SRC.index("window.openTradeHistory"):SRC.index("// ASSET CURVE MODAL (F) — line chart")]
     assert fn.count("type: 'date'") == 2
     assert "since" in fn and "until" in fn and "symbol_id" in fn
     assert "el('select'" in fn
@@ -158,84 +158,45 @@ def test_trade_history_has_symbol_and_date_filters():
     assert re.search(r"trades:\s*\(q\)", SRC), "API.trades takes the filter query"
 
 
-# ── 계좌 배지 · 계좌×종목 모달 ──────────────────────────────────────────
+# ── 사람 책에는 계획이 없다 · 좌표 한 줄 ────────────────────────────────
 
-def test_plan_badge_is_filled_in_place_from_one_request():
-    """22 cards, one /plan_runs/latest. A badge that fetched per symbol would
-    be 22 requests, and rebuilding the card to fill it loses scroll and the
-    drawn chart (the in-place rule)."""
-    assert "window._planBadgeEls[stock.symbolId] = planBadge" in SRC
-    assert len(re.findall(r"/plan_runs/latest'", SRC)) == 1
-    loader = SRC[SRC.index("async function loadPlanBadges"):]
+def test_the_human_book_has_no_plan_ui():
+    """Plans left the portfolio book: no plan routes, no ```plan hand-off
+    from the chat, no plan picker on the trade form."""
+    for gone in ("/plans", "/plan_runs", "```plan", "PLAN_FENCE", "plan_id",
+                 "plan_candidates", "_planBadge", "openPlanNote", "plan-symbol-modal",
+                 "sc-plan-badge", "S.LABELS.approve", "S.LABELS.reject"):
+        assert gone not in SRC, gone
+
+
+def test_coord_line_is_one_deterministic_helper():
+    fn = SRC[SRC.index("function coordLineText("):]
+    fn = fn[:fn.index("\n}\n")]
+    assert "'보유 기준'" in fn and "'진입 기준'" in fn and "'진입구간 '" in fn
+    assert "'손절 '" in fn and "'목표 '" in fn
+    assert "c.stop == null && c.target == null)) return ''" in fn
+    assert "S.api(" not in fn and "fetch(" not in fn
+
+
+def test_card_coord_line_fills_in_place_from_the_summary_batch():
+    """Same /api/analysis/summary response as the verdict badge — no second
+    request, no card rebuild; hidden when there is nothing to say or the
+    analysis is not an ok verdict."""
+    assert "window._coordLineEls[stock.symbolId] = coordLine" in SRC
+    loader = SRC[SRC.index("async function loadAnalysisBadges"):]
     loader = loader[:loader.index("\n}\n")]
-    assert "_setPlanBadge" in loader and "renderCard" not in loader
+    assert loader.count("S.api(") == 1
+    assert "coordLineText(" in loader and "entry.coords" in loader
+    assert "entry.status === 'ok'" in loader
+    assert "line.hidden = !line.textContent" in loader and "renderCard" not in loader
 
 
-def test_the_plan_badge_is_reachable_without_a_mouse():
-    badge = SRC[SRC.index("const planBadge = el("):]
-    badge = badge[:badge.index("window._planBadgeEls")]
-    assert "role: 'button'" in badge and "tabindex: '0'" in badge
-    assert "'Enter'" in badge and "' '" in badge
-    assert "aria-label" in SRC[SRC.index("function _planBadgeApply"):
-                               SRC.index("window._setPlanBadge")]
-
-
-def test_a_proposal_is_approved_or_rejected_by_patching_the_plan():
-    """No second write path: approval is the same PATCH the plan note uses,
-    and a rejection asks first."""
-    fn = SRC[SRC.index("async function decide(plan, status)"):]
-    fn = fn[:fn.index("\n  function planRow")]
-    assert "API.plan(plan.plan_id)" in fn and "'PATCH'" in fn
-    assert "S.confirmModal" in fn and "'armed'" not in fn.split("decide(plan")[0]
-    assert "S.LABELS.approve" in SRC and "S.LABELS.reject" in SRC
-
-
-def test_the_preview_is_a_job_not_a_blocking_call():
-    """A synchronous plan pass would die at Cloudflare's 100s ceiling. The
-    poller slows in a hidden tab and stops for good when the modal closes —
-    S.whenVisible cannot express the second half (its stop is undone by the
-    next visibilitychange)."""
-    assert "API.runPlan()" in SRC and "API.planRunStatus()" in SRC
-    poll = SRC[SRC.index("  async function poll(stock, btn, state)"):]
-    poll = poll[:poll.index("\n  function render(stock)")]
-    assert "document.hidden" in poll and "60000" in poll
-    assert "S.whenVisible(" not in poll
-    assert "mine !== pollToken" in poll
-
-
-def test_the_account_modal_does_not_dress_a_preview_as_the_book():
-    assert "장부에 적용되지 않음" in SRC
-
-
-def test_plan_stance_dictionary_is_one_place():
-    assert len(re.findall(r"const PLAN_STANCE_KO = ", SRC)) == 1
-    for word in ("유지", "추가", "축소", "정리", "관심"):
-        assert word in SRC[SRC.index("const PLAN_STANCE_KO"):
-                           SRC.index("window._planBadgeEls")]
-
-
-def test_a_badge_with_nothing_to_say_is_hidden():
-    """A symbol whose only plans are closed has no note and no counts; an
-    empty badge is worse than no badge."""
-    fn = SRC[SRC.index("function _planBadgeApply"):]
-    fn = fn[:fn.index("window._setPlanBadge")]
-    assert "if (!note && !active && !proposals) { span.hidden = true; return; }" in fn
-
-
-def test_a_preview_says_it_is_a_preview_on_the_card():
-    """A dry pass changed nothing in the book. The badge must not read as if
-    the morning pass had said it."""
-    assert "run.slot === 'manual'" in SRC and "'미리보기'" in SRC
-
-
-def test_the_approval_shows_what_is_being_approved():
-    """Approving a stop and a target you cannot see is pressing a button
-    blind."""
-    fn = SRC[SRC.index("function planRow(plan)"):]
-    fn = fn[:fn.index("\n  function plansOf")]
-    assert "plan.conditions" in fn
-    for word in ("'진입 '", "'손절 '", "'목표 '"):
-        assert word in fn
+def test_modal_coord_line_sits_next_to_the_hint():
+    fn = SRC[SRC.index("function renderAnalysis(pane, body, date)"):]
+    fn = fn[:fn.index("// ── 자세히 보기")]
+    assert "const coordText = factsOnly ? '' : coordLineText(held," in fn
+    assert "lz.invalidation" in fn and "lz.targets" in fn and "lz.entry_zone" in fn
+    assert "coordText ? el('div', { className: 'jd-hint' }, [coordText])" in fn
 
 
 # ── modal bodies scroll ──────────────────────────────────────────────────

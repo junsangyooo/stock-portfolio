@@ -6,7 +6,7 @@ early September, 59 ten days later, same market. This asks the other
 question: what has changed since the stored analysis was written?
 
 Five changes count, and they are different kinds of change on purpose — a
-price through a coordinate (the plan's premise broke), a new filing (half the
+price crossing a coordinate since the analysis (its premise broke), a new filing (half the
 inputs are different), a high-importance article naming the company, a move
 large enough to matter without touching a coordinate, and age as the backstop.
 All of them are read from what is already stored; nothing here collects.
@@ -64,18 +64,28 @@ def _weekdays_since(day: date, today: date) -> int:
     return n
 
 
-def _level_hit(levels: dict, close: float) -> Optional[str]:
-    """Which stored coordinate today's close has reached, if any."""
+def _crossed(price, was: float, close: float) -> bool:
+    """`close` is on the other side of `price` from where the analysis stood,
+    or on it. A coordinate the analysis already stood past is its premise —
+    a sell verdict's invalidation sits above the price — not a change."""
+    return bool(price) and was != price and (was - price) * (close - price) <= 0
+
+
+def _level_hit(levels: dict, was: Optional[float], close: float) -> Optional[str]:
+    """Which stored coordinate the price has crossed since the analysis, if
+    any. Without the analysed price there is no "since" — age covers it."""
+    if not was:
+        return None
     inv = (levels.get("invalidation") or {}).get("price")
-    if inv and close <= inv:
-        return f"손절선 {inv:,.0f} 이탈"
+    if _crossed(inv, was, close):
+        return f"손절선 {inv:,.0f} 통과"
     for t in levels.get("targets") or []:
         px = t.get("price") if isinstance(t, dict) else None
-        if px and close >= px:
-            return f"목표 {px:,.0f} 도달"
+        if _crossed(px, was, close):
+            return f"목표 {px:,.0f} 통과"
     ez = levels.get("entry_zone") or {}
     lo, hi = ez.get("low"), ez.get("high")
-    if lo and hi and lo <= close <= hi:
+    if lo and hi and lo <= close <= hi and not lo <= was <= hi:
         return f"진입구간 {lo:,.0f}~{hi:,.0f} 진입"
     return None
 
@@ -142,7 +152,7 @@ def due_detail(symbol_ids: Iterable[str], *, hot: Iterable[str] = (),
         was = levels.get("current")
         max_age = MAX_AGE_HOT if sid in hot_set else MAX_AGE_COLD
 
-        hit = _level_hit(levels, close) if close else None
+        hit = _level_hit(levels, was, close) if close else None
         filing = filed.get(sid)
         article = mentioned.get(sid)
         if hit:

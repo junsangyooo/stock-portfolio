@@ -37,8 +37,6 @@ def quant_book(monkeypatch):
     monkeypatch.setattr(qjobs, "analysis_symbols",
                         lambda a: ["KR:HELD", "KR:PLANNED"] if a == "robo"
                         else ["KR:PLANNED"])
-    monkeypatch.setattr(qjobs, "plan_symbols",
-                        lambda a: ["KR:PLANNED"] if a == "robo" else [])
     monkeypatch.setattr(qjobs, "tracked_symbols",
                         lambda a: ["KR:HELD", "KR:PLANNED", "KR:WATCHED"])
 
@@ -46,27 +44,31 @@ def quant_book(monkeypatch):
 @pytest.fixture
 def human_book(monkeypatch):
     monkeypatch.setattr(pjobs, "all_symbol_ids", lambda: ["KR:HELD"])
-    monkeypatch.setattr(pjobs, "all_active_symbol_ids", lambda: ["KR:PLANNED"])
 
 
 # ── who gets a model call ───────────────────────────────────────────────────
 
-def test_the_quant_analysis_set_is_held_and_planned_and_hot_is_the_plans(
+def test_quant_analyzes_every_held_and_planned_symbol_daily_at_full_budget(
         quant_book, seen_due):
-    assert qjobs.to_analyze() == ["KR:HELD"]
-    assert seen_due["symbols"] == ["KR:HELD", "KR:PLANNED"]   # no KR:WATCHED
-    assert seen_due["hot"] == ["KR:PLANNED"]
+    """A quant plan is an order nobody reads first: no change trigger decides
+    whether its analysis is redone, and none of it runs at the cheap budget."""
+    assert qjobs.to_analyze() == ["KR:HELD", "KR:PLANNED"]   # no KR:WATCHED
+    assert qjobs.hot_symbols() == ["KR:HELD", "KR:PLANNED"]
+    assert seen_due == {}
 
 
-def test_the_human_analysis_set_is_held_and_planned(human_book, seen_due):
+def test_a_disabled_market_is_not_analyzed(quant_book, monkeypatch):
+    monkeypatch.setattr(qjobs, "active_markets", lambda a: {"US"})
+    assert qjobs.to_analyze() == []
+
+
+def test_the_human_analysis_set_is_held_and_changed(human_book, seen_due):
     assert pjobs.to_analyze() == ["KR:HELD"]
-    assert seen_due["symbols"] == ["KR:HELD", "KR:PLANNED"]
-    assert seen_due["hot"] == ["KR:PLANNED"]
+    assert seen_due["symbols"] == ["KR:HELD"] and seen_due["hot"] == []
 
 
-def test_force_skips_the_selector_entirely(quant_book, human_book, seen_due):
-    assert qjobs.to_analyze(force=True) == ["KR:HELD", "KR:PLANNED"]
-    assert pjobs.to_analyze(force=True) == ["KR:HELD", "KR:PLANNED"]
+def test_force_skips_the_selector_entirely(human_book, seen_due):
+    assert pjobs.to_analyze(force=True) == ["KR:HELD"]
     assert seen_due == {}
 
 
@@ -81,8 +83,7 @@ def _capture(monkeypatch, mod):
     return calls
 
 
-def test_market_data_still_covers_everything_tracked(monkeypatch, quant_book,
-                                                     seen_due):
+def test_market_data_still_covers_everything_tracked(monkeypatch, quant_book):
     """Only the model call is narrowed. Swapping these lists would quietly
     stop collecting bars for symbols the book still watches."""
     calls = _capture(monkeypatch, qjobs)
@@ -93,27 +94,25 @@ def test_market_data_still_covers_everything_tracked(monkeypatch, quant_book,
         "KR:HELD", "KR:PLANNED", "KR:WATCHED"]
     assert by["src.market.pipeline.etf_job"][0] == by[
         "src.market.pipeline.fundamental_job"][0]
-    assert by["src.research.verdict_job"][0] == ["KR:HELD"]
+    assert by["src.research.verdict_job"][0] == ["KR:HELD", "KR:PLANNED"]
 
 
-def test_the_analysis_job_is_told_the_budget_and_who_keeps_it(
-        monkeypatch, quant_book, seen_due):
+def test_the_quant_analysis_job_keeps_every_symbol_hot(monkeypatch, quant_book):
     calls = _capture(monkeypatch, qjobs)
     monkeypatch.setattr(sys, "argv", ["jobs", "analysis"])
     qjobs.main()
     extra = calls[0][2]
-    assert extra[extra.index("--effort") + 1] == qjobs.LOW_EFFORT
-    assert extra[extra.index("--hot") + 1] == "KR:PLANNED"
+    assert extra[extra.index("--hot") + 1] == "KR:HELD,KR:PLANNED"
 
 
-def test_the_human_book_passes_the_same_two_flags(monkeypatch, human_book,
-                                                  seen_due):
+def test_the_human_book_runs_at_its_budget_with_nothing_hot(monkeypatch, human_book,
+                                                           seen_due):
     calls = _capture(monkeypatch, pjobs)
     monkeypatch.setattr(sys, "argv", ["jobs", "analysis"])
     pjobs.main()
     extra = calls[0][2]
     assert extra[extra.index("--effort") + 1] == pjobs.LOW_EFFORT
-    assert extra[extra.index("--hot") + 1] == "KR:PLANNED"
+    assert "--hot" not in extra
 
 
 # ── who keeps the full budget ───────────────────────────────────────────────

@@ -99,6 +99,27 @@ def test_a_close_inside_the_entry_zone_is_due(sources):
     assert _reason("KR:AAA") == "level"
 
 
+def test_a_coordinate_the_analysis_already_stood_past_is_not_news(sources):
+    """A sell verdict puts its invalidation ABOVE the price and its target
+    BELOW it. Neither is a change while the price stays where the analysis
+    saw it — only crossing one since then is. On 2026-09-17 nine of eleven
+    portfolio re-runs were this: the same premise re-read every day."""
+    _store("KR:SELL", YESTERDAY, current=7_520, invalidation=7_930,
+           target=6_563, low=7_000, high=7_100)
+    sources["closes"] = {"KR:SELL": [7_540.0]}
+    assert _reason("KR:SELL") is None
+    sources["closes"] = {"KR:SELL": [7_950.0]}                 # through the invalidation
+    assert _reason("KR:SELL") == "level"
+    sources["closes"] = {"KR:SELL": [6_500.0]}                 # through the target
+    assert _reason("KR:SELL") == "level"
+
+
+def test_sitting_inside_the_entry_zone_since_the_analysis_is_not_news(sources):
+    _store("KR:ZONE", YESTERDAY, current=9_500, low=9_400, high=9_600)
+    sources["closes"] = {"KR:ZONE": [9_550.0]}
+    assert _reason("KR:ZONE") is None
+
+
 def test_a_filing_after_the_analysis_is_due_and_one_before_is_not(sources):
     _store("KR:AAA", YESTERDAY)
     sources["closes"] = {"KR:AAA": [10_000.0]}
