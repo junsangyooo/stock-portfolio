@@ -37,6 +37,7 @@ from .portfolio_api import require_account
 router = APIRouter(prefix="/api/accounts", tags=["chat"])
 
 MAX_CHARS = 4000      # per message, guard against a giant paste
+HISTORY_CHARS = 20_000      # saved messages resent when the CLI memory is gone
 NEWS_N = 20
 # Display rule, not a timeout: the CLI call itself is unbounded. Past this the
 # poller reports 'timed out' and a new turn may start on the session. Sized
@@ -191,20 +192,29 @@ def _news_context() -> str:
     return "\n".join(lines)
 
 
-def _build(account_id: str, message: str, seeded: bool) -> tuple[str, str]:
+def _build(account_id: str, message: str, seeded: bool,
+           history: list | None = None) -> tuple[str, str]:
     """(system, user) for this turn.
 
     Once the session holds a real exchange it also holds the rules and the
     history, so a later turn sends neither. It still sends a fresh account
     snapshot, because prices and verdicts move between turns and the stale
     copy in the session would otherwise be the model's only reference.
+
+    `history` is the thread's saved messages when the CLI has no memory of
+    them — the newest ones, capped so a long thread cannot crowd the prompt.
     """
     q = str(message)[:MAX_CHARS]
     if seeded:
         return "", "\n\n".join((_account_context(account_id),
                                 "[사용자 질문]\n" + q))
+    past = ""
+    if history:
+        lines = [("사용자: " if m.get("role") == "user" else "답변: ") + str(m.get("content", ""))
+                 for m in history]
+        past = "[이전 대화]\n" + "\n\n".join(lines)[-HISTORY_CHARS:]
     return SYSTEM, "\n\n".join(x for x in (
-        _account_context(account_id), _news_context(),
+        _account_context(account_id), _news_context(), past,
         "[사용자 질문]\n" + q) if x)
 
 
@@ -281,15 +291,20 @@ def chat(account_id: str, body: ChatIn,
     # Whether to re-send the rules: has an answer actually landed? A first turn
     # that died may have left a session behind without the rules in it, and
     # resuming that one silently strips the model's tools and format.
-    session_args = (["--resume", body.session_id]
-                    if _cli_session_exists(body.session_id)
+    # A third: the CLI transcripts are deleted every midnight, so an old
+    # thread can have answers on screen and no memory behind them. That turn
+    # starts a new session with the rules and the thread's saved messages.
+    has_memory = _cli_session_exists(body.session_id)
+    session_args = (["--resume", body.session_id] if has_memory
                     else ["--session-id", body.session_id])
-    seeded = any(m.get("role") == "assistant" for m in thread["messages"])
+    answered = any(m.get("role") == "assistant" for m in thread["messages"])
+    seeded = has_memory and answered
+    history = [] if has_memory else thread["messages"]
     chat_store.append(account_id, body.session_id, "user", msg[:MAX_CHARS])
 
     def _run() -> None:
         try:
-            system, user = _build(account_id, msg, seeded)
+            system, user = _build(account_id, msg, seeded, history)
             reply = ClaudeCliBackend(model=SLOW_MODEL, stage="chat").call(
                 system, user, extra_args=TOOL_ARGS + session_args)
             chat_store.append(account_id, body.session_id, "assistant", reply)

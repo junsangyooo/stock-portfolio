@@ -177,6 +177,32 @@ def test_a_failed_first_turn_still_sends_the_rules(client, monkeypatch):
     assert seen["system"] == chat.SYSTEM
 
 
+def test_a_thread_whose_cli_memory_was_cleared_carries_on(client, monkeypatch):
+    """Session files are deleted every midnight. The next question in an old
+    thread starts a new CLI session with the rules and the thread's own saved
+    messages, so the conversation continues instead of starting blind."""
+    monkeypatch.setattr(chat, "_account_context", lambda aid: "[계좌]")
+    monkeypatch.setattr(chat, "_news_context", lambda: "")
+    seen = {}
+    _stub_backend(monkeypatch, reply="삼성전자는 보유 비중이 큽니다.", seen=seen)
+
+    sid = _new_thread(client)
+    r = client.post("/api/accounts/alice/chat", cookies=_cookie(),
+                    json={"session_id": sid, "message": "제일 큰 종목은?"})
+    _wait(client, "alice", r.json()["job_id"])
+
+    # midnight: the CLI transcript is gone, the thread on screen is not
+    monkeypatch.setattr(chat, "_cli_session_exists", lambda s: False)
+    r = client.post("/api/accounts/alice/chat", cookies=_cookie(),
+                    json={"session_id": sid, "message": "그거 팔까?"})
+    _wait(client, "alice", r.json()["job_id"])
+
+    assert seen["extra_args"] == chat.TOOL_ARGS + ["--session-id", sid]
+    assert seen["system"] == chat.SYSTEM
+    assert "제일 큰 종목은?" in seen["user"] and "삼성전자는 보유 비중이 큽니다." in seen["user"]
+    assert seen["user"].index("[이전 대화]") < seen["user"].index("그거 팔까?")
+
+
 def test_backend_failure_surfaces_as_error(client, monkeypatch):
     monkeypatch.setattr(chat, "_account_context", lambda aid: "")
     monkeypatch.setattr(chat, "_news_context", lambda: "")

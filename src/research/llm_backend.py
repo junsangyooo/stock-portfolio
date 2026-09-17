@@ -111,14 +111,21 @@ class ClaudeCliBackend:
         # --resume --fork-session prompt-cache inheritance all work under
         # it. (--bare is stronger but never reads OAuth → breaks §7
         # subscription-only billing, so it is not an option.)
+        args = list(extra_args or [])
+        # Only a session somebody resumes is written to disk: a chat thread
+        # (--resume, extended turn by turn) or a root/brief that forks read
+        # (--session-id). A one-shot call and a fork never are, and each used
+        # to leave a transcript behind (~100 a day on the server).
+        if "--session-id" not in args and ("--resume" not in args
+                                           or "--fork-session" in args):
+            args.append("--no-session-persistence")
         t0 = time.monotonic()
         # json, not text: the envelope carries this call's own token counts,
         # and they are the only place per-call usage exists. The answer is
         # the `result` field, so callers see no difference.
         r = subprocess.run(
             [self.bin, "-p", "--safe-mode",
-             "--output-format", "json", "--model", m]
-            + (extra_args or []),
+             "--output-format", "json", "--model", m] + args,
             input=prompt, capture_output=True, text=True, env=env,
         )
         elapsed = time.monotonic() - t0
