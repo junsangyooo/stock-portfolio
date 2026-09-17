@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 
-import pytest
 
 from src.core import paths
 from src.core.kst import KST

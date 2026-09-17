@@ -10,7 +10,6 @@ analysis went stale before judging it.
 Stops go to the broker as a single MARKET conditional (Toss OCO is LIMIT
 only, and a limit stop does not fill on a gap); take-profits are the keeper's.
 """
-import sqlite3
 import time
 from datetime import date, timedelta
 
@@ -93,28 +92,6 @@ def test_missing_row_reads_disabled():
         c.commit()
     assert store.market_state("robo", "US") == "disabled"
     assert store.active_markets("robo") == {"KR"}
-
-
-def test_a_paused_account_becomes_two_disabled_markets(tmp_path, monkeypatch):
-    """A book from before markets existed: an account-level pause turns into
-    both markets off, a running account into both on — once, never again."""
-    path = tmp_path / "old.db"
-    conn = sqlite3.connect(path)
-    from src.ledger import apply as apply_ledger
-    apply_ledger(conn)
-    conn.execute("ALTER TABLE accounts ADD COLUMN paused_at INTEGER")
-    conn.execute("INSERT INTO accounts (account_id, name, kind, paused_at, created_at)"
-                 " VALUES ('robo', 'r', 'auto', 1788517174, 0),"
-                 " ('robo_paper', 'p', 'auto', NULL, 0)")
-    conn.commit()
-    conn.close()
-    monkeypatch.setattr(qdb, "QUANT_DB_PATH", path)
-    monkeypatch.setattr(qdb, "_initialized", False)
-    assert store.active_markets("robo") == set()
-    assert store.active_markets("robo_paper") == {"KR", "US"}
-    store.set_market_state("robo", "US", "active")
-    monkeypatch.setattr(qdb, "_initialized", False)          # next process
-    assert store.market_state("robo", "US") == "active"
 
 
 def test_unknown_market_or_state_is_refused():
@@ -562,11 +539,7 @@ def test_analysis_set_leaves_out_a_disabled_market(monkeypatch):
     _hold(PAPER, "KR:005930")
     _plan(PAPER, sid="US:MSFT", price=400)
     _off(PAPER, "KR")
-    monkeypatch.setattr(analyze, "due_detail",
-                        lambda syms, hot: [{"symbol_id": s, "reason": "age", "detail": ""}
-                                           for s in syms])
-    assert jobs.to_analyze(force=True) == ["US:MSFT"]
-    assert jobs.hot_symbols() == ["US:MSFT"]
+    assert jobs.to_analyze() == ["US:MSFT"]
     _off("robo", "KR")                                  # robo has nothing held
     assert "KR:005930" not in jobs.to_analyze()
 
@@ -628,7 +601,7 @@ def test_execute_orders_skips_buys_in_a_disabled_market_but_sends_sells(monkeypa
     ], dry_run=False)
     assert placed == [("KR:000660", "sell")]
     assert [r["status"] for r in res] == ["market_off_skip", "submitted"]
-    assert [o["side"] for o in store.orders_for_cycle(cid)] == ["sell"]
+    assert [o["side"] for o in store.orders_recent("robo")] == ["sell"]
     skips = [e for e in store.journal_recent("robo", cycle_id=cid)
              if e["kind"] == "market_off_skip"]
     assert len(skips) == 1 and skips[0]["payload"]["symbol_id"] == "KR:005930"

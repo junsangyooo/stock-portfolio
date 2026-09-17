@@ -44,8 +44,8 @@ def sources(monkeypatch):
     return data
 
 
-def _due(*sids, hot=(), limit=due.DAILY_LIMIT):
-    return due.due_among(sids, hot=hot, limit=limit, now=NOW)
+def _due(*sids, limit=due.DAILY_LIMIT):
+    return due.due_among(sids, limit=limit, now=NOW)
 
 
 def _reason(sid, **kw):
@@ -150,14 +150,6 @@ def test_age_is_the_backstop_when_nothing_else_fired(sources):
 
 
 # ── how much of it runs ─────────────────────────────────────────────────────
-
-def test_a_symbol_carrying_a_plan_gets_the_shorter_age_limit(sources):
-    """Three weekdays old: too old for money waiting on it, fine otherwise."""
-    _store("KR:AAA", "2026-09-10")                   # Thu → 3 weekdays back
-    _store("KR:BBB", "2026-09-10")
-    sources["closes"] = {"KR:AAA": [10_000.0], "KR:BBB": [10_000.0]}
-    assert _due("KR:AAA", "KR:BBB", hot=["KR:AAA"]) == ["KR:AAA"]
-
 
 def test_the_limit_keeps_the_urgent_ones(sources):
     _store("KR:OLD", TWO_WEEKS)                      # age

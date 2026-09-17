@@ -6,8 +6,6 @@ the price it was seen at), a buy the cash cannot cover is rejected, a stop
 returns the cash, and the API reads either book by
 `?account=` while refusing broker-only writes for the paper one.
 """
-import re
-import sqlite3
 
 import pytest
 from fastapi import FastAPI
@@ -66,34 +64,6 @@ def test_add_paper_account_is_idempotent():
     assert store.cash(PAPER)["KRW"] == 5.0
     assert store.is_paper(PAPER) and not store.is_paper("robo")
 
-
-def test_old_book_gains_account_id_and_backfills_to_the_live_row(tmp_path, monkeypatch):
-    """A quant.db from before the paper account: the three extension tables
-    grow `account_id`, and their rows are stamped with the account that was
-    there — read from the table, not a constant."""
-    old = re.sub(r"\n\s*account_id\s+TEXT,", "", qdb.EXTENSION)
-    assert old != qdb.EXTENSION
-    path = tmp_path / "old.db"
-    conn = sqlite3.connect(path)
-    from src.ledger import apply as apply_ledger
-    apply_ledger(conn)
-    conn.executescript(old)
-    conn.execute("INSERT INTO accounts (account_id, name, kind, created_at)"
-                 " VALUES ('robo_live', 'r', 'auto', 0)")
-    conn.execute("INSERT INTO cycles (slot, phase, status, started_at)"
-                 " VALUES ('morning', 'done', 'ok', 0)")
-    conn.execute("INSERT INTO journal (cycle_id, kind, payload, created_at)"
-                 " VALUES (1, 'brief', '{}', 0)")
-    conn.commit(); conn.close()
-
-    monkeypatch.setattr(qdb, "QUANT_DB_PATH", path)
-    monkeypatch.setattr(qdb, "_initialized", False)
-    assert store.last_cycle("robo_live")["cycle_id"] == 1
-    assert store.journal_recent("robo_live")[0]["kind"] == "brief"
-    assert store.last_cycle("robo") is None
-
-
-# ── (b) the books do not mix ─────────────────────────────────────────────
 
 def test_plans_holdings_cash_journal_stay_in_their_book():
     a, b = _plan("robo"), _plan(PAPER, sid="KR:000660")

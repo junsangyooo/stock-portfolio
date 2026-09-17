@@ -51,14 +51,6 @@ def _init_once(conn: sqlite3.Connection) -> None:
         return
     apply_ledger(conn)
     conn.executescript(EXTENSION)
-    # A book from when this one wrote plans still has the pass table: its
-    # plans, the passes and what they left on holdings and trades go, once.
-    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table'"
-                    " AND name = 'plan_runs'").fetchone():
-        conn.execute("DELETE FROM plans")
-        conn.execute("UPDATE holdings SET entry_plan_id = NULL, entry_rationale = NULL")
-        conn.execute("UPDATE trades SET plan_id = NULL")
-        conn.execute("DROP TABLE plan_runs")
     conn.commit()
     _initialized = True
 

@@ -13,7 +13,6 @@ from __future__ import annotations
 import logging
 
 import sys
-from datetime import datetime
 from typing import List
 
 from ..source.yfinance_source import YFinanceSource
@@ -35,10 +34,6 @@ def _dart_source():
         from ..source.dart_source import DartSource
         _dart = DartSource()
     return _dart
-
-
-def _ymd(d: datetime) -> str:
-    return d.strftime("%Y-%m-%d")
 
 
 def valuation(symbol_id: str, n: int = 760) -> int:

@@ -1,9 +1,9 @@
 """What the daily model spend is bought for.
 
 `to_analyze` decides which symbols get a call, the jobs table decides which
-job gets which list, and `--hot` decides which of them keep the full
-reasoning budget. Each is a line or two, none had a test, and getting any of
-them backwards is silent: the bill moves, nothing fails.
+job gets which list, and `--effort` decides the reasoning budget. Each is a
+line or two, and getting any of them backwards is silent: the bill moves,
+nothing fails.
 """
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ def seen_due(monkeypatch):
     """Captures what the selector was asked, and answers with the first one."""
     seen: dict = {}
 
-    def _due(symbols, *, hot=(), **kw):
-        seen["symbols"], seen["hot"] = list(symbols), list(hot)
+    def _due(symbols, **kw):
+        seen["symbols"] = list(symbols)
         return [{"symbol_id": s, "reason": "age", "detail": "9거래일",
                  "age_days": 9} for s in list(symbols)[:1]]
 
@@ -53,7 +53,6 @@ def test_quant_analyzes_every_held_and_planned_symbol_daily_at_full_budget(
     """A quant plan is an order nobody reads first: no change trigger decides
     whether its analysis is redone, and none of it runs at the cheap budget."""
     assert qjobs.to_analyze() == ["KR:HELD", "KR:PLANNED"]   # no KR:WATCHED
-    assert qjobs.hot_symbols() == ["KR:HELD", "KR:PLANNED"]
     assert seen_due == {}
 
 
@@ -64,7 +63,7 @@ def test_a_disabled_market_is_not_analyzed(quant_book, monkeypatch):
 
 def test_the_human_analysis_set_is_held_and_changed(human_book, seen_due):
     assert pjobs.to_analyze() == ["KR:HELD"]
-    assert seen_due["symbols"] == ["KR:HELD"] and seen_due["hot"] == []
+    assert seen_due["symbols"] == ["KR:HELD"]
 
 
 def test_force_skips_the_selector_entirely(human_book, seen_due):
@@ -97,12 +96,11 @@ def test_market_data_still_covers_everything_tracked(monkeypatch, quant_book):
     assert by["src.research.verdict_job"][0] == ["KR:HELD", "KR:PLANNED"]
 
 
-def test_the_quant_analysis_job_keeps_every_symbol_hot(monkeypatch, quant_book):
+def test_the_quant_analysis_job_runs_at_the_full_budget(monkeypatch, quant_book):
     calls = _capture(monkeypatch, qjobs)
     monkeypatch.setattr(sys, "argv", ["jobs", "analysis"])
     qjobs.main()
-    extra = calls[0][2]
-    assert extra[extra.index("--hot") + 1] == "KR:HELD,KR:PLANNED"
+    assert "--effort" not in calls[0][2]
 
 
 def test_the_human_book_runs_at_its_budget_with_nothing_hot(monkeypatch, human_book,
@@ -112,14 +110,11 @@ def test_the_human_book_runs_at_its_budget_with_nothing_hot(monkeypatch, human_b
     pjobs.main()
     extra = calls[0][2]
     assert extra[extra.index("--effort") + 1] == pjobs.LOW_EFFORT
-    assert "--hot" not in extra
 
 
 # ── who keeps the full budget ───────────────────────────────────────────────
 
-def test_only_symbols_nobody_is_waiting_on_get_the_cheap_budget(monkeypatch):
-    """Invert this ternary and every symbol carrying money drops to `low`
-    while the idle ones burn the full budget — and nothing fails."""
+def test_the_batch_passes_its_budget_to_every_symbol(monkeypatch):
     seen: dict = {}
 
     def _run(symbol_id, date, *, force, effort=None, root=None):
@@ -131,10 +126,9 @@ def test_only_symbols_nobody_is_waiting_on_get_the_cheap_budget(monkeypatch):
     monkeypatch.setattr(analyze, "batch_root", lambda: "sess-1")
     monkeypatch.setattr(sys, "argv",
                         ["verdict_job", "--symbols", "KR:AAA,KR:BBB",
-                         "--effort", "low", "--hot", "kr:bbb", "--workers", "1"])
+                         "--effort", "low", "--workers", "1"])
     verdict_job.main()
-    assert seen["KR:AAA"]["effort"] == "low"
-    assert seen["KR:BBB"]["effort"] is None        # money is waiting on it
+    assert seen["KR:AAA"]["effort"] == seen["KR:BBB"]["effort"] == "low"
     assert seen["KR:AAA"]["root"] == "sess-1"      # two to run → a root pays
 
 

@@ -105,11 +105,8 @@ def main() -> int:
     ap.add_argument("--force", action="store_true",
                     help="regenerate even when today's analysis exists")
     ap.add_argument("--effort", default=None,
-                    help="low|medium|high|xhigh|max — the reasoning budget "
-                         "for symbols not named in --hot")
-    ap.add_argument("--hot", default="",
-                    help="comma-separated symbols that keep the default "
-                         "budget — the ones carrying a live plan")
+                    help="low|medium|high|xhigh|max — the reasoning budget; "
+                         "omitted = the CLI default")
     args = ap.parse_args()
 
     ensure_dirs()
@@ -126,7 +123,6 @@ def main() -> int:
     print(f"analysis batch {date} — {len(symbols)} symbols, "
           f"workers={args.workers}", flush=True)
 
-    hot = {s.strip().upper() for s in args.hot.split(",") if s.strip()}
     from . import analyze
     todo = [s for s in symbols if args.force or analyze.on(s, date) is None]
     root = analyze.batch_root() if len(todo) >= _ROOT_MIN_BATCH else None
@@ -135,7 +131,7 @@ def main() -> int:
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as ex:
         results = list(ex.map(
             lambda s: run_symbol(s, date, force=args.force, root=root,
-                                 effort=None if s in hot else args.effort),
+                                 effort=args.effort),
             symbols))
 
     ok = [r for r in results if not r["errors"]]

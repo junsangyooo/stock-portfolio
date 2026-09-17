@@ -2,7 +2,7 @@
 
     from src.research import analyze
 
-    for sid in analyze.due_among(symbols, hot=planned):
+    for sid in analyze.due_among(symbols):
         analyze.run(sid)
     result = analyze.latest(sid)
 

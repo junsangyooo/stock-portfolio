@@ -5,7 +5,7 @@
 | | **portfolio** | **quant** |
 |---|---|---|
 | 무엇 | 여러 증권계좌를 팔로업하고 분석하는 웹 | 토스 계좌에서 자동매매하는 계좌 |
-| 계좌 | 사람 계좌 4개 (ISA·일반·연금·해외) | 자동매매 계좌 2개 — 실계좌 `robo`(토스) · 모의 `robo_paper`(브로커 없음, 계획 가격 체결) |
+| 계좌 | 사람 계좌 4개 (ISA·일반·연금·해외) | 자동매매 계좌 2개 — 실계좌 `robo`(토스) · 모의 `robo_paper`(브로커 없음 — 진입·익절은 계획 가격, 손절은 관측 시세로 체결) |
 | 주소 | `portfolio.jsyoo.dev` | `quant.jsyoo.dev` |
 | 하는 일 | 보유 조회·손익·거래 기록·종목 분석·채팅 | 사이클마다 판단·주문·감시, 계좌별 정지/재개 |
 
@@ -59,8 +59,8 @@ portfolio-dashboard/
 | 페이지 | 경로 | 내용 |
 |---|---|---|
 | landing | `/` | 계좌 목록 · 뉴스 피드 (분야별 요약) |
-| account | `/a/{account_id}` | 보유 카드 · 종합 분석 탭 · 거래 기록(매수/매도, 종목·기간 필터) · 계획 · 채팅 |
-| quant | `/q` (또는 `quant.jsyoo.dev/`) | 모드·자산·자산곡선 · 보유 카드 · 계획/관심/뉴스 · 사이클 타임라인 · 계좌 전환(실계좌/모의) · 정지/재개 |
+| account | `/a/{account_id}` | 보유 카드(판정 배지 · 좌표 한 줄) · 종합 분석 탭 · 거래 기록(매수/매도, 종목·기간 필터) · 채팅 |
+| quant | `/q` (또는 `quant.jsyoo.dev/`) | 모드·자산·자산곡선 · 보유 카드 · 계획/관심/뉴스 · 사이클 타임라인 · 계좌 전환(실계좌/모의) · 시장별(KR·US) 가동/끔 |
 
 `portfolio.jsyoo.dev/q`와 `quant.jsyoo.dev/a/…`는 404다. 두 페이지는 서로로 가는 링크를 갖지 않는다.
 
@@ -81,7 +81,7 @@ python -m src.dashboard_web.server --port 8888
 ### 테스트
 
 ```bash
-pytest tests/          # 595건
+pytest tests/          # 691건
 ```
 
 구조 불변식: `test_layering.py`(공유 → 앱 import 금지) · `test_quant_api.py`(전 라우트 `require_quant`/`require_account`) · `test_ui_invariants.py`와 `test_ui_{landing,account,quant}.py`(색·글자 크기 리터럴 0건, mobile-first 브레이크포인트, `.btn` 4종, 인라인 `style`/`on*` 0건, 크로스링크 0건) · `test_server_csp.py`(nonce). 실패하면 코드가 아니라 설계가 틀어진 것이다.
@@ -108,11 +108,11 @@ ssh oracle-instance "cd ~/portfolio-dashboard && .venv/bin/python -m src.quant.p
 
 ```
 /api/universe/*      종목 검색
-/api/accounts/*      사람 계좌 — 보유·거래(trades)·현금·계획·스냅샷·채팅   (계좌 쿠키)
+/api/accounts/*      사람 계좌 — 보유·거래(trades)·현금·스냅샷·채팅   (계좌 쿠키)
 /api/market/*        OHLCV·시세
 /api/analysis/*      종합 분석·차트 지표·재무·뉴스 (리터럴 경로만)
 /api/quant/*         자동매매 — state·plans·positions·cycles/{id}·watch·journal·orders,
-                     pin·pause·resume·mode·sync·cancel_all   (자기 쿠키 + 돈이 걸리면 PIN 재확인, ?account=)
+                     pin·markets/{KR|US}·mode·sync·cancel_all   (자기 쿠키 + 돈이 걸리면 PIN 재확인, ?account=)
 ```
 
 전체 표와 인가 규칙은 ops notes §10.

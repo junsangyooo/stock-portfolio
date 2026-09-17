@@ -59,10 +59,3 @@ def save(symbol_id: str, rows: list[dict],
             [(symbol_id, r["theme_id"], r["relation"], r["weight"],
               r.get("source", "auto"), ts) for r in rows])
         c.commit()
-
-
-def drop(symbol_id: str) -> None:
-    """Forget a symbol's mapping — called once no book holds it."""
-    with connect() as c:
-        c.execute("DELETE FROM symbol_themes WHERE symbol_id = ?", (symbol_id,))
-        c.commit()

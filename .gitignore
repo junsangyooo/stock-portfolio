@@ -26,7 +26,6 @@ docs_cache/
 # ── Catch-all by extension (defense in depth) ───────────────────────
 *.parquet
 *.csv
-!data/sample/*.csv
 *.log
 *.pid
 *.png
@@ -39,4 +38,3 @@ docs/
 data/.session_secret
 
 # deprecated per-theme jsonl (migrated into news.db)
-data/signals/

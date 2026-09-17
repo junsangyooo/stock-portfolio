@@ -11,13 +11,12 @@ inputs are different), a high-importance article naming the company, a move
 large enough to matter without touching a coordinate, and age as the backstop.
 All of them are read from what is already stored; nothing here collects.
 
-Account-free by construction (ops notes §4). The caller passes its symbols and
-marks the ones carrying money (`hot`) so they get the shorter age limit; this
-module never opens a book.
+Account-free by construction (ops notes §4). The caller passes its symbols;
+this module never opens a book.
 
     from src.research import analyze
-    analyze.due_among(symbols, hot=planned)          # the shortlist to run
-    analyze.due_detail(symbols, hot=planned)         # …with the reason
+    analyze.due_among(symbols)          # the shortlist to run
+    analyze.due_detail(symbols)         # …with the reason
 """
 from __future__ import annotations
 
@@ -27,10 +26,7 @@ from typing import Iterable, Optional
 from ...core.kst import KST
 from .read import latest
 
-# Trading days. A symbol with a live plan is re-read sooner because a stale
-# coordinate on it is a coordinate somebody's money is waiting on.
-MAX_AGE_HOT = 2
-MAX_AGE_COLD = 7
+MAX_AGE = 7               # trading days — the backstop when nothing else fired
 
 MOVE_PCT = 5.0            # move from the analysed price that counts on its own
 NEWS_DAYS = 14            # how far back a naming article still counts
@@ -115,8 +111,7 @@ def _mentions(ids: list[str]) -> dict:
         return {}
 
 
-def due_detail(symbol_ids: Iterable[str], *, hot: Iterable[str] = (),
-               limit: int = DAILY_LIMIT,
+def due_detail(symbol_ids: Iterable[str], *, limit: int = DAILY_LIMIT,
                now: Optional[datetime] = None) -> list[dict]:
     """[{symbol_id, reason, detail, age_days}] for the symbols worth redoing,
     most urgent first, cut at `limit` (0 = no cut)."""
@@ -124,7 +119,6 @@ def due_detail(symbol_ids: Iterable[str], *, hot: Iterable[str] = (),
     ids = list(dict.fromkeys(symbol_ids))
     if not ids:
         return []
-    hot_set = set(hot)
     closes, filed, mentioned = _closes(ids), _filings(ids), _mentions(ids)
 
     out: list[dict] = []
@@ -150,7 +144,6 @@ def due_detail(symbol_ids: Iterable[str], *, hot: Iterable[str] = (),
         close = (closes.get(sid) or [None])[-1]
         levels = body.get("levels") or {}
         was = levels.get("current")
-        max_age = MAX_AGE_HOT if sid in hot_set else MAX_AGE_COLD
 
         hit = _level_hit(levels, was, close) if close else None
         filing = filed.get(sid)
@@ -164,8 +157,8 @@ def due_detail(symbol_ids: Iterable[str], *, hot: Iterable[str] = (),
         elif close and was and abs(close / was - 1) * 100 >= MOVE_PCT:
             reason = "move"
             detail = f"분석 시점 대비 {(close / was - 1) * 100:+.1f}%"
-        elif age is None or age > max_age:
-            reason, detail = "age", f"{age}거래일 경과 (상한 {max_age})"
+        elif age is None or age > MAX_AGE:
+            reason, detail = "age", f"{age}거래일 경과 (상한 {MAX_AGE})"
         else:
             continue
         out.append({"symbol_id": sid, "reason": reason, "detail": detail,
@@ -176,9 +169,8 @@ def due_detail(symbol_ids: Iterable[str], *, hot: Iterable[str] = (),
     return out[:limit] if limit else out
 
 
-def due_among(symbol_ids: Iterable[str], *, hot: Iterable[str] = (),
-              limit: int = DAILY_LIMIT,
+def due_among(symbol_ids: Iterable[str], *, limit: int = DAILY_LIMIT,
               now: Optional[datetime] = None) -> list[str]:
     """Just the shortlist — what a caller hands to verdict_job."""
     return [r["symbol_id"] for r in
-            due_detail(symbol_ids, hot=hot, limit=limit, now=now)]
+            due_detail(symbol_ids, limit=limit, now=now)]

@@ -198,33 +198,6 @@ def test_a_trade_answers_without_plan_fields_and_ignores_a_plan_id(client):
     assert d["trade"]["plan_id"] is None
 
 
-def test_an_old_book_loses_its_plans_once(tmp_path, monkeypatch):
-    """A portfolio.db from when this book wrote plans: plans, passes and the
-    plan links on holdings and trades go on first open; later rows stay."""
-    import sqlite3
-    path = tmp_path / "old.db"
-    conn = sqlite3.connect(path)
-    from src.ledger import apply as apply_ledger
-    apply_ledger(conn)
-    conn.execute("CREATE TABLE plan_runs (run_id INTEGER PRIMARY KEY)")
-    conn.execute("INSERT INTO accounts (account_id, name, created_at) VALUES ('a', 'a', 0)")
-    conn.execute("INSERT INTO plans (account_id, symbol_id, name, side, price, qty,"
-                 " status, created_at, updated_at) VALUES ('a','KR:1','x','buy',1,1,'proposed',0,0)")
-    conn.execute("INSERT INTO holdings (account_id, symbol_id, qty, entry_plan_id,"
-                 " entry_rationale, added_at, updated_at) VALUES ('a','KR:1',1,1,'노트',0,0)")
-    conn.commit()
-    conn.close()
-    monkeypatch.setattr(pdb, "DB_PATH", str(path))
-    monkeypatch.setattr(pdb, "_initialized", False)
-    with pdb.connect() as c:
-        assert c.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 0
-        assert c.execute("SELECT name FROM sqlite_master WHERE name = 'plan_runs'").fetchone() is None
-        h = c.execute("SELECT entry_plan_id, entry_rationale FROM holdings").fetchone()
-        assert tuple(h) == (None, None)
-
-
-# ── trade history filters ─────────────────────────────────────────────
-
 def _seed_history(client):
     # 2026-09-01 00:00 KST = 1788188400; 09-02 = +86400; 09-03 = +172800
     _trade(client, traded_at=1788188400 + 3600)                            # 09-01
