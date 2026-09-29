@@ -38,3 +38,6 @@ docs/
 data/.session_secret
 
 # deprecated per-theme jsonl (migrated into news.db)
+
+# local research caches (large, never committed)
+tmp/
