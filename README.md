@@ -52,7 +52,7 @@ portfolio-dashboard/
 └── data/             운영 데이터 (gitignore) — *.db · universe/ · analysis/ · backup/ · logs/
 ```
 
-`[공유]`가 시스템의 대부분이라 `shared/`로 다시 감싸지 않는다.
+`[공유]`가 시스템의 대부분이라 `shared/`로 다시 감싸지 않는다. 새 코드를 어디에 두는지는 ops notes §5 참조.
 
 ## 화면
 
@@ -102,7 +102,7 @@ ssh oracle-instance "cd ~/portfolio-dashboard && .venv/bin/python -m src.quant.d
 ssh oracle-instance "cd ~/portfolio-dashboard && .venv/bin/python -m src.quant.pin"                     # quant PIN (없을 때만)
 ```
 
-새 의존성은 Oracle venv에 수동 설치한다. 운영 cron 일정은 deploy/portfolio.cron.
+새 의존성은 Oracle venv에 수동 설치한다. 운영 cron 일정은 ops notes §8.
 
 ## API 요약
 
