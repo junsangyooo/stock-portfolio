@@ -20,6 +20,7 @@ data/market/
 data/analysis/
 data/logs/
 data/backup/
+data/listings/
 models/
 docs_cache/
 
