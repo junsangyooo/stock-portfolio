@@ -42,3 +42,13 @@ data/.session_secret
 
 # local research caches (large, never committed)
 tmp/
+
+# ── 새 quant (autotrade/ + web/) ───────────────────────────────
+data/autotrade.db
+data/autotrade.db-*
+web/node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/
+web/coverage/
+!web/public/**/*.png

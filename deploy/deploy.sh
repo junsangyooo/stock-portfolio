@@ -41,6 +41,18 @@ ssh "$HOST" 'cd ~/portfolio-dashboard && .venv/bin/python -m src.core.backup --o
 ssh "$HOST" 'sudo -n diff -q ~/portfolio-dashboard/deploy/nginx-portfolio.conf /etc/nginx/sites-available/portfolio >/dev/null 2>&1' \
   || echo "[deploy] WARN: nginx config drift (deployed != git) — review manually"
 
+if [ "$SERVICE" = "autotrade" ]; then
+  # The new quant (autotrade/ + web/): build the web app on Oracle, apply DB
+  # migrations, then restart. A failed build or migration leaves the running
+  # service untouched.
+  echo "[deploy] building web on Oracle..."
+  ssh "$HOST" 'set -o pipefail; cd ~/portfolio-dashboard/web && npm ci --no-audit --no-fund 2>&1 | tail -3 && npm run build 2>&1 | tail -5' \
+    || fail "web build failed (service not restarted) — rollback: $ROLLBACK"
+  echo "[deploy] migrating autotrade DB..."
+  ssh "$HOST" 'cd ~/portfolio-dashboard && .venv/bin/python -m autotrade.jobs migrate' \
+    || fail "autotrade migration failed (service not restarted) — rollback: $ROLLBACK"
+fi
+
 if [ -n "$SERVICE" ]; then
   echo "[deploy] restarting $SERVICE..."
   ssh "$HOST" "sudo systemctl restart $SERVICE" \
@@ -51,6 +63,13 @@ if [ -n "$SERVICE" ]; then
       ssh "$HOST" "for i in \$(seq 1 10); do curl -sf -o /dev/null $HEALTH_URL && curl -sf -o /dev/null $PAGE_URL && exit 0; sleep 2; done; exit 1" \
         || fail "health check failed after restart — rollback: $ROLLBACK"
       echo "[deploy] health OK ($HEALTH_URL, $PAGE_URL -> 200)"
+      ;;
+    autotrade)
+      # /api/healthz needs no session; / must serve the built index.html.
+      echo "[deploy] health check (autotrade)..."
+      ssh "$HOST" "for i in \$(seq 1 10); do curl -sf -o /dev/null http://127.0.0.1:8890/api/healthz && curl -sf -o /dev/null http://127.0.0.1:8890/ && exit 0; sleep 2; done; exit 1" \
+        || fail "autotrade health check failed after restart — rollback: $ROLLBACK"
+      echo "[deploy] health OK (autotrade :8890)"
       ;;
   esac
 fi
