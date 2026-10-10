@@ -10,9 +10,10 @@
 #       2. move Oracle's tree to the commit (git pull --ff-only; after a rollback, from the detached
 #          HEAD straight to the new commit, which must descend from main)
 #       3. back up the old app's books (src.core.backup, as before)
-#       4. python -m autotrade.jobs backup --predeploy   -> data/backup/autotrade/
-#          autotrade-predeploy-<UTC>.db; stop if it fails (nothing migrated)
-#       5. python -m autotrade.jobs migrate              (the only command that migrates)
+#       4.-5. python -m autotrade.jobs migrate --predeploy: holding the tick's and the AI
+#          runner's locks, it copies the database to data/backup/autotrade/
+#          autotrade-predeploy-<UTC>.db (stop if that fails: nothing migrated), then migrates
+#          (the only command that migrates). A lock that stays busy changes nothing: deploy again.
 #       6. web/dist -> releases/<id>: one atomic rename; the previous releases stay (rollback) and
 #          the new one carries their hashed assets (pages loaded before the switch keep working)
 #       7. restart autotrade.service; /api/healthz (503 unless the schema matches), / and the
@@ -72,8 +73,9 @@ restart_dashboard() {
 }
 
 autotrade_health() {
+  # $2 (rollbacks): --origin-optional, since the code rolled back to may predate the origin rule
   local out
-  out=$(helper health) || fail "autotrade health check failed: $(why "$out") — $1"
+  out=$(helper health ${2:-}) || fail "autotrade health check failed: $(why "$out") — $1"
   echo "[deploy] health OK (autotrade :8890 $out)"
 }
 
@@ -113,7 +115,7 @@ for line in json.load(sys.stdin)["say"]: print("[rollback] " + line)' <<<"$plan"
   if [ "$(field wasActive <<<"$out")" = "true" ]; then
     echo "[rollback] starting autotrade.service..."
     ssh "$HOST" "sudo systemctl start autotrade.service" || fail "autotrade start failed — $hint"
-    autotrade_health "$hint"
+    autotrade_health "$hint" --origin-optional
   fi
   if [ "$(field dashboardChanged <<<"$plan")" = "true" ]; then
     restart_dashboard "$hint"
@@ -197,13 +199,20 @@ if [[ "$SERVICE" != dashboard* ]] \
 fi
 
 if [ "$SERVICE" = "autotrade" ]; then
-  echo "[deploy] predeploy backup of the autotrade DB..."
-  BACKUP=$(ssh "$HOST" 'cd ~/portfolio-dashboard && .venv/bin/python -m autotrade.jobs backup --predeploy') \
-    || fail "predeploy backup failed (nothing migrated, service not restarted) — rollback: $ROLLBACK"
-  echo "[deploy] $BACKUP"
-  echo "[deploy] migrating the autotrade DB..."
-  ssh "$HOST" 'cd ~/portfolio-dashboard && .venv/bin/python -m autotrade.jobs migrate' \
-    || fail "autotrade migration failed (service not restarted) — rollback: $ROLLBACK (restores the predeploy backup)"
+  # One command under the tick's and the AI runner's locks: the predeploy copy, then the
+  # migration, so nothing either job writes can fall between the copy and the schema change.
+  echo "[deploy] predeploy backup and migration of the autotrade DB..."
+  if ! MIGRATE=$(ssh "$HOST" 'cd ~/portfolio-dashboard && .venv/bin/python -m autotrade.jobs migrate --predeploy'); then
+    LAST=$(tail -n 1 <<<"$MIGRATE")
+    case "$(field job <<<"$LAST" 2>/dev/null || true) $(field result <<<"$LAST" 2>/dev/null || true)" in
+      "migrate busy")
+        fail "migrate: the $(field lock <<<"$LAST") lock stayed busy — nothing was copied or migrated and the service was not restarted; ticks pause until this deploy runs again: ./deploy/deploy.sh autotrade (or roll back: $ROLLBACK)" ;;
+      "backup failed")
+        fail "predeploy backup failed: $(field error <<<"$LAST") — nothing migrated, service not restarted; ticks pause until a deploy migrates (or roll back: $ROLLBACK)" ;;
+    esac
+    fail "autotrade migration failed (service not restarted): $LAST — rollback: $ROLLBACK (restores the predeploy backup)"
+  fi
+  echo "[deploy] $MIGRATE"
   STATUS=$(helper status) || fail "cannot read Oracle's state after the migration — rollback: $ROLLBACK"
   python3 -c 'import json, sys
 s = json.load(sys.stdin)["schema"]
