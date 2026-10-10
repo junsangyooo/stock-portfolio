@@ -47,8 +47,12 @@ tmp/
 data/autotrade.db
 data/autotrade.db-*
 data/autotrade.secret
+data/deploy/
 web/node_modules/
-web/dist/
+# On the server web/dist is a symlink to web/releases/<id> (deploy/deploy.sh): no trailing slash,
+# or the link would not match.
+web/dist
+web/releases/
 web/test-results/
 web/playwright-report/
 web/coverage/
