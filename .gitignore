@@ -47,6 +47,7 @@ tmp/
 data/autotrade.db
 data/autotrade.db-*
 data/autotrade.secret
+data/autotrade-toss/
 data/deploy/
 web/node_modules/
 # On the server web/dist is a symlink to web/releases/<id> (deploy/deploy.sh): no trailing slash,
