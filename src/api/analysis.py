@@ -59,42 +59,8 @@ def news_signals(market: str, code: str) -> dict:
     default in the news tab so the user sees connected news without running the
     (claude) evaluate, mirroring how the chart tab shows facts on open.
     """
-    symbol_id = f"{market.upper()}:{code}"
-    from ..research.news.catalog import load_catalog
-    from ..research.news.read import theme_state
-    from ..market.store import theme_store
-
-    cat = load_catalog()
-    rows = [(r["theme_id"], r["relation"], r["weight"])
-            for r in theme_store.get(symbol_id)]
-
-    themes_out, devs, seen = [], [], set()
-    for theme_id, relation, weight in rows:
-        if relation == "macro":
-            continue  # macro is background — too generic for the connected list
-        st = theme_state(theme_id)
-        ct = cat.get(theme_id)
-        nm = ct.name_kr if ct else theme_id
-        themes_out.append({
-            "theme_id": theme_id, "name_kr": nm, "relation": relation,
-            "weight": weight, "sentiment": st.get("sentiment", {}),
-            "watchlist": st.get("watchlist", []) if relation == "primary" else [],
-        })
-        for d in st.get("recent_developments", []):
-            k = (d.get("url") or "").strip() or (d.get("point") or "")
-            if not k or k in seen:
-                continue
-            seen.add(k)
-            devs.append({
-                "theme": theme_id, "theme_kr": nm,
-                "date": d.get("date"), "point": d.get("point"),
-                "lead_lag": d.get("lead_lag"), "weight": d.get("weight"),
-                "url": d.get("url"),
-            })
-    devs.sort(key=lambda x: (x.get("date") or "", x.get("weight") or 0), reverse=True)
-    return {"symbol_id": symbol_id, "mapped": bool(rows),
-            "themes": themes_out, "developments": devs[:30],
-            "queried_at": _stamp()}
+    from ..research.news.read import symbol_news
+    return {**symbol_news(f"{market.upper()}:{code}"), "queried_at": _stamp()}
 
 
 @router.get("/fundamental/{market}/{code}/facts")

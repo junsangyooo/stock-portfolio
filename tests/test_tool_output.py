@@ -6,7 +6,7 @@ announced — a silent trim reads as "that is all there is".
 """
 import json
 
-from src.research import chat_tools
+from src.portfolio.chat import tools as chat_tools
 
 
 def test_a_normal_answer_passes_through_untouched():

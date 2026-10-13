@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import logging
-import time
 
 from fastapi import APIRouter
 
+from ..market import quotes
 from ..market.pipeline import gap_filler, resampler
-from ..market.source.registry import for_symbol, yfinance_for
-from ..market.store import ohlcv_store, quote_store
+from ..market.quotes import warm
+from ..market.source.registry import yfinance_for
+from ..market.store import ohlcv_store
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
@@ -74,39 +75,8 @@ def get_ohlcv(market: str, code: str, period: str = "day", n: int = 240,
             "bars": ohlcv_store.to_payload(df), "refresh_failed": stale}
 
 
-def warm(symbol_ids, max_age_s: int) -> dict:
-    """{symbol_id: Quote | None}: cached when fresh enough, else fetched —
-    and every fetched quote stored with one flush. Never raises."""
-    out = {sid: quote_store.get(sid, max_age_s=max_age_s) for sid in symbol_ids}
-    fetched = []
-    for sid, q in out.items():
-        if q is not None:
-            continue
-        src = for_symbol(sid)
-        if src is None:
-            continue
-        try:
-            q = src.get_quote(sid)
-        except Exception as e:  # noqa: BLE001 — a dead source must not 500
-            log.warning("quote fetch %s failed: %s", sid, e)
-            continue
-        if q is not None:
-            out[sid] = q
-            fetched.append(q)
-    quote_store.set_many(fetched)
-    return out
-
-
-def _quote_payload(q) -> dict:
-    if q is None:
-        return {"price": None, "stale": True}
-    return {"price": q.price, "prev_close": q.prev_close, "ts": q.ts,
-            "age_s": int(time.time() - q.ts), "stale": False}
-
-
 @router.get("/quotes")
 def get_quotes(symbols: str = "", max_age_s: int = 30) -> dict:
     """symbols = comma-separated 'KR:005930,US:AAPL'."""
     ids = [s.strip() for s in symbols.split(",") if s.strip()]
-    return {"quotes": {sid: _quote_payload(q)
-                       for sid, q in warm(ids, max_age_s).items()}}
+    return quotes.quotes(ids, max_age_s)

@@ -15,7 +15,6 @@ agent at all:
   llm_backend.py  claude -p subprocess + the on-host open-weight server
   verdict_job.py  warm a given list of symbols (takes --symbols; it does not
                   know accounts exist)
-  chat_tools.py   read-only lookups for the chat agent
 
 Shared: the portfolio app reads this and does not own it. Nothing here
 imports an account book — tests/test_layering.py enforces that.

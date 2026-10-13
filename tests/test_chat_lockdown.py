@@ -130,6 +130,9 @@ def test_chat_runs_in_the_empty_sandbox(monkeypatch, tmp_path):
     assert seen["cwd"] == str(paths.CHAT_CWD)
     assert paths.CHAT_CWD.is_dir() and not any(paths.CHAT_CWD.iterdir())
     assert seen["env_extra"]["PYTHONPATH"] == str(paths.ROOT)
+    # The tools read the account the route was authorized for, signed.
+    assert seen["env_extra"]["PDASH_CHAT_ACCOUNT"] == "alice"
+    assert seen["env_extra"]["PDASH_CHAT_SIG"] == security.chat_binding("alice")
     assert seen["extra_args"][:len(chat.TOOL_ARGS)] == chat.TOOL_ARGS
 
 

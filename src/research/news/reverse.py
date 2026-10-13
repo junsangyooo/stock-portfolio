@@ -210,6 +210,42 @@ def recent_mentions(symbol_ids: Iterable[str], days: int = 14,
     return out
 
 
+def mention_items(symbol_id: str, days: int = 14, limit: int = 20) -> list[dict]:
+    """Articles whose title names this symbol, newest first, any importance.
+
+    The masking rule of `recent_mentions`, but against every name that
+    contains one of this symbol's names — so '한화' is not credited with a
+    '한화에어로스페이스' headline — and only on titles that hold one of its
+    names at all, which keeps the pass to a handful of rows.
+    """
+    from datetime import datetime, timedelta
+
+    from ...core.kst import KST
+    from .db import connect
+
+    entries = _name_entries()
+    mine = [n for n, s in entries if s == symbol_id]
+    if not mine:
+        return []
+    rivals = [(n, s) for n, s in entries if any(m in n for m in mine)]
+    since = (datetime.now(KST).date()
+             - timedelta(days=max(days - 1, 0))).isoformat()
+    hit = " OR ".join("instr(title, ?) > 0" for _ in mine)
+    with connect() as c:
+        rows = c.execute(
+            "SELECT signal_id, title, url, source_id, collected_on, importance "
+            f"FROM signals WHERE collected_on >= ? AND ({hit}) "
+            "ORDER BY collected_on DESC, signal_id DESC",
+            [since, *mine]).fetchall()
+    out = []
+    for r in rows:
+        if symbol_id in _count_masked(_strip_html(r["title"] or ""), rivals):
+            out.append(dict(r))
+            if len(out) >= limit:
+                break
+    return out
+
+
 def _tagged(theme_id: str) -> list[dict]:
     """symbol_themes reversed — symbols somebody already mapped to this theme."""
     from ...market.store import theme_store

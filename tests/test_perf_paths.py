@@ -131,7 +131,8 @@ def test_quotes_route_stores_a_batch_with_one_flush(quote_flushes, monkeypatch):
         def get_quote(self, sid):
             return Quote(sid, 10.0, 9.0, 1_900_000_000)
 
-    monkeypatch.setattr(market_api, "for_symbol", lambda sid: Src())
+    from src.market import quotes
+    monkeypatch.setattr(quotes, "for_symbol", lambda sid: Src())
     app = FastAPI()
     app.include_router(market_api.router)
     body = TestClient(app).get(

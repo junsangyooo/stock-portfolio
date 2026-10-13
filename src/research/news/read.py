@@ -11,6 +11,10 @@ The three views:
                    account page's news tab and the analysis
     read_items()   raw articles for one theme, for the company-name miner
 
+and for the news tab and the chat agent: symbol_news() (a symbol's themes),
+search() / article() (the whole archive, untagged included),
+theme_history() (daily/weekly/monthly rows) and catalog() (themes, sources).
+
 `theme_state` replaces state.json. Its slow-moving half (horizon summary) is
 the weekly roll-up, its fast half (recent developments) is a window over the
 articles themselves, and sentiment/watchlist come from the daily overview.
@@ -267,3 +271,200 @@ def read_items(theme_id: str, days: int = 14,
             (theme_id, since)).fetchall()
     return [{"title": r["title"], "summary": r["body"] or r["summary"] or "",
              "url": r["url"], "date": r["collected_on"]} for r in rows]
+
+
+# ── one symbol's news (the news tab and the chat agent) ─────────────────────
+def symbol_news(symbol_id: str, include_macro: bool = False,
+                mentions: bool = False) -> dict:
+    """The news connected to a symbol: its mapped themes' state and their
+    recent developments, newest first. No LLM.
+
+    The news tab leaves `macro` out — background too generic for a list of
+    connected items. The chat agent asks for it: it may see every collected
+    article, and a rate decision is news about every holding. `mentions`
+    adds the articles that name the symbol in their title (reverse.py).
+    """
+    from ...market.store import theme_store
+
+    cat = load_catalog()
+    rows = [(r["theme_id"], r["relation"], r["weight"])
+            for r in theme_store.get(symbol_id)]
+
+    themes_out, devs, seen = [], [], set()
+    for theme_id, relation, weight in rows:
+        if relation == "macro" and not include_macro:
+            continue
+        st = theme_state(theme_id)
+        ct = cat.get(theme_id)
+        nm = ct.name_kr if ct else theme_id
+        themes_out.append({
+            "theme_id": theme_id, "name_kr": nm, "relation": relation,
+            "weight": weight, "sentiment": st.get("sentiment", {}),
+            "watchlist": st.get("watchlist", []) if relation == "primary" else [],
+        })
+        for d in st.get("recent_developments", []):
+            k = (d.get("url") or "").strip() or (d.get("point") or "")
+            if not k or k in seen:
+                continue
+            seen.add(k)
+            devs.append({
+                "theme": theme_id, "theme_kr": nm,
+                "date": d.get("date"), "point": d.get("point"),
+                "lead_lag": d.get("lead_lag"), "weight": d.get("weight"),
+                "url": d.get("url"),
+            })
+    devs.sort(key=lambda x: (x.get("date") or "", x.get("weight") or 0), reverse=True)
+    out = {"symbol_id": symbol_id, "mapped": bool(rows),
+           "themes": themes_out, "developments": devs[:30]}
+    if mentions:
+        from .reverse import mention_items
+        out["mentions"] = mention_items(symbol_id)
+    return out
+
+
+# ── the whole archive (chat agent) ──────────────────────────────────────────
+_PAGE_MAX = 50
+
+
+def _themes_of(c, signal_ids: list[int]) -> dict:
+    if not signal_ids:
+        return {}
+    out: dict = {}
+    q = ",".join("?" * len(signal_ids))
+    for r in c.execute(
+            f"SELECT signal_id, theme_id, confidence FROM signal_themes "
+            f"WHERE signal_id IN ({q}) ORDER BY confidence DESC", signal_ids):
+        out.setdefault(r["signal_id"], []).append(
+            {"theme_id": r["theme_id"], "confidence": r["confidence"]})
+    return out
+
+
+def search(q: Optional[str] = None, theme: Optional[str] = None,
+           since: Optional[str] = None, until: Optional[str] = None,
+           source: Optional[str] = None, min_importance: Optional[int] = None,
+           limit: int = 20, offset: int = 0) -> dict:
+    """Every stored article, filtered — untagged ones included.
+
+    `q` is a literal substring of title, summary or body. `theme='none'`
+    asks for the articles no theme took. `since`/`until` are KST days
+    against `collected_on`, both inclusive. Newest first; `total` and
+    `offset` let a caller page through.
+    """
+    where, args = [], []
+    if q:
+        where.append("(instr(s.title, ?) > 0 OR instr(coalesce(s.summary, ''), ?) > 0 "
+                     "OR instr(coalesce(s.body, ''), ?) > 0)")
+        args += [q, q, q]
+    if theme == "none":
+        where.append("NOT EXISTS (SELECT 1 FROM signal_themes t "
+                     "WHERE t.signal_id = s.signal_id)")
+    elif theme:
+        where.append("EXISTS (SELECT 1 FROM signal_themes t "
+                     "WHERE t.signal_id = s.signal_id AND t.theme_id = ?)")
+        args.append(theme)
+    if since:
+        where.append("s.collected_on >= ?")
+        args.append(since)
+    if until:
+        where.append("s.collected_on <= ?")
+        args.append(until)
+    if source:
+        where.append("s.source_id = ?")
+        args.append(source)
+    if min_importance is not None:
+        where.append("s.importance >= ?")
+        args.append(int(min_importance))
+    cond = ("WHERE " + " AND ".join(where)) if where else ""
+    limit = max(1, min(_PAGE_MAX, int(limit)))
+    offset = max(0, int(offset))
+    with connect() as c:
+        total = c.execute(f"SELECT count(*) FROM signals s {cond}", args).fetchone()[0]
+        rows = c.execute(
+            "SELECT s.signal_id, s.title, s.summary, s.url, s.source_id, "
+            "       s.collected_on, s.published_at, s.importance, s.novelty "
+            f"FROM signals s {cond} "
+            "ORDER BY s.collected_on DESC, s.signal_id DESC LIMIT ? OFFSET ?",
+            args + [limit, offset]).fetchall()
+        themes = _themes_of(c, [r["signal_id"] for r in rows])
+    items = [{**dict(r), "themes": themes.get(r["signal_id"], [])} for r in rows]
+    return {"total": total, "offset": offset, "returned": len(items),
+            "next_offset": offset + len(items) if offset + len(items) < total else None,
+            "items": items}
+
+
+def article(signal_id: int) -> Optional[dict]:
+    """Every stored column of one article, with its themes and confidences."""
+    with connect() as c:
+        r = c.execute("SELECT * FROM signals WHERE signal_id = ?",
+                      (int(signal_id),)).fetchone()
+        if r is None:
+            return None
+        return {**dict(r), "themes": _themes_of(c, [r["signal_id"]]).get(r["signal_id"], [])}
+
+
+_HISTORY = {
+    "daily": ("theme_daily", "date",
+              "date, overview, sentiment_score, sentiment_trend, watchlist, n_items",
+              ("overview", "watchlist")),
+    "weekly": ("theme_weekly", "week_start", "week_start, summary, bullets, n_days",
+               ("bullets",)),
+    "monthly": ("theme_monthly", "month", "month, summary, bullets, n_weeks",
+                ("bullets",)),
+}
+
+
+def theme_history(theme_id: str, kind: str = "daily",
+                  since: Optional[str] = None, until: Optional[str] = None,
+                  limit: int = 30, offset: int = 0) -> dict:
+    """One theme's daily, weekly or monthly summaries, newest first.
+    `since`/`until` compare against that table's key (a day, a Monday,
+    'YYYY-MM')."""
+    if kind not in _HISTORY:
+        raise ValueError(f"kind must be one of {sorted(_HISTORY)}")
+    table, key, cols, json_cols = _HISTORY[kind]
+    where, args = ["theme_id = ?"], [theme_id]
+    if since:
+        where.append(f"{key} >= ?")
+        args.append(since)
+    if until:
+        where.append(f"{key} <= ?")
+        args.append(until)
+    limit = max(1, min(_PAGE_MAX, int(limit)))
+    offset = max(0, int(offset))
+    cond = " AND ".join(where)
+    with connect() as c:
+        total = c.execute(f"SELECT count(*) FROM {table} WHERE {cond}", args).fetchone()[0]
+        rows = c.execute(f"SELECT {cols} FROM {table} WHERE {cond} "
+                         f"ORDER BY {key} DESC LIMIT ? OFFSET ?",
+                         args + [limit, offset]).fetchall()
+    items = []
+    for r in rows:
+        d = dict(r)
+        for k in json_cols:
+            d[k] = _loads(d.get(k), [])
+        items.append(d)
+    return {"theme_id": theme_id, "kind": kind, "total": total, "offset": offset,
+            "next_offset": offset + len(items) if offset + len(items) < total else None,
+            "items": items}
+
+
+def catalog() -> dict:
+    """The themes with their definitions, and every source with where its
+    reading stands (last item taken, last good fetch, consecutive failures)."""
+    from .catalog import load_sources
+    cat = load_catalog()
+    with connect() as c:
+        cur = {r["source_id"]: dict(r) for r in c.execute(
+            "SELECT source_id, last_fetched_at, last_ok_at, last_error, "
+            "n_consecutive_fail FROM source_cursor")}
+    return {
+        "themes": [{"theme_id": t.theme_id, "name_kr": t.name_kr,
+                    "definition": t.definition, "always_on": t.always_on,
+                    "related": list(t.related)}
+                   for t in cat.themes.values()],
+        "sources": [{"source_id": f.source_id, "kind": f.kind, "group": f.group,
+                     "lead_lag": f.lead_lag, "broad": f.broad,
+                     **{k: v for k, v in cur.get(f.source_id, {}).items()
+                        if k != "source_id"}}
+                    for f in load_sources()],
+    }

@@ -66,6 +66,18 @@ def make_session_token(account_id: str) -> str:
     return f"{payload}|{sig}"
 
 
+def chat_binding(account_id: str) -> str:
+    """Signature binding a chat agent's tool process to one account.
+
+    The server hands the tool the account and this signature through the
+    environment; the tool refuses unless they match. The CLI already refuses
+    a command the agent prefixes with its own variables, so this is the
+    second wall: an agent that got past that check still cannot sign another
+    account. The NUL keeps it apart from session tokens ('{id}|{ts}')."""
+    return hmac.new(_secret(), f"chat-tool\x00{account_id}".encode(),
+                    hashlib.sha256).hexdigest()
+
+
 def set_session_cookie(response, name: str, account_id: str) -> None:
     """Issue the session cookie `name` for `account_id` on `response`."""
     response.set_cookie(name, make_session_token(account_id),
