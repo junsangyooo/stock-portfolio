@@ -4,7 +4,8 @@
 #   crontab -l > ~/crontab.bak.$(date +\%F)
 #   crontab -l | python3 deploy/install_cron.py deploy/portfolio.cron | crontab -
 # The script replaces only the lines between the >>> and <<< markers; the quant block
-# (deploy/autotrade.cron) and other apps' lines are left as they are.
+# (deploy/autotrade.cron) and other apps' lines are left as they are. It refuses a crontab
+# without the markers: the first install (2026-10-14) replaced the old unmarked lines by hand.
 #
 # Times are UTC (KST − 9h). `%` must be written `\%` in a crontab line.
 # Jobs that read KRX/DART/KIS source the secrets file; ANTHROPIC_API_KEY is emptied so a model
