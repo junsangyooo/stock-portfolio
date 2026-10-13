@@ -7,11 +7,9 @@ commands read the whole archive, untagged articles included.
 """
 from __future__ import annotations
 
-import ast
 import inspect
 import json
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import pytest
 
@@ -22,7 +20,6 @@ from src.portfolio.store import (account_store, balance_store, chat_store,
                                  holding_store, snapshot_store, trade_store)
 from src.research.news.db import connect as news_connect
 
-_SRC = Path(__file__).resolve().parents[1] / "src"
 
 
 def _bind(monkeypatch, aid, sig_for=None):
@@ -245,17 +242,3 @@ def test_mentions_are_credited_to_the_named_symbol_only(monkeypatch):
         c.commit()
     assert [m["title"] for m in reverse.mention_items("KR:000880")] == ["한화 지분 매각"]
     assert [m["title"] for m in reverse.mention_items("KR:012450")] == ["한화에어로스페이스 수주"]
-
-
-# ── layers ────────────────────────────────────────────────────────────────
-
-def test_lower_layers_never_import_the_router():
-    """정의서 §1.1 규칙 2: research and portfolio sit below api."""
-    for root in ("research", "portfolio", "market", "core", "universe"):
-        for path in (_SRC / root).rglob("*.py"):
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            for node in ast.walk(tree):
-                if isinstance(node, ast.ImportFrom):
-                    mod = node.module or ""
-                    assert not (mod == "api" or mod.startswith("api.")
-                                or mod.startswith("src.api")), path

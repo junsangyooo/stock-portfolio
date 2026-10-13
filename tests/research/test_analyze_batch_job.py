@@ -11,7 +11,7 @@ import json
 import pytest
 
 from src.research.analyze import engine, inputs, prompt
-from tests.test_analyze import _OK, _STRUCT, _envelope
+from tests.research.test_analyze_engine import _OK, _STRUCT, _envelope
 
 
 class _Backend:
