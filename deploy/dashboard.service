@@ -27,15 +27,11 @@ EnvironmentFile=/home/ubuntu/dotclaude/secrets/.env
 #                      session competes with the screener's for one account.
 #
 #   TOSS_CLIENT_ID / TOSS_CLIENT_SECRET / TOSS_ACCOUNT_NO
-#                      the live Toss account's keys (2026-10-13). The old quant
-#                      behind its PIN still has /api/quant/plans (arms 조건주문),
-#                      /sync and /orders/cancel_all (cancels every open and
-#                      conditional order of the account, the new engine's too),
-#                      and a token it mints revokes the new tick's (one token
-#                      per client). src/quant/broker/toss.py reads the first two
-#                      (creds()); the third names the account. Nothing on the
-#                      portfolio side calls Toss (only src/quant/* and
-#                      src/api/quant.py import that client).
+#                      the live Toss account's keys (2026-10-13). Nothing in
+#                      this app calls Toss; only the new engine's tick (its own
+#                      cron line) reads them. Out of this internet-facing
+#                      process, nothing here can mint a token (one token per
+#                      client: it would revoke the tick's) or reach the account.
 #
 # core.secrets.get() falls back to reading the .env file itself when the
 # environment lacks a name, so unsetting alone would not keep the Toss keys
@@ -44,9 +40,7 @@ EnvironmentFile=/home/ubuntu/dotclaude/secrets/.env
 # service starts, so the environment it loads is unchanged). With both, a
 # name unset here is out of reach for the web process, on purpose or not.
 # The names it does read through core.secrets (DISCORD_WEBHOOK_URL, KIS_*,
-# DART_API_KEY) still come from the environment. Cron jobs (src/quant's keeper
-# and cycle_job) do not run under this unit: their crontab lines go before
-# live is turned on (autotrade/PHASE3.md 4).
+# DART_API_KEY) still come from the environment.
 UnsetEnvironment=ANTHROPIC_API_KEY KRX_ID KRX_PW TOSS_CLIENT_ID TOSS_CLIENT_SECRET TOSS_ACCOUNT_NO
 InaccessiblePaths=-/home/ubuntu/dotclaude/secrets -/home/ubuntu/.claude/secrets
 ExecStart=/home/ubuntu/portfolio-dashboard/.venv/bin/python -m src.dashboard_web.server --port 8888 --host 127.0.0.1
