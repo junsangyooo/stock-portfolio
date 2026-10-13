@@ -1,20 +1,19 @@
 """Structure analysis (category 5): swing extrema engine + S/R, trendlines,
-fibonacci, pivots, chart/candle patterns, gaps.
+fibonacci, pivots, chart/candle patterns, gaps, divergence, recent move.
 
-`extrema` is the shared foundation; `levels`, `trendline`, `patterns` build on
-it. `detect_structure` bundles them into one context dict for the ChartAgent.
+`extrema` is the shared foundation; the other modules build on it.
+`detect_structure` bundles them into the `structure` block of chart facts.
 """
 from __future__ import annotations
 
 import pandas as pd
 
 
-def detect_structure(df: pd.DataFrame, tf: str = "1d") -> dict:
-    """Run all structure detectors on a single-timeframe frame -> context dict.
+def detect_structure(df: pd.DataFrame) -> dict:
+    """Run all structure detectors on a daily frame -> context dict.
 
-    Structure does NOT vote in the 4-category aggregate; the ChartAgent (C4)
-    uses this as context (nearest levels, breakouts, patterns) when forming and
-    explaining the final verdict.
+    Structure is context, not a vote: nearest levels, breakouts and patterns
+    that the analysis reads next to the indicator facts.
     """
     from . import levels, trendline, patterns, divergence, recent_move  # local import avoids any cycle
 

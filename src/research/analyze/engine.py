@@ -4,19 +4,19 @@
 
 Validation is deliberately shallow. Enums are coerced, numbers are clamped,
 and prices that are not numbers are dropped — but nothing is invented to fill
-a gap. A missing invalidation level stays missing, because a planner that
-receives a made-up stop is worse off than one that receives none.
+a gap. A missing invalidation level stays missing, because a card that shows
+a made-up stop beside a holding is worse off than one that shows none.
 """
 from __future__ import annotations
 
 import logging
+import math
 import threading
 import time
 import uuid
-from datetime import datetime
 from typing import Optional
 
-from ...core.kst import KST
+from ...core import kst
 from ...core.llm import SLOW_MODEL, ClaudeCliBackend, _parse_json
 from .store import KIND, clamp_confidence, clamp_score, label_from_score, persist
 from . import inputs, prompt
@@ -42,7 +42,7 @@ def _num(v) -> Optional[float]:
         f = float(v)
     except (TypeError, ValueError):
         return None
-    return f if f == f and abs(f) != float("inf") else None
+    return f if math.isfinite(f) else None
 
 
 def anchors_from(envelope: dict) -> list:
@@ -77,15 +77,13 @@ def anchors_from(envelope: dict) -> list:
     return out
 
 
-def _anchor(price: Optional[float], anchors: list, tol: float = 0.015) -> dict:
+def _anchor(price: float, anchors: list, tol: float = 0.015) -> dict:
     """Snap a quoted price to the nearest detected level within 1.5%.
 
     Nothing is dropped — a number outside every anchor is kept and flagged
-    `llm_only`, because the reader wants to see it and the planner needs to
-    know it is not grounded.
+    `llm_only`, because the reader wants to see it and also needs to know it
+    is not grounded.
     """
-    if price is None:
-        return {"price": None, "anchored": False}
     if not anchors:
         return {"price": price, "anchored": False}
     best = min(anchors, key=lambda a: abs(a[0] - price))
@@ -124,8 +122,8 @@ def _levels(raw, anchors: Optional[list] = None) -> dict:
         if any(v is None for v in vals.values()):
             return None
         out = {k: _anchor(v, anchors) for k, v in vals.items()}
-        # keep the flat number too: a planner reads `price`, the UI reads the
-        # anchoring, and neither should have to know about the other
+        # keep the flat number too: the card and due.py read `price`, the
+        # modal reads the anchoring, and neither should have to know the other
         return {**{k: out[k]["price"] for k in keys},
                 "anchoring": out,
                 "rationale_ko": str(d.get("rationale_ko") or "")[:120]}
@@ -168,6 +166,14 @@ def _strs(v, n: int, cap: int = 300) -> list:
         if isinstance(v, list) else []
 
 
+def _head(envelope: dict, status: str) -> dict:
+    """The fields every stored result opens with, whatever the call did."""
+    return {"symbol_id": envelope["symbol"]["symbol_id"],
+            "name": envelope["symbol"]["name"], "kind": KIND,
+            "date": envelope["asof"], "status": status,
+            "available_domains": envelope["available"]}
+
+
 def normalize(data: dict, envelope: dict) -> dict:
     """Coerce the model's JSON into the contract. Fills nothing in."""
     v = data.get("verdict") if isinstance(data.get("verdict"), dict) else {}
@@ -175,7 +181,7 @@ def normalize(data: dict, envelope: dict) -> dict:
     label = _enum(v.get("label"), _LABELS) or label_from_score(score)
 
     domain_view = {}
-    for d in ("chart", "fundamental", "news"):
+    for d in inputs.DOMAINS:
         blk = (v.get("domain_view") or {}).get(d)
         blk = blk if isinstance(blk, dict) else {}
         domain_view[d] = {
@@ -201,12 +207,7 @@ def normalize(data: dict, envelope: dict) -> dict:
     counter = data.get("counter") if isinstance(data.get("counter"), dict) else {}
 
     return {
-        "symbol_id": envelope["symbol"]["symbol_id"],
-        "name": envelope["symbol"]["name"],
-        "kind": KIND,
-        "date": envelope["asof"],
-        "status": "ok",
-        "available_domains": envelope["available"],
+        **_head(envelope, "ok"),
         "observations": obs,
         "readings": readings,
         "counter": {
@@ -237,10 +238,7 @@ def _facts_only(envelope: dict, reason: str) -> dict:
     nothing would be worse than an honest blank.
     """
     return {
-        "symbol_id": envelope["symbol"]["symbol_id"],
-        "name": envelope["symbol"]["name"],
-        "kind": KIND, "date": envelope["asof"], "status": "facts_only",
-        "available_domains": envelope["available"],
+        **_head(envelope, "facts_only"),
         "score": 0.0, "label": "neutral", "confidence": 0.0,
         "summary_ko": ("AI 종합 판단을 만들지 못했습니다. 아래 지표는 계산된 "
                        "사실이며, 판단은 붙어 있지 않습니다."),
@@ -349,7 +347,7 @@ def analyze(symbol_id: str, name: Optional[str] = None, *,
             else:
                 system, user, extra = prompt.SYSTEM, prompt.build(envelope), []
             if effort:
-                extra = list(extra) + ["--effort", effort]
+                extra = extra + ["--effort", effort]
             try:
                 raw = backend.call(system, user, model=SLOW_MODEL,
                                    extra_args=extra)
@@ -363,5 +361,5 @@ def analyze(symbol_id: str, name: Optional[str] = None, *,
             out = _facts_only(envelope, err)
     out["effort"] = effort or "default"
     out["elapsed_s"] = round(time.monotonic() - t0, 1)
-    out["generated_at"] = datetime.now(KST).isoformat()
+    out["generated_at"] = kst.now().isoformat()
     return persist(symbol_id, out["date"], out) if store else out

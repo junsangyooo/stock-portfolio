@@ -40,6 +40,11 @@ def find_swings(
     return swing_highs, swing_lows
 
 
+def frame_swings(df, order: int = 5) -> Tuple[List[Swing], List[Swing]]:
+    """`find_swings` on an OHLCV frame's high/low columns."""
+    return find_swings(df["high"].values, df["low"].values, order=order)
+
+
 def cluster_levels(
     swings: List[Swing], tolerance_pct: float = 0.003
 ) -> List[dict]:
@@ -50,42 +55,23 @@ def cluster_levels(
         {"price": mean, "tests": count, "last_idx": max index in cluster}
     `tests` (touch count) is the level's strength — more tests = stronger S/R.
     """
-    if not swings:
-        return []
-    by_price = sorted(swings, key=lambda s: s[1])
-    clusters: List[dict] = []
-    cur_prices: List[float] = []
-    cur_idxs: List[int] = []
-
-    def _flush() -> None:
-        if cur_prices:
-            clusters.append({
-                "price": sum(cur_prices) / len(cur_prices),
-                "tests": len(cur_prices),
-                "last_idx": max(cur_idxs),
-            })
-
-    for idx, price in by_price:
-        if not cur_prices:
-            cur_prices.append(price)
-            cur_idxs.append(idx)
-            continue
-        anchor = sum(cur_prices) / len(cur_prices)
-        if anchor > 0 and abs(price - anchor) / anchor <= tolerance_pct:
-            cur_prices.append(price)
-            cur_idxs.append(idx)
-        else:
-            _flush()
-            cur_prices = [price]
-            cur_idxs = [idx]
-    _flush()
+    groups: List[List[Swing]] = []
+    for idx, price in sorted(swings, key=lambda s: s[1]):
+        if groups:
+            cur = groups[-1]
+            anchor = sum(p for _, p in cur) / len(cur)
+            if anchor > 0 and abs(price - anchor) / anchor <= tolerance_pct:
+                cur.append((idx, price))
+                continue
+        groups.append([(idx, price)])
+    clusters = [{"price": sum(p for _, p in g) / len(g), "tests": len(g),
+                 "last_idx": max(i for i, _ in g)} for g in groups]
     return sorted(clusters, key=lambda c: c["price"])
 
 
 def nearest_above(price: float, levels: List[dict]) -> Optional[dict]:
     """Nearest level strictly above `price` (nearest resistance), or None."""
-    above = [lv for lv in levels if lv["price"] > price]
-    return above[0] if above else None
+    return next((lv for lv in levels if lv["price"] > price), None)
 
 
 def nearest_below(price: float, levels: List[dict]) -> Optional[dict]:

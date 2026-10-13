@@ -51,12 +51,10 @@ def adx(high, low, close, n: int = 14):
     """Return (adx, plus_di, minus_di), all Wilder-smoothed."""
     up = high.diff()
     down = -low.diff()
-    plus_dm = np.where((up > down) & (up > 0), up, 0.0)
-    minus_dm = np.where((down > up) & (down > 0), down, 0.0)
-    plus_dm = pd.Series(plus_dm, index=high.index)
-    minus_dm = pd.Series(minus_dm, index=high.index)
+    plus_dm = pd.Series(np.where((up > down) & (up > 0), up, 0.0), index=high.index)
+    minus_dm = pd.Series(np.where((down > up) & (down > 0), down, 0.0), index=high.index)
 
-    tr_n = _rma(true_range(high, low, close), n)
+    tr_n = atr(high, low, close, n)
     plus_di = 100 * _rma(plus_dm, n) / tr_n
     minus_di = 100 * _rma(minus_dm, n) / tr_n
     dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)

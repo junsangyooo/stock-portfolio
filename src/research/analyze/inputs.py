@@ -28,26 +28,22 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from ...core.kst import KST
+from ...core import kst
 from ...core.paths import split_symbol
 
 log = logging.getLogger(__name__)
 
-_REFS = {
-    "chart": Path(__file__).resolve().parents[1] / "chart" / "chart_rules.md",
-    "fundamental": Path(__file__).resolve().parents[1] / "fundamental" / "fundamental_rules.md",
-    "news": Path(__file__).resolve().parents[1] / "news" / "news_rules.md",
-}
+DOMAINS = ("chart", "fundamental", "news")
 
 _TITLE = {"chart": "차트 (정량)", "fundamental": "재무 (펀더멘털)",
           "news": "뉴스 (정성)"}
 
+# Each domain's dictionary sits next to its code: research/<d>/<d>_rules.md.
+_RESEARCH = Path(__file__).resolve().parents[1]
+
 
 def _reference(domain: str) -> str:
-    return _REFS[domain].read_text(encoding="utf-8")
-
-
-DOMAINS = ("chart", "fundamental", "news")
+    return (_RESEARCH / domain / f"{domain}_rules.md").read_text(encoding="utf-8")
 
 
 def references() -> list[dict]:
@@ -89,7 +85,7 @@ def _chart(symbol_id: str, force: bool) -> tuple[Optional[dict], str, str]:
     short = [k for k, v in tf.items() if not v.get("has_data")]
     if short:
         notes.append(f"{'·'.join(short)} 타임프레임은 데이터 길이 부족")
-    age = _bar_age_days(facts.get("asof"), datetime.now(KST))
+    age = _bar_age_days(facts.get("asof"), kst.now())
     if age is not None and age > _BAR_STALE_DAYS:
         notes.append(f"마지막 일봉이 {facts['asof']}({age}일 전)이다 — "
                      "아래 지표는 전부 그 시점 기준이고 현재가와 무관하다")
@@ -99,8 +95,7 @@ def _chart(symbol_id: str, force: bool) -> tuple[Optional[dict], str, str]:
 def _fundamental(symbol_id: str, name: str) -> tuple[Optional[dict], str, str]:
     from ..fundamental.assemble import assemble_display
     data = assemble_display(symbol_id, name=name)
-    avail = data.get("data_available") or {}
-    if data.get("is_etf") or avail.get("is_etf"):
+    if data.get("is_etf"):
         return data, "ok", "ETF — 재무제표 대신 NAV·보유구성 기준"
     if not data.get("n_periods"):
         return None, "missing", "재무제표가 수집되지 않았다"
@@ -175,7 +170,7 @@ def build(symbol_id: str, name: Optional[str] = None, *,
 
     return {
         "symbol": {"symbol_id": symbol_id, "name": name, "market": market},
-        "asof": datetime.now(KST).strftime("%Y-%m-%d"),
+        "asof": kst.today(),
         "domains": domains,
         "context": _context(symbol_id),
         "available": [d["id"] for d in domains if d["status"] != "missing"],

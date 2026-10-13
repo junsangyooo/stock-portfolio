@@ -10,28 +10,20 @@ from ..engine import last_closed_date
 from ..schema import Category, IndicatorFact, STATE_NO_DATA, Timeframe
 
 
-def last_float(series: pd.Series) -> Optional[float]:
-    """Last non-NaN value of a series as float, or None."""
-    if series is None or len(series) == 0:
-        return None
-    v = series.iloc[-1]
-    try:
-        f = float(v)
-    except (TypeError, ValueError):
-        return None
-    return None if math.isnan(f) else f
-
-
 def prev_float(series: pd.Series, back: int = 1) -> Optional[float]:
-    """Value `back` bars before the last, as float, or None."""
+    """Value `back` bars before the last, as float, or None (missing or NaN)."""
     if series is None or len(series) <= back:
         return None
-    v = series.iloc[-1 - back]
     try:
-        f = float(v)
+        f = float(series.iloc[-1 - back])
     except (TypeError, ValueError):
         return None
     return None if math.isnan(f) else f
+
+
+def last_float(series: pd.Series) -> Optional[float]:
+    """Last value of a series as float, or None (empty or NaN)."""
+    return prev_float(series, 0)
 
 
 def enough(df: pd.DataFrame, n: int) -> bool:
@@ -45,5 +37,5 @@ def na_fact(indicator: str, category: Category, tf: Timeframe,
     return IndicatorFact(
         indicator=indicator, category=category, timeframe=tf,
         state=STATE_NO_DATA, value=None, evidence={"reason": reason},
-        asof=last_closed_date(df) if df is not None and not df.empty else None,
+        asof=last_closed_date(df) if df is not None else None,
     )

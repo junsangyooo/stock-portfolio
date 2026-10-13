@@ -55,8 +55,8 @@ def test_a_quoted_price_snaps_to_the_detected_level():
 
 
 def test_a_price_from_nowhere_is_kept_but_flagged():
-    """Never dropped — the reader wants to see it, the planner needs to know
-    it is not grounded."""
+    """Never dropped — the reader wants to see it, and needs to know it is
+    not grounded."""
     a = run.anchors_from(_envelope(_STRUCT))
     got = run._anchor(51234, a)
     assert got["price"] == 51234

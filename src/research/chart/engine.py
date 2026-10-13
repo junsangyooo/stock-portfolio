@@ -35,6 +35,10 @@ def to_timeframe(df_daily: pd.DataFrame, tf: str) -> pd.DataFrame:
     return resample.resample(df_daily, period)
 
 
+def _last_dt(df: pd.DataFrame) -> datetime:
+    return datetime.fromtimestamp(int(df["ts"].iloc[-1]), tz=timezone.utc)
+
+
 def drop_incomplete_bar(
     df: pd.DataFrame, tf: str, now: Optional[datetime] = None
 ) -> pd.DataFrame:
@@ -51,24 +55,14 @@ def drop_incomplete_bar(
     elif now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
 
-    last_ts = int(df["ts"].iloc[-1])
-    last_dt = datetime.fromtimestamp(last_ts, tz=timezone.utc)
-
+    last_dt = _last_dt(df)
     if tf == "1w":
         in_progress = last_dt.isocalendar()[:2] == now.isocalendar()[:2]
-    elif tf == "1mo":
-        in_progress = (last_dt.year, last_dt.month) == (now.year, now.month)
     else:
-        in_progress = False
-
-    if in_progress:
-        return df.iloc[:-1].reset_index(drop=True)
-    return df.reset_index(drop=True)
+        in_progress = tf == "1mo" and (last_dt.year, last_dt.month) == (now.year, now.month)
+    return (df.iloc[:-1] if in_progress else df).reset_index(drop=True)
 
 
 def last_closed_date(df: pd.DataFrame) -> Optional[str]:
     """YYYY-MM-DD of the last (closed) bar, or None if empty."""
-    if df.empty:
-        return None
-    last_ts = int(df["ts"].iloc[-1])
-    return datetime.fromtimestamp(last_ts, tz=timezone.utc).strftime("%Y-%m-%d")
+    return None if df.empty else _last_dt(df).strftime("%Y-%m-%d")

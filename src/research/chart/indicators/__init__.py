@@ -7,8 +7,8 @@ Four categories: trend / momentum / volatility / volume. Each module exposes an
 
 where `df` is a single-timeframe OHLCV frame (cols: ts, open, high, low, close,
 volume), already look-ahead-guarded by the engine. Indicators report an
-OBJECTIVE state + value (no buy/sell judgment); the downstream claude -p
-judgment agent interprets them via the harness rules.
+OBJECTIVE state + value (no buy/sell judgment); src/research/analyze reads
+them with chart_rules.md as the dictionary.
 
 No LLM, no I/O — given the same frame an indicator always returns the same fact.
 """

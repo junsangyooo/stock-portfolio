@@ -1,12 +1,12 @@
-"""Read side of the analysis — the counterpart to run.py.
+"""Read side of the analysis — the counterpart to engine.py.
 
-run() writes; this reads. Without it a caller that wants "is there an analysis
+engine.analyze() writes; this reads. Without it a caller that wants "is there an analysis
 for this symbol today, and if not make one" has to know the storage layout,
 which means every caller reinvents the same glob. The news pipeline already
 works this way (research/news/read.py) and seven call sites go through it.
 
 Results live at data/analysis/analysis/{SYMBOL}/{YYYYMMDD}.json, one per
-symbol per day, written by verdict.persist. Nothing here knows about an
+symbol per day, written by store.persist. Nothing here knows about an
 account: the same stored result serves every account.
 """
 from __future__ import annotations
@@ -67,6 +67,11 @@ def _read(path) -> Optional[dict]:
     return dict(body) if body is not None else None
 
 
+def _newest(symbol_id: str) -> Optional[Path]:
+    d = _dir(symbol_id)
+    return max(d.glob("*.json"), default=None) if d.exists() else None
+
+
 def latest_date(symbol_id: str) -> Optional[str]:
     """Newest stored date, WITHOUT parsing the body.
 
@@ -74,20 +79,14 @@ def latest_date(symbol_id: str) -> Optional[str]:
     whether one exists and how old it is, so a hundred symbols must not cost a
     hundred json.loads.
     """
-    d = _dir(symbol_id)
-    if not d.exists():
-        return None
-    files = sorted(d.glob("*.json"))
-    return _as_date(files[-1].stem) if files else None
+    f = _newest(symbol_id)
+    return _as_date(f.stem) if f else None
 
 
 def latest(symbol_id: str) -> Optional[dict]:
     """Newest stored analysis, or None."""
-    d = _dir(symbol_id)
-    if not d.exists():
-        return None
-    files = sorted(d.glob("*.json"))
-    return _read(files[-1]) if files else None
+    f = _newest(symbol_id)
+    return _read(f) if f else None
 
 
 def on(symbol_id: str, date: str) -> Optional[dict]:
@@ -105,12 +104,9 @@ def summary(symbol_ids: Iterable[str]) -> dict:
     """
     out: dict = {}
     for sid in symbol_ids:
-        body = latest(sid)
-        if body is None:
-            out[sid] = {"date": None, "coords": None,
-                        **{f: None for f in _SUMMARY_FIELDS}}
-            continue
-        out[sid] = {"date": body.get("date"), "coords": _coords(body),
+        body = latest(sid) or {}
+        out[sid] = {"date": body.get("date"),
+                    "coords": _coords(body) if body else None,
                     **{f: body.get(f) for f in _SUMMARY_FIELDS}}
     return out
 

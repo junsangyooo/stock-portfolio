@@ -1,9 +1,9 @@
 """Support/Resistance, Fibonacci, Pivot Points (category 5 — structure).
 
-These detect price LEVELS (not directional votes). The ChartAgent (C4) consumes
-them as context: nearest support/resistance, fib retracement zone, pivot grid,
-and recent breakouts (confirmed by volume_spike). All build on the swing
-extrema engine.
+These detect price LEVELS (not directional votes): nearest support/resistance,
+fib retracement zone, pivot grid, and recent breakouts (read next to
+volume_spike). The analysis snaps every price it quotes to these levels
+(analyze/engine.anchors_from). All build on the swing extrema engine.
 """
 from __future__ import annotations
 
@@ -29,27 +29,24 @@ def support_resistance(df: pd.DataFrame, order: int = 5,
         return {"levels": [], "nearest_support": None, "nearest_resistance": None,
                 "recent_break": None, "reason": "insufficient bars"}
 
-    sh, sl = extrema.find_swings(df["high"].values, df["low"].values, order=order)
-    res_levels = extrema.cluster_levels(sh, tolerance_pct=tol_pct)
-    sup_levels = extrema.cluster_levels(sl, tolerance_pct=tol_pct)
+    sh, sl = extrema.frame_swings(df, order)
     all_levels = extrema.cluster_levels(sh + sl, tolerance_pct=tol_pct)
 
     price = float(df["close"].iloc[-1])
-    nearest_r = extrema.nearest_above(price, res_levels)
-    nearest_s = extrema.nearest_below(price, sup_levels)
+    nearest_r = extrema.nearest_above(price, extrema.cluster_levels(sh, tolerance_pct=tol_pct))
+    nearest_s = extrema.nearest_below(price, extrema.cluster_levels(sl, tolerance_pct=tol_pct))
 
     # recent break: did the last close cross a level the prior close hadn't?
     recent_break = None
-    if len(df) >= 2:
-        prev = float(df["close"].iloc[-2])
-        for lv in all_levels:
-            p = lv["price"]
-            if prev <= p < price:
-                recent_break = {"type": "break_up", "level": round(p, 4), "tests": lv["tests"]}
-                break
-            if prev >= p > price:
-                recent_break = {"type": "break_down", "level": round(p, 4), "tests": lv["tests"]}
-                break
+    prev = float(df["close"].iloc[-2])
+    for lv in all_levels:
+        p = lv["price"]
+        if prev <= p < price:
+            recent_break = {"type": "break_up", "level": round(p, 4), "tests": lv["tests"]}
+            break
+        if prev >= p > price:
+            recent_break = {"type": "break_down", "level": round(p, 4), "tests": lv["tests"]}
+            break
 
     def _fmt(lv: Optional[dict]) -> Optional[dict]:
         if lv is None:
@@ -76,7 +73,7 @@ def fibonacci(df: pd.DataFrame, order: int = 5) -> dict:
     """
     if df is None or len(df) < 2 * order + 2:
         return {"levels": {}, "reason": "insufficient bars"}
-    sh, sl = extrema.find_swings(df["high"].values, df["low"].values, order=order)
+    sh, sl = extrema.frame_swings(df, order)
     if not sh or not sl:
         return {"levels": {}, "reason": "no swings"}
 
@@ -87,11 +84,9 @@ def fibonacci(df: pd.DataFrame, order: int = 5) -> dict:
         return {"levels": {}, "reason": "degenerate range"}
 
     uptrend = lo_idx < hi_idx   # low came first -> recent leg is up
-    levels = {}
-    for r in FIB_RATIOS:
-        # uptrend: retrace down from high; downtrend: retrace up from low
-        lvl = hi - rng * r if uptrend else lo + rng * r
-        levels[f"{r:.3f}"] = round(lvl, 4)
+    # uptrend: retrace down from high; downtrend: retrace up from low
+    levels = {f"{r:.3f}": round(hi - rng * r if uptrend else lo + rng * r, 4)
+              for r in FIB_RATIOS}
 
     return {
         "direction": "up" if uptrend else "down",
@@ -105,7 +100,7 @@ def fibonacci(df: pd.DataFrame, order: int = 5) -> dict:
 def pivot_points(df: pd.DataFrame, kind: str = "classic") -> dict:
     """Pivot points from the LAST closed bar's HLC. Deterministic (no detection).
 
-    kind: classic | fibonacci | camarilla | woodie.
+    kind: classic | camarilla.
     """
     if df is None or df.empty:
         return {"reason": "no data"}
@@ -118,21 +113,12 @@ def pivot_points(df: pd.DataFrame, kind: str = "classic") -> dict:
         out = {"PP": pp, "R1": 2 * pp - l, "S1": 2 * pp - h,
                "R2": pp + rng, "S2": pp - rng,
                "R3": h + 2 * (pp - l), "S3": l - 2 * (h - pp)}
-    elif kind == "fibonacci":
-        pp = (h + l + c) / 3
-        out = {"PP": pp, "R1": pp + 0.382 * rng, "S1": pp - 0.382 * rng,
-               "R2": pp + 0.618 * rng, "S2": pp - 0.618 * rng,
-               "R3": pp + rng, "S3": pp - rng}
     elif kind == "camarilla":
         out = {"PP": (h + l + c) / 3,
                "R1": c + rng * 1.0833, "S1": c - rng * 1.0833,
                "R2": c + rng * 1.1666, "S2": c - rng * 1.1666,
                "R3": c + rng * 1.25, "S3": c - rng * 1.25,
                "R4": c + rng * 1.5, "S4": c - rng * 1.5}
-    elif kind == "woodie":
-        pp = (h + l + 2 * c) / 4
-        out = {"PP": pp, "R1": 2 * pp - l, "S1": 2 * pp - h,
-               "R2": pp + rng, "S2": pp - rng}
     else:
         return {"reason": f"unknown kind {kind!r}"}
 

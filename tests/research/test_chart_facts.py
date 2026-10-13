@@ -1,4 +1,4 @@
-"""ChartFactCollector — facts across timeframes + structure, no judgment."""
+"""collect_facts — facts across timeframes + structure, no judgment."""
 import json
 import unittest
 from datetime import datetime, timezone

@@ -11,7 +11,7 @@ are facts, true by definition of the indicator — never a recommendation.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Literal, Optional
 
 Category = Literal["trend", "momentum", "volatility", "volume", "structure"]
@@ -36,7 +36,7 @@ class IndicatorFact:
                    ichimoku -> above_cloud|below_cloud|in_cloud
                    "no_data" when insufficient bars.
         value:     primary numeric reading, if scalar.
-        evidence:  supporting raw numbers (for the judgment agent / UI).
+        evidence:  supporting raw numbers (for the analysis / UI).
         asof:      date (YYYY-MM-DD) of the closed bar used.
     """
 
@@ -53,12 +53,4 @@ class IndicatorFact:
         return self.state != STATE_NO_DATA
 
     def to_dict(self) -> dict:
-        return {
-            "indicator": self.indicator,
-            "category": self.category,
-            "timeframe": self.timeframe,
-            "state": self.state,
-            "value": self.value,
-            "evidence": self.evidence,
-            "asof": self.asof,
-        }
+        return asdict(self)

@@ -23,7 +23,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Iterable, Optional
 
-from ...core.kst import KST
+from ...core import kst
 from .read import latest
 
 MAX_AGE = 7               # trading days — the backstop when nothing else fired
@@ -115,7 +115,7 @@ def due_detail(symbol_ids: Iterable[str], *, limit: int = DAILY_LIMIT,
                now: Optional[datetime] = None) -> list[dict]:
     """[{symbol_id, reason, detail, age_days}] for the symbols worth redoing,
     most urgent first, cut at `limit` (0 = no cut)."""
-    today = (now or datetime.now(KST)).date()
+    today = (now or kst.now()).date()
     ids = list(dict.fromkeys(symbol_ids))
     if not ids:
         return []

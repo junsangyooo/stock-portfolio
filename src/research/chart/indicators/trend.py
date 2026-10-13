@@ -26,12 +26,12 @@ def ema_alignment(df, tf) -> IndicatorFact:
         state = "bear_stack"
     else:
         state = "mixed"
-    return IndicatorFact("ema_alignment", _CAT, tf, state,
-                         value=round((price - e20) / e20 * 100, 3),
+    dist = round((price - e20) / e20 * 100, 3)
+    return IndicatorFact("ema_alignment", _CAT, tf, state, value=dist,
                          evidence={"ema20": round(e20, 4), "ema50": round(e50, 4),
                                    "ema200": round(e200, 4), "price": round(price, 4),
                                    "price_above_ema20": price > e20,
-                                   "dist_to_ema20_pct": round((price - e20) / e20 * 100, 3)},
+                                   "dist_to_ema20_pct": dist},
                          asof=last_closed_date(df))
 
 
@@ -45,11 +45,10 @@ def macd_cross(df, tf) -> IndicatorFact:
     pmacd, psignal = prev_float(line), prev_float(sig)
     if None in (macd_v, signal_v):
         return na_fact("macd", _CAT, tf, df, "macd nan")
-    crossed_up = pmacd is not None and psignal is not None and pmacd <= psignal and macd_v > signal_v
-    crossed_dn = pmacd is not None and psignal is not None and pmacd >= psignal and macd_v < signal_v
-    if crossed_up:
+    has_prev = pmacd is not None and psignal is not None
+    if has_prev and pmacd <= psignal and macd_v > signal_v:
         state = "golden_cross"
-    elif crossed_dn:
+    elif has_prev and pmacd >= psignal and macd_v < signal_v:
         state = "dead_cross"
     elif macd_v > signal_v:
         state = "above_signal"
@@ -90,8 +89,9 @@ def supertrend(df, tf) -> IndicatorFact:
     d = last_float(_ta.supertrend(df["high"], df["low"], df["close"], 10, 3.0))
     if d is None:
         return na_fact("supertrend", _CAT, tf, df, "supertrend nan")
-    return IndicatorFact("supertrend", _CAT, tf, "up" if d > 0 else "down",
-                         evidence={"direction": "up" if d > 0 else "down"},
+    direction = "up" if d > 0 else "down"
+    return IndicatorFact("supertrend", _CAT, tf, direction,
+                         evidence={"direction": direction},
                          asof=last_closed_date(df))
 
 

@@ -19,18 +19,23 @@ def _osc_state(cur: float, low: float, high: float) -> str:
     return "neutral"
 
 
+def _osc_fact(name: str, key: str, df, tf, series, low: float, high: float,
+              nan_reason: str) -> IndicatorFact:
+    """A single-line oscillator: last value, previous value, rising, state."""
+    cur, prv = last_float(series), prev_float(series)
+    if cur is None:
+        return na_fact(name, _CAT, tf, df, nan_reason)
+    return IndicatorFact(name, _CAT, tf, _osc_state(cur, low, high), value=round(cur, 2),
+                         evidence={key: round(cur, 2), "prev": round(prv, 2) if prv else None,
+                                   "rising": (prv is not None and cur > prv)},
+                         asof=last_closed_date(df))
+
+
 def rsi(df, tf) -> IndicatorFact:
     """RSI(14). state: oversold(<30)|overbought(>70)|neutral."""
     if not enough(df, 15):
         return na_fact("rsi", _CAT, tf, df, "need>=15 bars")
-    r = _ta.rsi(df["close"], 14)
-    cur, prv = last_float(r), prev_float(r)
-    if cur is None:
-        return na_fact("rsi", _CAT, tf, df, "rsi nan")
-    return IndicatorFact("rsi", _CAT, tf, _osc_state(cur, 30, 70), value=round(cur, 2),
-                         evidence={"rsi": round(cur, 2), "prev": round(prv, 2) if prv else None,
-                                   "rising": (prv is not None and cur > prv)},
-                         asof=last_closed_date(df))
+    return _osc_fact("rsi", "rsi", df, tf, _ta.rsi(df["close"], 14), 30, 70, "rsi nan")
 
 
 def stochastic(df, tf) -> IndicatorFact:
@@ -50,43 +55,26 @@ def cci(df, tf) -> IndicatorFact:
     """CCI(20). state: oversold(<-100)|overbought(>100)|neutral."""
     if not enough(df, 25):
         return na_fact("cci", _CAT, tf, df, "need>=25 bars")
-    c = _ta.cci(df["high"], df["low"], df["close"], 20)
-    cur, prv = last_float(c), prev_float(c)
-    if cur is None:
-        return na_fact("cci", _CAT, tf, df, "cci nan")
-    return IndicatorFact("cci", _CAT, tf, _osc_state(cur, -100, 100), value=round(cur, 2),
-                         evidence={"cci": round(cur, 2), "prev": round(prv, 2) if prv else None,
-                                   "rising": (prv is not None and cur > prv)},
-                         asof=last_closed_date(df))
+    return _osc_fact("cci", "cci", df, tf,
+                     _ta.cci(df["high"], df["low"], df["close"], 20), -100, 100, "cci nan")
 
 
 def williams_r(df, tf) -> IndicatorFact:
     """Williams %R(14). state: oversold(<-80)|overbought(>-20)|neutral."""
     if not enough(df, 15):
         return na_fact("williams_r", _CAT, tf, df, "need>=15 bars")
-    w = _ta.williams_r(df["high"], df["low"], df["close"], 14)
-    cur, prv = last_float(w), prev_float(w)
-    if cur is None:
-        return na_fact("williams_r", _CAT, tf, df, "willr nan")
-    state = "oversold" if cur < -80 else "overbought" if cur > -20 else "neutral"
-    return IndicatorFact("williams_r", _CAT, tf, state, value=round(cur, 2),
-                         evidence={"willr": round(cur, 2), "prev": round(prv, 2) if prv else None,
-                                   "rising": (prv is not None and cur > prv)},
-                         asof=last_closed_date(df))
+    return _osc_fact("williams_r", "willr", df, tf,
+                     _ta.williams_r(df["high"], df["low"], df["close"], 14),
+                     -80, -20, "willr nan")
 
 
 def mfi(df, tf) -> IndicatorFact:
     """Money Flow Index(14, volume-weighted). state: oversold(<20)|overbought(>80)|neutral."""
     if not enough(df, 15):
         return na_fact("mfi", _CAT, tf, df, "need>=15 bars")
-    m = _ta.mfi(df["high"], df["low"], df["close"], df["volume"], 14)
-    cur, prv = last_float(m), prev_float(m)
-    if cur is None:
-        return na_fact("mfi", _CAT, tf, df, "mfi nan")
-    return IndicatorFact("mfi", _CAT, tf, _osc_state(cur, 20, 80), value=round(cur, 2),
-                         evidence={"mfi": round(cur, 2), "prev": round(prv, 2) if prv else None,
-                                   "rising": (prv is not None and cur > prv)},
-                         asof=last_closed_date(df))
+    return _osc_fact("mfi", "mfi", df, tf,
+                     _ta.mfi(df["high"], df["low"], df["close"], df["volume"], 14),
+                     20, 80, "mfi nan")
 
 
 INDICATORS = [rsi, stochastic, cci, williams_r, mfi]

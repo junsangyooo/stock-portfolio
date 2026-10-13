@@ -34,11 +34,8 @@ def ttm_squeeze(df, tf) -> IndicatorFact:
     mom = last_float(mom_s)
     if mom is None:
         return na_fact("ttm_squeeze", _CAT, tf, df, "squeeze nan")
-    squeezed = bool(sq_s.iloc[-1]) if len(sq_s) else False
-    if squeezed:
-        state = "squeeze_on"
-    else:
-        state = "fired_up" if mom > 0 else "fired_down"
+    squeezed = bool(sq_s.iloc[-1])      # same length as mom_s, which is non-empty
+    state = "squeeze_on" if squeezed else "fired_up" if mom > 0 else "fired_down"
     return IndicatorFact("ttm_squeeze", _CAT, tf, state, value=round(mom, 4),
                          evidence={"momentum": round(mom, 4), "squeeze_on": squeezed},
                          asof=last_closed_date(df))

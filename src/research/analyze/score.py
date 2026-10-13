@@ -14,7 +14,7 @@ Three questions, kept apart because they fail differently:
                 stop level at all
 
     python -m src.research.analyze.score                # everything stored
-    python -m src.research.analyze.score --since 2026-09-01 --json
+    python -m src.research.analyze.score --since 2026-09-01 --horizons 5,20
 
 An analysis is only scored once the market has had the full horizon to answer
 it; younger ones are counted as pending rather than as misses.
@@ -105,7 +105,7 @@ def _direction_hit(label: str, ret_pct: float) -> Optional[bool]:
 
 
 def _levels_outcome(body: dict, fwd: dict) -> Optional[str]:
-    """Which coordinate the price reached first — the planner's whole premise.
+    """Which coordinate the price reached — the card's whole premise.
 
     'both' means the window touched the target and the stop; the bars do not
     say which came first, so it is reported rather than guessed.
@@ -159,10 +159,10 @@ def report(symbol_ids: Optional[Iterable[str]] = None, *,
         n_ok += 1
         labels[body.get("label")] += 1
         for k, v in _contract(body).items():
-            contract[k] += int(v) if isinstance(v, bool) else v
-        d = datetime.strptime(day, "%Y-%m-%d").date() if day else None
-        if d is None:
+            contract[k] += v                  # 0 + bool is an int
+        if not day:
             continue
+        d = datetime.strptime(day, "%Y-%m-%d").date()
         if sid not in bars_cache:
             bars_cache[sid] = _bars(sid)
         for h in horizons:

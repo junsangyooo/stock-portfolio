@@ -6,11 +6,10 @@ symbol so the UI reads a stored result.
 
 `--symbols` is required. This module is part of the shared research layer and
 does not ask an account book what it holds — the account side schedules it
-(src/portfolio/jobs.py).
+(src/portfolio/supply_job.py).
 
-Was chart → judge per symbol. There is one call now: judging a domain alone
-hardens a one-dimensional conclusion that the later merge cannot undo, so the
-domains meet inside a single call instead (src/research/analyze/).
+One call per symbol, all three domains in it — a domain judged alone hardens
+a one-dimensional conclusion that a later merge cannot undo (see prompt.py).
 
 Same-day results are skipped, so a re-run is cheap and a crash mid-batch is
 resumed rather than repeated. Failures are collected and reported to Discord
@@ -25,10 +24,9 @@ import json
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 from typing import Optional
 
-from ...core.kst import KST as _KST
+from ...core import kst
 from ...core.paths import ensure_dirs
 
 
@@ -74,7 +72,7 @@ def run_symbol(symbol_id: str, date: str, *, force: bool,
     except Exception as e:  # noqa: BLE001 — isolate per-symbol failures
         out["status"] = "error"
         out["errors"].append(str(e)[:150])
-    print(f"[{datetime.now(_KST):%H:%M:%S}] {symbol_id} -> {out['status']} "
+    print(f"[{kst.now():%H:%M:%S}] {symbol_id} -> {out['status']} "
           f"({time.monotonic() - t0:.0f}s)", flush=True)
     return out
 
@@ -118,7 +116,7 @@ def main() -> int:
         print("no symbols given — nothing to do")
         return 0
 
-    date = datetime.now(_KST).strftime("%Y-%m-%d")
+    date = kst.today()
     t0 = time.monotonic()
     print(f"analysis batch {date} — {len(symbols)} symbols, "
           f"workers={args.workers}", flush=True)

@@ -26,7 +26,7 @@ from ...market import fundamental_metrics
 
 
 def _valuation_band(symbol_id: str, valuation: dict) -> dict:
-    """The symbol's own PER/PBR band position (rulebook §H value axis).
+    """The symbol's own PER/PBR band position (value axis).
 
     Percentile of the latest PER/PBR within its own trailing history — answers
     "cheap vs my own past?". KR has native daily history; US valuation accrues
@@ -56,8 +56,8 @@ def _valuation_band(symbol_id: str, valuation: dict) -> dict:
 
 
 def _is_etf(symbol_id: str) -> bool:
-    """Universe-driven ETF check (used to route assemble/_judge to the ETF
-    branch). Returns False on any failure so the regular path still runs."""
+    """Universe-driven ETF check (routes assemble_display to the ETF shape).
+    Returns False on any failure so the regular path still runs."""
     try:
         from ...universe import search as uni_search
         return bool((uni_search.get(symbol_id) or {}).get("is_etf"))
@@ -65,40 +65,45 @@ def _is_etf(symbol_id: str) -> bool:
         return False
 
 
+def _sector(symbol_id: str) -> dict:
+    rec = sector_store.read(symbol_id) or {}
+    return {"sector": rec.get("sector"), "industry": rec.get("industry")}
+
+
 def assemble_etf_inputs(symbol_id: str) -> dict:
     """ETF-specific input snapshot. NAV / 괴리율 / 3M return / AUM (from
     Naver via etf_store, refreshed by src.market.pipeline.etf_job). No
     statements, no per-share valuation — those don't apply to ETFs."""
     snap = etf_store.read(symbol_id) or {}
-    sector_rec = sector_store.read(symbol_id) or {}
     return {
         "is_etf": True,
         "etf": snap,
-        "sector": {"sector": sector_rec.get("sector"),
-                   "industry": sector_rec.get("industry")},
+        "sector": _sector(symbol_id),
         "data_available": {
             "etf_snapshot": bool(snap),
-            "nav": snap.get("nav") is not None if snap else False,
-            "aum": snap.get("aum_eokwon") is not None if snap else False,
+            "nav": snap.get("nav") is not None,
+            "aum": snap.get("aum_eokwon") is not None,
         },
     }
 
 
-def assemble_inputs(symbol_id: str) -> dict:
+def assemble_inputs(symbol_id: str, rows: Optional[list] = None) -> dict:
     """Gather the enriched L1/L2/L3 snapshot from the (pre-collected) stores.
 
     Read-only — does NOT fetch from DART/yfinance. Collection is the daily
-    batch's job; the button only evaluates what is already stored.
+    batch's job; this reads only what is already stored. `rows` passes the
+    statement rows a caller already read.
 
-    Enriched (vs the original snapshot) so the rulebook's trend / F-Score /
-    band / sector rules are actually computable:
+    Enriched so the dictionary's trend / F-Score / band / sector entries have
+    numbers to point at:
       - derived_series : last 8 periods of margins/ROE/debt/YoY (trends)
       - quality        : QoE, Sloan accrual, Altman Z, partial Piotroski F
       - valuation_band : PER/PBR percentile vs the symbol's own history
       - sector         : GICS-style sector/industry tag (for §E correction)
     """
     valuation = valuation_store.latest(symbol_id)
-    rows = financials_store.rows_as_dicts(symbol_id)
+    if rows is None:
+        rows = financials_store.rows_as_dicts(symbol_id)
     latest = rows[-1] if rows else {}
     prior = fundamental_metrics.find_prior_year(rows, latest.get("period", "")) if latest else None
     derived = fundamental_metrics.compute(latest, prior_year=prior, valuation=valuation)
@@ -113,8 +118,7 @@ def assemble_inputs(symbol_id: str) -> dict:
         "piotroski_f": fundamental_metrics.piotroski_f(latest, prior),
     } if latest else {}
 
-    sector_rec = sector_store.read(symbol_id) or {}
-
+    sector = _sector(symbol_id)
     return {
         "valuation": valuation,
         "financials_latest": latest,
@@ -124,12 +128,11 @@ def assemble_inputs(symbol_id: str) -> dict:
         "derived_series": fundamental_metrics.derived_series(rows, last_n=8),
         "quality": quality,
         "valuation_band": _valuation_band(symbol_id, valuation),
-        "sector": {"sector": sector_rec.get("sector"),
-                   "industry": sector_rec.get("industry")},
+        "sector": sector,
         "data_available": {
             "valuation": bool(valuation),
             "financials": bool(latest),
-            "sector": bool(sector_rec.get("sector")),
+            "sector": bool(sector["sector"]),
         },
     }
 
@@ -142,21 +145,12 @@ def assemble_display(symbol_id: str, name: Optional[str] = None,
     statement series so the panel can show a 재무제표 table + metrics + trend
     (and export CSV) the moment the tab opens, before any AI interpretation.
     """
-    name = name or symbol_id
+    head = {"symbol_id": symbol_id, "name": name or symbol_id,
+            "kind": "fundamental_facts"}
     if _is_etf(symbol_id):
-        inputs = assemble_etf_inputs(symbol_id)
-        return {
-            "symbol_id": symbol_id, "name": name,
-            "kind": "fundamental_facts",
-            "financials_series": [],   # ETFs have no statements
-            **inputs,
-        }
-    inputs = assemble_inputs(symbol_id)
-    series = financials_store.rows_as_dicts(symbol_id, n=n_periods_table)
-    return {
-        "symbol_id": symbol_id,
-        "name": name,
-        "kind": "fundamental_facts",
-        "financials_series": series,
-        **inputs,
-    }
+        # ETFs have no statements
+        return {**head, "financials_series": [], **assemble_etf_inputs(symbol_id)}
+    # One read serves both: the table is the newest `n_periods_table` rows.
+    rows = financials_store.rows_as_dicts(symbol_id)
+    series = rows[-n_periods_table:] if n_periods_table > 0 else rows
+    return {**head, "financials_series": series, **assemble_inputs(symbol_id, rows)}

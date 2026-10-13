@@ -2,9 +2,9 @@
 
 Detectors return directional pattern events (bullish/bearish) with the bar they
 occur on. Candlestick reversal patterns are only meaningful with a prior trend,
-so single/multi-candle reversals report direction and the caller (ChartAgent)
-combines them with trend context. Chart-pattern geometry beyond double top/
-bottom (head&shoulders, triangles, measured-move targets) is a later enhancement.
+so single/multi-candle reversals report direction and the analysis reads them
+next to the trend facts. Chart-pattern geometry beyond double top/bottom
+(head&shoulders, triangles, measured-move targets) is a later enhancement.
 """
 from __future__ import annotations
 
@@ -12,18 +12,16 @@ import pandas as pd
 
 from . import extrema
 from ..engine import last_closed_date
+from ..indicators import _ta
 
 _DOJI_BODY = 0.1      # body <= 10% of range
 _LONG_SHADOW = 2.0    # shadow >= 2x body
 
 
 def _parts(row):
+    """(open, close, range, body, upper shadow, lower shadow) of one candle."""
     o, h, l, c = float(row["open"]), float(row["high"]), float(row["low"]), float(row["close"])
-    rng = h - l
-    body = abs(c - o)
-    upper = h - max(o, c)
-    lower = min(o, c) - l
-    return o, h, l, c, rng, body, upper, lower
+    return o, c, h - l, abs(c - o), h - max(o, c), min(o, c) - l
 
 
 def detect_candles(df: pd.DataFrame) -> list[dict]:
@@ -34,50 +32,47 @@ def detect_candles(df: pd.DataFrame) -> list[dict]:
     """
     if df is None or len(df) < 3:
         return []
-    out = []
-    last_idx = len(df) - 1
-    asof = last_closed_date(df)
-
-    o, h, l, c, rng, body, upper, lower = _parts(df.iloc[-1])
+    o, c, rng, body, upper, lower = _parts(df.iloc[-1])
     if rng <= 0:
         return []
+    asof = last_closed_date(df)
+    out = []
+
+    def add(pattern: str, direction: str) -> None:
+        out.append({"pattern": pattern, "direction": direction, "at": asof})
 
     # ── single-candle ──
     if body <= rng * _DOJI_BODY:
-        out.append({"pattern": "doji", "direction": "indecision", "at": asof})
+        add("doji", "indecision")
     if body > 0 and lower >= _LONG_SHADOW * body and upper <= body:
-        out.append({"pattern": "hammer", "direction": "bullish", "at": asof})
+        add("hammer", "bullish")
     if body > 0 and upper >= _LONG_SHADOW * body and lower <= body:
-        out.append({"pattern": "shooting_star", "direction": "bearish", "at": asof})
-    if rng > 0 and body >= rng * 0.95:
-        out.append({"pattern": "marubozu",
-                    "direction": "bullish" if c > o else "bearish", "at": asof})
+        add("shooting_star", "bearish")
+    if body >= rng * 0.95:
+        add("marubozu", "bullish" if c > o else "bearish")
 
     # ── two-candle (prev, last) ──
-    po, ph, pl, pc, prng, pbody, pu, plo = _parts(df.iloc[-2])
-    prev_bear = pc < po
-    prev_bull = pc > po
-    cur_bull = c > o
-    cur_bear = c < o
+    po, pc, prng, pbody, _, _ = _parts(df.iloc[-2])
+    prev_bear, prev_bull = pc < po, pc > po
+    cur_bull, cur_bear = c > o, c < o
     # engulfing
     if prev_bear and cur_bull and c >= po and o <= pc:
-        out.append({"pattern": "bullish_engulfing", "direction": "bullish", "at": asof})
+        add("bullish_engulfing", "bullish")
     if prev_bull and cur_bear and o >= pc and c <= po:
-        out.append({"pattern": "bearish_engulfing", "direction": "bearish", "at": asof})
+        add("bearish_engulfing", "bearish")
     # harami (prev body engulfs current body)
     if prev_bear and cur_bull and o >= pc and c <= po:
-        out.append({"pattern": "bullish_harami", "direction": "bullish", "at": asof})
+        add("bullish_harami", "bullish")
     if prev_bull and cur_bear and o <= pc and c >= po:
-        out.append({"pattern": "bearish_harami", "direction": "bearish", "at": asof})
+        add("bearish_harami", "bearish")
 
     # ── three-candle stars ──
-    o3, h3, l3, c3, r3, b3, u3, lo3 = _parts(df.iloc[-3])   # oldest
-    mid_body = pbody
-    mid_small = prng > 0 and mid_body <= prng * 0.4
+    o3, c3, *_ = _parts(df.iloc[-3])   # oldest
+    mid_small = prng > 0 and pbody <= prng * 0.4
     if c3 < o3 and mid_small and cur_bull and c > (o3 + c3) / 2:
-        out.append({"pattern": "morning_star", "direction": "bullish", "at": asof})
+        add("morning_star", "bullish")
     if c3 > o3 and mid_small and cur_bear and c < (o3 + c3) / 2:
-        out.append({"pattern": "evening_star", "direction": "bearish", "at": asof})
+        add("evening_star", "bearish")
 
     return out
 
@@ -86,29 +81,25 @@ def detect_gap(df: pd.DataFrame, atr_window: int = 14) -> dict:
     """Detect a gap on the last bar (open vs prior high/low), normalised by ATR."""
     if df is None or len(df) < atr_window + 2:
         return {"gap": None, "reason": "insufficient bars"}
-    prev = df.iloc[-2]
-    last = df.iloc[-1]
-    prev_high, prev_low = float(prev["high"]), float(prev["low"])
-    open_ = float(last["open"])
+    prev_high, prev_low = float(df["high"].iloc[-2]), float(df["low"].iloc[-2])
+    open_ = float(df["open"].iloc[-1])
 
-    # simple ATR (Wilder-ish via rolling mean of true range)
-    h = df["high"].astype(float)
-    l = df["low"].astype(float)
-    c = df["close"].astype(float)
-    tr = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
+    # simple ATR (rolling mean of true range, not Wilder)
+    tr = _ta.true_range(df["high"].astype(float), df["low"].astype(float),
+                        df["close"].astype(float))
     atr = float(tr.rolling(atr_window).mean().iloc[-1])
     if atr <= 0:
         return {"gap": None, "reason": "atr zero"}
 
+    asof = last_closed_date(df)
     if open_ > prev_high:
-        size = (open_ - prev_high)
-        return {"gap": {"type": "gap_up", "size": round(size, 4),
-                        "atr_mult": round(size / atr, 2)}, "asof": last_closed_date(df)}
-    if open_ < prev_low:
-        size = (prev_low - open_)
-        return {"gap": {"type": "gap_down", "size": round(size, 4),
-                        "atr_mult": round(size / atr, 2)}, "asof": last_closed_date(df)}
-    return {"gap": None, "asof": last_closed_date(df)}
+        kind, size = "gap_up", open_ - prev_high
+    elif open_ < prev_low:
+        kind, size = "gap_down", prev_low - open_
+    else:
+        return {"gap": None, "asof": asof}
+    return {"gap": {"type": kind, "size": round(size, 4),
+                    "atr_mult": round(size / atr, 2)}, "asof": asof}
 
 
 def detect_double_top_bottom(df: pd.DataFrame, order: int = 5,
@@ -120,17 +111,15 @@ def detect_double_top_bottom(df: pd.DataFrame, order: int = 5,
     """
     if df is None or len(df) < 2 * order + 2:
         return []
-    sh, sl = extrema.find_swings(df["high"].values, df["low"].values, order=order)
-    out = []
+    sh, sl = extrema.frame_swings(df, order)
     asof = last_closed_date(df)
-    if len(sh) >= 2:
-        (_, p1), (_, p2) = sh[-2], sh[-1]
+    out = []
+    for swings, pattern, direction in ((sh, "double_top", "bearish"),
+                                       (sl, "double_bottom", "bullish")):
+        if len(swings) < 2:
+            continue
+        (_, p1), (_, p2) = swings[-2], swings[-1]
         if p1 > 0 and abs(p1 - p2) / p1 <= tol_pct:
-            out.append({"pattern": "double_top", "direction": "bearish",
-                        "level": round((p1 + p2) / 2, 4), "at": asof})
-    if len(sl) >= 2:
-        (_, p1), (_, p2) = sl[-2], sl[-1]
-        if p1 > 0 and abs(p1 - p2) / p1 <= tol_pct:
-            out.append({"pattern": "double_bottom", "direction": "bullish",
+            out.append({"pattern": pattern, "direction": direction,
                         "level": round((p1 + p2) / 2, 4), "at": asof})
     return out

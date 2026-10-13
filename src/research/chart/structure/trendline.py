@@ -24,11 +24,6 @@ def _fit(points: list[tuple[int, float]]):
     return float(slope), float(intercept)
 
 
-def _line_at(fit, x: int) -> float:
-    slope, intercept = fit
-    return slope * x + intercept
-
-
 def fit_trendlines(df: pd.DataFrame, order: int = 5, max_points: int = 4) -> dict:
     """Fit support (swing lows) and resistance (swing highs) trendlines.
 
@@ -38,7 +33,7 @@ def fit_trendlines(df: pd.DataFrame, order: int = 5, max_points: int = 4) -> dic
     if df is None or len(df) < 2 * order + 2:
         return {"support": None, "resistance": None, "reason": "insufficient bars"}
 
-    sh, sl = extrema.find_swings(df["high"].values, df["low"].values, order=order)
+    sh, sl = extrema.frame_swings(df, order)
     last_x = len(df) - 1
     price = float(df["close"].iloc[-1])
 
@@ -47,8 +42,8 @@ def fit_trendlines(df: pd.DataFrame, order: int = 5, max_points: int = 4) -> dic
         fit = _fit(pts)
         if fit is None:
             return None
-        val = _line_at(fit, last_x)
-        slope = fit[0]
+        slope, intercept = fit
+        val = slope * last_x + intercept
         broke = None
         if side == "support" and price < val:
             broke = "break_down"

@@ -13,7 +13,11 @@ Inside:
                 and reuses the stored row after that.
     prompt.py   the single call's prompt and output contract.
     engine.py   execute, validate, persist.
+    store.py    label vocabulary and the write path.
     read.py     everything already stored.
+    due.py      which stored analyses are worth redoing.
+    score.py    the scorecard — stored analyses against what price did.
+    batch_job.py  warm a given list of symbols (--symbols).
     __main__.py `python -m src.research.analyze KR:005930`
 
 The module is `engine`, the exported function is `run` — naming the module

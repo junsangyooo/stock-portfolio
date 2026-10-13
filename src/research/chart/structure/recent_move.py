@@ -1,6 +1,6 @@
 """Recent swing move quantifier (structure category).
 
-Supplies the facts the rulebook's §E risk patterns need but the point-in-time
+Supplies the facts chart_rules.md's §E risk patterns need but the point-in-time
 indicators cannot express: how big was the PRIOR decline, how big / old /
 volume-backed is the CURRENT rebound, and where price sits versus the decline's
 fibonacci retracement. These turn dead-cat-bounce (E1), blow-off-top (E4) and
@@ -21,13 +21,13 @@ from ..engine import last_closed_date
 def detect_recent_move(df: pd.DataFrame, order: int = 5) -> dict:
     """Quantify the most recent decline leg + the rebound off its low.
 
-    Returns {} fields only when a confirmed swing high with a subsequent low
-    exists; otherwise a {"reason": ...} stub (treated as 'no data' downstream).
+    Returns the move's fields only when a confirmed swing high with a
+    subsequent low exists; otherwise a {"reason": ...} stub (read as 'no data').
     """
     if df is None or len(df) < 2 * order + 5:
         return {"reason": "insufficient bars"}
 
-    sh, sl = extrema.find_swings(df["high"].values, df["low"].values, order=order)
+    sh, _ = extrema.frame_swings(df, order)
     if not sh:
         return {"reason": "no swing high"}
 

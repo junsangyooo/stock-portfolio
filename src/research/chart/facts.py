@@ -1,4 +1,4 @@
-"""ChartFactCollector — the quantitative pipeline's entry point.
+"""collect_facts — the quantitative pipeline's entry point.
 
 It EXTRACTS facts only; it does NOT judge. For each timeframe (daily / weekly /
 monthly, look-ahead-guarded) it gathers every indicator's objective state +
@@ -13,12 +13,11 @@ No aggregate score, no buy/sell label, no LLM here — 100% deterministic facts.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-
-from ...core.kst import KST
 from typing import Optional
 
 import pandas as pd
 
+from ...core.kst import KST
 from ...market.store import chart_store, ohlcv_store
 from . import engine, structure
 from .indicators import ALL_INDICATORS
@@ -37,6 +36,13 @@ def _facts_for_tf(frame: pd.DataFrame, tf: str) -> dict:
     }
 
 
+def _doc(symbol_id: str, asof, timeframes: dict, struct: dict,
+         version: str, generated_at: str) -> dict:
+    return {"symbol_id": symbol_id, "kind": "chart", "asof": asof,
+            "timeframes": timeframes, "structure": struct,
+            "engine_version": version, "generated_at": generated_at}
+
+
 def collect_facts(symbol_id: str, now: Optional[datetime] = None,
                   daily_df: Optional[pd.DataFrame] = None,
                   persist: bool = True, force: bool = False) -> dict:
@@ -48,29 +54,19 @@ def collect_facts(symbol_id: str, now: Optional[datetime] = None,
     once. `daily_df` injects data without a read (tests / batch).
     """
     if persist and not force and daily_df is None:
-        cached = _cached_today(symbol_id, now)
+        cached = _cached_today(symbol_id)
         if cached is not None:
             return cached
     daily = daily_df if daily_df is not None else ohlcv_store.read(symbol_id)
 
     timeframes = {}
     for tf in engine.TIMEFRAMES:
-        framed = engine.to_timeframe(daily, tf)
-        closed = engine.drop_incomplete_bar(framed, tf, now=now)
+        closed = engine.drop_incomplete_bar(engine.to_timeframe(daily, tf), tf, now=now)
         timeframes[tf] = _facts_for_tf(closed, tf)
-
     struct = structure.detect_structure(daily) if (daily is not None and not daily.empty) else {}
     asof = timeframes["1d"]["asof"]
-
-    out = {
-        "symbol_id": symbol_id,
-        "kind": "chart",
-        "asof": asof,
-        "timeframes": timeframes,
-        "structure": struct,
-        "engine_version": ENGINE_VERSION,
-        "generated_at": datetime.now(timezone.utc).isoformat() + "Z",
-    }
+    out = _doc(symbol_id, asof, timeframes, struct, ENGINE_VERSION,
+               datetime.now(timezone.utc).isoformat() + "Z")
 
     if persist and asof:
         chart_store.write(symbol_id, asof,
@@ -81,7 +77,7 @@ def collect_facts(symbol_id: str, now: Optional[datetime] = None,
     return out
 
 
-def _cached_today(symbol_id: str, now: Optional[datetime]) -> Optional[dict]:
+def _cached_today(symbol_id: str) -> Optional[dict]:
     """Stored facts if they are already for the newest closed bar.
 
     Compares against the last stored bar rather than the calendar date, so a
@@ -93,13 +89,8 @@ def _cached_today(symbol_id: str, now: Optional[datetime]) -> Optional[dict]:
     last = ohlcv_store.last_ts(symbol_id)
     if not last:
         return None
-    newest = datetime.fromtimestamp(last, tz=KST).strftime("%Y-%m-%d")
-    if row["date"] != newest:
+    if row["date"] != datetime.fromtimestamp(last, tz=KST).strftime("%Y-%m-%d"):
         return None
-    return {
-        "symbol_id": symbol_id, "kind": "chart", "asof": row["date"],
-        "timeframes": row.get("timeframes", {}),
-        "structure": row.get("structure", {}),
-        "engine_version": row["engine_version"],
-        "generated_at": row["built_at"], "_cached": True,
-    }
+    return {**_doc(symbol_id, row["date"], row.get("timeframes", {}),
+                   row.get("structure", {}), row["engine_version"], row["built_at"]),
+            "_cached": True}
