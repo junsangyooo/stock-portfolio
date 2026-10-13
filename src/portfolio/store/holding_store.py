@@ -58,17 +58,9 @@ def list_by_account(account_id: str) -> List[dict]:
         return [dict(r) for r in rows]
 
 
-def list_all() -> List[dict]:
-    with connect() as c:
-        rows = c.execute(
-            "SELECT * FROM holdings ORDER BY account_id, sort_order"
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-
 def all_symbol_ids() -> List[str]:
-    """Distinct symbol_ids across all accounts — used by quote poller and
-    daily gap-filler to know which symbols need market data."""
+    """Distinct symbol_ids across all accounts — the symbols this book needs
+    market data for (jobs, snapshot_job, the ↻ refresh)."""
     with connect() as c:
         rows = c.execute(
             "SELECT DISTINCT symbol_id FROM holdings"

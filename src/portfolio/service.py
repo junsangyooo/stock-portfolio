@@ -10,6 +10,10 @@ from ..universe import search as uni_search
 from .store import account_store, balance_store, holding_store, snapshot_store
 
 
+def _blank_totals() -> dict:
+    return {"eval": 0.0, "cost": 0.0, "pnl": 0.0, "n_held": 0, "n_tracked": 0}
+
+
 def aggregate(account_id: str, *, spark_n: int = 30) -> dict:
     """Build the rich portfolio shape for one account."""
     acc = account_store.get(account_id)
@@ -38,12 +42,10 @@ def aggregate(account_id: str, *, spark_n: int = 30) -> dict:
         qty = h.get("qty")
         avg = h.get("avg_cost")
 
-        t = totals.setdefault(ccy, {"eval": 0.0, "cost": 0.0, "pnl": 0.0,
-                                     "n_held": 0, "n_tracked": 0})
+        t = totals.setdefault(ccy, _blank_totals())
         t["n_tracked"] += 1
         if price is not None and qty is not None and qty > 0:
-            ev = price * qty
-            t["eval"] += ev
+            t["eval"] += price * qty
             if avg is not None:
                 t["cost"] += avg * qty
                 t["pnl"] += (price - avg) * qty
@@ -73,11 +75,9 @@ def aggregate(account_id: str, *, spark_n: int = 30) -> dict:
     # attach cash balances
     cash = balance_store.get_all(account_id)
     for ccy, amt in cash.items():
-        t = totals.setdefault(ccy, {"eval": 0.0, "cost": 0.0, "pnl": 0.0,
-                                     "n_held": 0, "n_tracked": 0})
-        t["cash"] = amt
+        totals.setdefault(ccy, _blank_totals())["cash"] = amt
 
-    for ccy, t in totals.items():
+    for t in totals.values():
         t.setdefault("cash", 0.0)
         t["total_assets"] = t["eval"] + t["cash"]
         t["pnl_pct"] = (t["pnl"] / t["cost"] * 100) if t["cost"] > 0 else 0.0

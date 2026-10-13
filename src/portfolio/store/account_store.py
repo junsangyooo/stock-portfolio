@@ -12,9 +12,8 @@ def create(account_id: str, name: str, account_type: str,
            note: Optional[str] = None) -> None:
     now = int(time.time())
     with connect() as c:
-        # sort_order = max+1
-        row = c.execute("SELECT COALESCE(MAX(sort_order), 0) FROM accounts").fetchone()
-        next_order = int(row[0]) + 1
+        next_order = int(c.execute(          # sort_order = max+1
+            "SELECT COALESCE(MAX(sort_order), 0) FROM accounts").fetchone()[0]) + 1
         c.execute(
             """
             INSERT INTO accounts (account_id, name, account_type, broker,
@@ -86,12 +85,9 @@ def get(account_id: str) -> Optional[dict]:
         return d
 
 
-
 def list_all() -> List[dict]:
     with connect() as c:
         rows = c.execute(
             "SELECT * FROM accounts ORDER BY sort_order ASC"
         ).fetchall()
         return [dict(r) for r in rows]
-
-

@@ -66,7 +66,7 @@ def refresh_quotes(symbol_ids: set[str]) -> tuple[int, list[str]]:
 
 def main() -> int:
     accounts = account_store.list_all()
-    held = {h["symbol_id"] for h in holding_store.list_all()}
+    held = set(holding_store.all_symbol_ids())
     filled = gap_filler.fill_many(sorted(held))  # keep charts/sparklines current
     quoted, quote_stale = refresh_quotes(held)
 

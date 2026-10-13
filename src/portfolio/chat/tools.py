@@ -71,12 +71,12 @@ _SYMBOL = re.compile(r"(KR|US):[A-Z0-9][A-Z0-9. \-]{0,11}")
 _DAY = re.compile(r"[0-9]{4}-?[0-9]{2}-?[0-9]{2}")
 
 
-def _split(symbol_id: str) -> tuple[str, str]:
+def _sid(symbol_id: str) -> str:
+    """The argument as a canonical symbol id, or ValueError."""
     sid = symbol_id.strip().upper()
     if not _SYMBOL.fullmatch(sid):
         raise ValueError(f"symbol_id must be KR:code or US:ticker, got {sid!r}")
-    market, code = sid.split(":", 1)
-    return market, code
+    return sid
 
 
 def _kv(args, keys: set) -> tuple[dict, list[str]]:
@@ -168,8 +168,7 @@ def _cmd_search(query: str) -> dict:
 
 def _cmd_quote(symbol_id: str) -> dict:
     from ...market import quotes
-    market, code = _split(symbol_id)
-    return quotes.quotes([f"{market}:{code}"])
+    return quotes.quotes([_sid(symbol_id)])
 
 
 def _ensure_tracked(symbol_id: str) -> None:
@@ -187,8 +186,7 @@ def _ensure_tracked(symbol_id: str) -> None:
 
 def _cmd_chart(symbol_id: str) -> dict:
     from ...research.chart import facts
-    market, code = _split(symbol_id)
-    sid = f"{market}:{code}"
+    sid = _sid(symbol_id)
     _ensure_tracked(sid)
     return facts.collect_facts(sid, persist=False)
 
@@ -197,8 +195,7 @@ def _cmd_fundamental(symbol_id: str) -> dict:
     from ...market.store import financials_store
     from ...research.fundamental.assemble import assemble_display
     from ...universe import search as uni_search
-    market, code = _split(symbol_id)
-    sid = f"{market}:{code}"
+    sid = _sid(symbol_id)
     _ensure_tracked(sid)                       # valuation derives from closes
     if financials_store.read(sid).empty:       # first sight: statements too (~5s)
         from ...market.pipeline.fundamental_backfill import fill_one
@@ -214,8 +211,7 @@ def _cmd_fundamental(symbol_id: str) -> dict:
 
 def _cmd_verdict(symbol_id: str, date: str = "") -> dict:
     from ...research import analyze
-    market, code = _split(symbol_id)
-    sid = f"{market}:{code}"
+    sid = _sid(symbol_id)
     if date and not _DAY.fullmatch(date):
         raise ValueError(f"date must be YYYY-MM-DD, got {date!r}")
     body = analyze.on(sid, date) if date else analyze.latest(sid)
@@ -226,8 +222,7 @@ def _cmd_verdict(symbol_id: str, date: str = "") -> dict:
 
 def _cmd_news(symbol_id: str) -> dict:
     from ...research.news import read
-    market, code = _split(symbol_id)
-    return read.symbol_news(f"{market}:{code}", include_macro=True, mentions=True)
+    return read.symbol_news(_sid(symbol_id), include_macro=True, mentions=True)
 
 
 def _cmd_news_search(*args: str) -> dict:
@@ -271,11 +266,12 @@ def _cmd_catalog() -> dict:
 
 _SCREEN_NUM_KEYS = {"per_min", "per_max", "pbr_min", "pbr_max", "div_min",
                     "eps_min", "mcap_min", "mcap_max", "value_min", "limit"}
+_SCREEN_COLS = {"per": "per", "pbr": "pbr", "div": "div", "eps": "eps",
+                "mcap": "mcap_eok", "value": "value_eok"}   # key stem -> column
 _SCREEN_SORTS = {  # key -> (column, ascending)
     "per": ("per", True), "pbr": ("pbr", True), "div": ("div", False),
     "mcap": ("mcap_eok", False), "value": ("value_eok", False),
 }
-
 
 _US_EXCHANGES = {"NASD", "NASDAQ", "NAS", "NYSE", "NYS", "AMEX", "AMS"}
 _US_SCREEN_KEYS = {"per": "per", "eps": "eps", "price": "price",
@@ -331,25 +327,14 @@ def _cmd_screen(*args: str) -> dict:
     from ...universe import search as uni_search
     date, df = krx_screener.load()
 
-    # PER/PBR upper bounds imply >0 — pykrx reports 0 for 적자/미산출.
-    if "per_max" in filters:
-        df = df[(df["per"] > 0) & (df["per"] <= filters["per_max"])]
-    if "per_min" in filters:
-        df = df[df["per"] >= filters["per_min"]]
-    if "pbr_max" in filters:
-        df = df[(df["pbr"] > 0) & (df["pbr"] <= filters["pbr_max"])]
-    if "pbr_min" in filters:
-        df = df[df["pbr"] >= filters["pbr_min"]]
-    if "div_min" in filters:
-        df = df[df["div"] >= filters["div_min"]]
-    if "eps_min" in filters:
-        df = df[df["eps"] >= filters["eps_min"]]
-    if "mcap_min" in filters:
-        df = df[df["mcap_eok"] >= filters["mcap_min"]]
-    if "mcap_max" in filters:
-        df = df[df["mcap_eok"] <= filters["mcap_max"]]
-    if "value_min" in filters:
-        df = df[df["value_eok"] >= filters["value_min"]]
+    for stem, col in _SCREEN_COLS.items():
+        if f"{stem}_min" in filters:
+            df = df[df[col] >= filters[f"{stem}_min"]]
+        if f"{stem}_max" in filters:
+            df = df[df[col] <= filters[f"{stem}_max"]]
+            if stem in ("per", "pbr"):
+                # PER/PBR upper bounds imply >0 — pykrx reports 0 for 적자/미산출.
+                df = df[df[col] > 0]
 
     sort_col, asc = _SCREEN_SORTS[filters.get(
         "sort", "per" if "per_max" in filters else "mcap")]

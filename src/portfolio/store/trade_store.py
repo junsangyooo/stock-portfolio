@@ -93,7 +93,7 @@ def record(account_id: str, *, symbol_id: str, side: str, qty: float,
                     (account_id, symbol_id, None, new_qty, new_avg, currency,
                      traded_at if opening else None, now, now, now))
 
-            # ── cash (same sign convention as balance_store.adjust)
+            # ── cash: a buy spends price·qty + fee, a sell brings in price·qty − fee
             delta = -(price * qty + fee) if side == "buy" else (price * qty - fee)
             c.execute(
                 """

@@ -23,8 +23,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional
 
-from . import paths
-from .kst import KST
+from . import kst, paths
 
 FILENAME = "usage.jsonl"
 
@@ -53,7 +52,7 @@ def record(stage: str, model: str, *, backend: str = "claude_cli",
         return 0
 
     row = {
-        "ts": datetime.now(KST).isoformat(timespec="seconds"),
+        "ts": kst.now().isoformat(timespec="seconds"),
         "stage": stage, "backend": backend, "model": model, "ok": bool(ok),
         "in": _n("input_tokens", "prompt_tokens"),
         "cache_create": _n("cache_creation_input_tokens"),
@@ -77,7 +76,7 @@ def record(stage: str, model: str, *, backend: str = "claude_cli",
 
 def rows(days: int = 7, now: Optional[datetime] = None) -> list[dict]:
     """The lines inside the window, oldest first."""
-    since = ((now or datetime.now(KST)).date() - timedelta(days=days - 1)).isoformat()
+    since = ((now or kst.now()).date() - timedelta(days=days - 1)).isoformat()
     out = []
     p = path()
     if not p.exists():

@@ -20,21 +20,15 @@ from fastapi import (
 )
 from pydantic import BaseModel
 
-from ..portfolio import security
-from ..research.news.mapping import ensure_theme_mapping
+from ..core.paths import split_symbol
 from ..market.pipeline import gap_filler
-from ..portfolio import service
+from ..portfolio import security, service
 from ..portfolio.store import (account_store, balance_store, holding_store,
                                snapshot_store, trade_store)
-from ..core.paths import split_symbol
+from ..research.news.mapping import ensure_theme_mapping
 from ..universe import search as uni_search
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
-
-_COOKIE_PREFIX = security.COOKIE_PREFIX
-
-
-_NO_PIN = security.NO_PIN
 
 
 def require_account(account_id: str, request: Request) -> str:
@@ -45,8 +39,8 @@ def require_account(account_id: str, request: Request) -> str:
     if not account_store.get(account_id):
         raise HTTPException(404, f"account not found: {account_id}")
     if not account_store.get_pin_hash(account_id):
-        raise HTTPException(403, _NO_PIN)
-    token = request.cookies.get(_COOKIE_PREFIX + account_id)
+        raise HTTPException(403, security.NO_PIN)
+    token = request.cookies.get(security.COOKIE_PREFIX + account_id)
     if not security.verify_session_token(account_id, token):
         # 403, never 401 — the PIN gate is the app's own, and a 401 turns it
         # into an HTTP auth challenge the browser answers with a login popup.
@@ -82,18 +76,12 @@ class PinBody(BaseModel):
 def list_accounts() -> dict:
     """Public list — identity only (name/type/broker), NO balances or holdings
     counts. Asset figures live behind the per-account PIN."""
-    out = []
-    for a in account_store.list_all():
-        out.append({
-            "account_id": a["account_id"],
-            "name": a["name"],
-            "account_type": a["account_type"],
-            "broker": a["broker"],
-            "base_currency": a["base_currency"],
-            "sort_order": a["sort_order"],
-            "has_pin": bool(a.get("pin_hash")),
-        })
-    return {"accounts": out}
+    return {"accounts": [
+        {"account_id": a["account_id"], "name": a["name"],
+         "account_type": a["account_type"], "broker": a["broker"],
+         "base_currency": a["base_currency"], "sort_order": a["sort_order"],
+         "has_pin": bool(a.get("pin_hash"))}
+        for a in account_store.list_all()]}
 
 
 @router.post("")
@@ -113,15 +101,15 @@ def create_account(body: AccountCreate) -> dict:
 
 @router.post("/{account_id}/auth")
 def auth_account(account_id: str, body: PinBody, response: Response) -> dict:
-    acct = account_store.get(account_id)
-    if not acct:
+    if not account_store.get(account_id):
         raise HTTPException(404, f"account not found: {account_id}")
     stored = account_store.get_pin_hash(account_id)
     if not stored:
-        raise HTTPException(403, _NO_PIN)      # nothing to prove → nothing issued
+        raise HTTPException(403, security.NO_PIN)  # nothing to prove → nothing issued
     if not security.verify_pin(account_id, body.pin, stored):
         raise HTTPException(403, "PIN이 일치하지 않습니다")
-    security.set_session_cookie(response, _COOKIE_PREFIX + account_id, account_id)
+    security.set_session_cookie(response, security.COOKIE_PREFIX + account_id,
+                                account_id)
     return {"ok": True}
 
 
@@ -174,10 +162,20 @@ class HoldingUpsert(BaseModel):
     name: Optional[str] = None               # display-name override (종목명 교체)
 
 
-def _currency_of(symbol_id: str) -> str:
-    """Resolve the cash currency a symbol settles in. Prefer the universe
+def _universe_meta(symbol_id: str) -> dict:
+    """The symbol's universe record — 400 for a malformed id, 404 for one the
+    master does not know."""
+    if ":" not in symbol_id:
+        raise HTTPException(400, "symbol_id must be 'MARKET:CODE'")
+    meta = uni_search.get(symbol_id)
+    if meta is None:
+        raise HTTPException(404, f"symbol not in universe: {symbol_id}")
+    return meta
+
+
+def _currency_of(symbol_id: str, meta: dict) -> str:
+    """Resolve the cash currency a symbol settles in. Prefer its universe
     record; fall back to the symbol_id region prefix (KR→KRW, US→USD)."""
-    meta = uni_search.get(symbol_id) or {}
     ccy = meta.get("currency")
     if ccy:
         return str(ccy).upper()
@@ -191,10 +189,7 @@ def add_holding(account_id: str, body: HoldingUpsert,
                 _: str = Depends(require_account)) -> dict:
     """Add or directly edit a holding. Never touches cash — a trade goes
     through POST /trades, the one door for anything that moves money."""
-    if ":" not in body.symbol_id:
-        raise HTTPException(400, "symbol_id must be 'MARKET:CODE'")
-    if uni_search.get(body.symbol_id) is None:
-        raise HTTPException(404, f"symbol not in universe: {body.symbol_id}")
+    _universe_meta(body.symbol_id)
     backfill_bars = gap_filler.fill_one(body.symbol_id)
     holding_store.upsert(
         account_id, body.symbol_id,
@@ -245,17 +240,13 @@ def record_trade(account_id: str, body: TradeBody,
                  background: BackgroundTasks,
                  _: str = Depends(require_account)) -> dict:
     symbol_id = (body.symbol_id or "").strip()
-    if ":" not in symbol_id:
-        raise HTTPException(400, "symbol_id must be 'MARKET:CODE'")
-    meta = uni_search.get(symbol_id)
-    if meta is None:
-        raise HTTPException(404, f"symbol not in universe: {symbol_id}")
+    meta = _universe_meta(symbol_id)
     side = (body.side or "").lower()
     try:
         out = trade_store.record(
             account_id, symbol_id=symbol_id, side=side,
             qty=body.qty, price=body.price, fee=body.fee,
-            currency=_currency_of(symbol_id),
+            currency=_currency_of(symbol_id, meta),
             name=meta.get("name_kr") or meta.get("name_en") or symbol_id,
             traded_at=body.traded_at,
             note=(body.note or "").strip() or None)

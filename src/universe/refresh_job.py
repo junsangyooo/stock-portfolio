@@ -25,9 +25,7 @@ def main() -> int:
 
     # Non-zero when nothing was written, or when a region fell back to its
     # previous file — cron mail / the log then shows a real failure.
-    if not summary.get("regions") or summary.get("kept_previous"):
-        return 1
-    return 0
+    return 1 if not summary.get("regions") or summary.get("kept_previous") else 0
 
 
 if __name__ == "__main__":

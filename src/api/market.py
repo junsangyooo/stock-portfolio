@@ -9,6 +9,7 @@ from ..market import quotes, resample
 from ..market.pipeline import gap_filler
 from ..market.source.registry import yfinance_for
 from ..market.store import ohlcv_store
+from ..portfolio.store import holding_store
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 

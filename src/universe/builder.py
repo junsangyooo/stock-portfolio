@@ -21,7 +21,7 @@ import time
 from datetime import datetime, timedelta
 from typing import List
 
-from ..core.kst import KST
+from ..core import kst
 from ..core.paths import UNIVERSE_DIR, ensure_dirs
 
 log = logging.getLogger(__name__)
@@ -38,13 +38,33 @@ def _safe(v) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.now(KST).isoformat()
+    return kst.now().isoformat()
 
 
 def _atomic_write(path, payload: dict) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False))
     tmp.replace(path)
+
+
+def _add(out: dict, region: str, market: str, code: str, name: str, *,
+         sector: str = "", is_etf: bool = False, yf_suffix: str = "") -> None:
+    """One listing row into `out`, deduped on (market, code). `market` is
+    KOSPI | KOSDAQ | ETF for KR, NASDAQ | NYSE | AMEX for US."""
+    if not code or not name or (market, code) in out:
+        return
+    kr = region == "KR"
+    out[(market, code)] = {
+        "symbol_id": f"{region}:{code}",
+        "market": market,
+        "code": code,
+        "name_kr": name if kr else None,
+        "name_en": None if kr else name,
+        "sector": sector or None,
+        "currency": "KRW" if kr else "USD",
+        "is_etf": is_etf,
+        "yf_ticker": f"{code}{yf_suffix}",   # yfinance fallback
+    }
 
 
 # ── KR ─────────────────────────────────────────────────────────────────
@@ -59,25 +79,6 @@ def build_kr() -> tuple[List[dict], bool]:
 
     out: dict[tuple[str, str], dict] = {}
     ok = True
-
-    def _add(market: str, code: str, name: str, sector: str = "",
-             is_etf: bool = False, yf_suffix: str = ""):
-        if not code or not name:
-            return
-        key = (market, code)
-        if key in out:
-            return
-        out[key] = {
-            "symbol_id": f"KR:{code}",
-            "market": market,             # 'KOSPI' | 'KOSDAQ' | 'ETF'
-            "code": code,
-            "name_kr": name,
-            "name_en": None,
-            "sector": sector or None,
-            "currency": "KRW",
-            "is_etf": is_etf,
-            "yf_ticker": f"{code}{yf_suffix}",   # yfinance fallback
-        }
 
     # KOSPI + KOSDAQ — one call per market gives ticker + name. The window
     # starts a week back so a pre-open run (cron is 07:30) still lands on a
@@ -99,7 +100,7 @@ def build_kr() -> tuple[List[dict], bool]:
                 if df.empty:
                     raise ValueError("empty listing")
                 for code, r in df.iterrows():
-                    _add(market, _safe(code), _safe(r.get("종목명")),
+                    _add(out, "KR", market, _safe(code), _safe(r.get("종목명")),
                          yf_suffix=suffix)
             except Exception as e:  # noqa: BLE001 — one dead source must not kill the rest
                 log.error("universe %s listing failed: %s", market, e)
@@ -109,12 +110,8 @@ def build_kr() -> tuple[List[dict], bool]:
     try:
         df = fdr.StockListing("ETF/KR")
         for _, r in df.iterrows():
-            _add("ETF",
-                 _safe(r.get("Symbol") or r.get("Code")),
-                 _safe(r.get("Name")),
-                 sector="ETF",
-                 is_etf=True,
-                 yf_suffix=".KS")
+            _add(out, "KR", "ETF", _safe(r.get("Symbol") or r.get("Code")),
+                 _safe(r.get("Name")), sector="ETF", is_etf=True, yf_suffix=".KS")
     except Exception as e:  # noqa: BLE001
         log.error("universe KR ETF listing failed: %s", e)
         ok = False
@@ -131,32 +128,12 @@ def build_us() -> tuple[List[dict], bool]:
     out: dict[tuple[str, str], dict] = {}
     ok = True
 
-    def _add(market: str, code: str, name: str, sector: str = ""):
-        if not code or not name:
-            return
-        key = (market, code)
-        if key in out:
-            return
-        out[key] = {
-            "symbol_id": f"US:{code}",
-            "market": market,             # 'NASDAQ' | 'NYSE' | 'AMEX'
-            "code": code,
-            "name_kr": None,
-            "name_en": name,
-            "sector": sector or None,
-            "currency": "USD",
-            "is_etf": False,
-            "yf_ticker": code,
-        }
-
     for ex in ("NASDAQ", "NYSE", "AMEX"):
         try:
             df = fdr.StockListing(ex)
             for _, r in df.iterrows():
-                _add(ex,
-                     _safe(r.get("Symbol") or r.get("Code")),
-                     _safe(r.get("Name")),
-                     _safe(r.get("Sector")) if "Sector" in r else "")
+                _add(out, "US", ex, _safe(r.get("Symbol") or r.get("Code")),
+                     _safe(r.get("Name")), sector=_safe(r.get("Sector")))
         except Exception as e:  # noqa: BLE001 — one dead exchange must not kill the rest
             log.error("universe %s listing failed: %s", ex, e)
             ok = False

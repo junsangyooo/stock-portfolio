@@ -80,9 +80,9 @@ def search(q: str, region: Optional[str] = None, limit: int = 20) -> List[dict]:
     seen: set[str] = set()
 
     for it in _items:
-        if region_filter and not it["symbol_id"].startswith(region_filter + ":"):
-            continue
         sid = it["symbol_id"]
+        if region_filter and not sid.startswith(region_filter + ":"):
+            continue
         if sid in seen:
             continue
         code = (it.get("code") or "").lower()
@@ -96,8 +96,7 @@ def search(q: str, region: Optional[str] = None, limit: int = 20) -> List[dict]:
         if q_lower in code or q_lower in nk or q_lower in ne:
             contains.append(it); seen.add(sid); continue
 
-    ranked = exact + prefix + contains
-    return ranked[:limit]
+    return (exact + prefix + contains)[:limit]
 
 
 def stats() -> dict:

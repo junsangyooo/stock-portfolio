@@ -19,19 +19,22 @@ def _url() -> str | None:
     return secrets.get("DISCORD_WEBHOOK_URL")
 
 
-def send(text: str, username: str = "portfolio-dashboard") -> bool:
-    """Send plain-text message. Discord max 2000 chars."""
+def _post(payload: dict, what: str) -> bool:
     u = _url()
     if not u:
         log.debug("discord: webhook not set, skipping")
         return False
     try:
-        r = httpx.post(u, json={"content": text[:1990], "username": username},
-                       timeout=10)
+        r = httpx.post(u, json=payload, timeout=10)
         return r.status_code in (200, 204)
     except Exception as e:
-        log.warning(f"discord: send error {e}")
+        log.warning(f"discord: {what} error {e}")
         return False
+
+
+def send(text: str, username: str = "portfolio-dashboard") -> bool:
+    """Send plain-text message. Discord max 2000 chars."""
+    return _post({"content": text[:1990], "username": username}, "send")
 
 
 def send_embed(title: str, description: str = "",
@@ -40,9 +43,6 @@ def send_embed(title: str, description: str = "",
                username: str = "portfolio-dashboard",
                footer: str | None = None) -> bool:
     """Send a rich embed. fields = [{name, value, inline?}, ...]"""
-    u = _url()
-    if not u:
-        return False
     embed: dict = {"title": title[:256], "description": description[:4000],
                    "color": color, "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     if fields:
@@ -52,9 +52,4 @@ def send_embed(title: str, description: str = "",
                            for f in fields[:25]]
     if footer:
         embed["footer"] = {"text": footer[:2048]}
-    try:
-        r = httpx.post(u, json={"embeds": [embed], "username": username}, timeout=10)
-        return r.status_code in (200, 204)
-    except Exception as e:
-        log.warning(f"discord: embed error {e}")
-        return False
+    return _post({"embeds": [embed], "username": username}, "embed")

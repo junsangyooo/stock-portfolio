@@ -1,10 +1,10 @@
 """snapshots (date, account_id, currency) — daily history."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Dict, List
 
-from ...core.kst import KST, today
+from ...core import kst
 from .db import connect
 
 
@@ -18,14 +18,10 @@ def has_for(date: str, account_id: str) -> bool:
 
 
 def write(date: str, account_id: str, per_currency: Dict[str, dict]) -> int:
-    rows = []
-    for ccy, t in per_currency.items():
-        rows.append((
-            date, account_id, ccy,
-            float(t.get("eval", 0)), float(t.get("cost", 0)),
-            float(t.get("pnl", 0)), float(t.get("cash", 0)),
-            float(t.get("total_assets", 0)),
-        ))
+    rows = [(date, account_id, ccy,
+             *(float(t.get(k, 0)) for k in ("eval", "cost", "pnl", "cash",
+                                             "total_assets")))
+            for ccy, t in per_currency.items()]
     if not rows:
         return 0
     with connect() as c:
@@ -45,7 +41,7 @@ def write(date: str, account_id: str, per_currency: Dict[str, dict]) -> int:
 
 
 def read(account_id: str, currency: str = "KRW", days: int = 90) -> List[dict]:
-    cutoff = (datetime.now(KST) - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (kst.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     with connect() as c:
         rows = c.execute(
             "SELECT date, eval, cost, pnl, cash, total_assets "
@@ -56,9 +52,6 @@ def read(account_id: str, currency: str = "KRW", days: int = 90) -> List[dict]:
         return [dict(r) for r in rows]
 
 
-def maybe_snapshot_today(account_id: str, per_currency: Dict[str, dict]) -> bool:
-    day = today()
-    first = not has_for(day, account_id)
+def maybe_snapshot_today(account_id: str, per_currency: Dict[str, dict]) -> None:
     # Always re-write to capture mid-day changes (still one row per ccy/account).
-    write(day, account_id, per_currency)
-    return first
+    write(kst.today(), account_id, per_currency)

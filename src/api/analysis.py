@@ -30,6 +30,11 @@ log = logging.getLogger(__name__)
 # n=26, 343–1,068s, mean 570s) — below the real p95 the UI gave up on live jobs.
 _RUNS = jobs.Runner(stale_s=2 * 1070)
 
+
+def _sid(market: str, code: str) -> str:
+    return f"{market.upper()}:{code}"
+
+
 def _stamp() -> str:
     """Response timestamp — KST, the same clock the agents write dates in."""
     return kst_now().isoformat()
@@ -64,7 +69,7 @@ def news_signals(market: str, code: str) -> dict:
     (claude) evaluate, mirroring how the chart tab shows facts on open.
     """
     from ..research.news.read import symbol_news
-    return {**symbol_news(f"{market.upper()}:{code}"), "queried_at": _stamp()}
+    return {**symbol_news(_sid(market, code)), "queried_at": _stamp()}
 
 
 @router.get("/fundamental/{market}/{code}/facts")
@@ -75,7 +80,7 @@ def get_fundamental_facts(market: str, code: str) -> dict:
     mirroring how the chart tab shows facts and the news tab shows signals.
     Collection is the daily batch's job; this only reads what is stored.
     """
-    symbol_id = f"{market.upper()}:{code}"
+    symbol_id = _sid(market, code)
     try:
         from ..research.fundamental.assemble import assemble_display
         facts = assemble_display(symbol_id, name=_display_name(symbol_id))
@@ -90,7 +95,7 @@ def get_fundamental_facts(market: str, code: str) -> dict:
 @router.get("/chart/{market}/{code}")
 def get_chart_facts(market: str, code: str) -> dict:
     """Deterministic fact extraction, computed live (no claude -p here)."""
-    symbol_id = f"{market.upper()}:{code}"
+    symbol_id = _sid(market, code)
     from ..research.chart.facts import collect_facts  # lazy: pulls pandas
     try:
         facts = collect_facts(symbol_id, persist=False)
@@ -105,7 +110,7 @@ def get_chart_facts(market: str, code: str) -> dict:
 @router.get("/analysis/{market}/{code}")
 def get_analysis(market: str, code: str) -> dict:
     """The stored comprehensive result."""
-    symbol_id = f"{market.upper()}:{code}"
+    symbol_id = _sid(market, code)
     from ..research import analyze
     body = analyze.latest(symbol_id)
     return {"kind": "analysis", "symbol_id": symbol_id, "exists": body is not None,
@@ -119,7 +124,7 @@ def get_job_status(market: str, code: str) -> dict:
     state: idle | running | done | error | stale. The UI polls this, then loads
     GET /analysis/{m}/{c} on done.
     """
-    symbol_id = f"{market.upper()}:{code}"
+    symbol_id = _sid(market, code)
     j = _RUNS.latest(symbol_id)
     if j is None:
         st = {"state": "idle"}
@@ -143,7 +148,7 @@ def run_analysis(market: str, code: str) -> dict:
     GET .../status, then loads the result. The chart facts it needs are
     computed inside, once per trading day.
     """
-    symbol_id = f"{market.upper()}:{code}"
+    symbol_id = _sid(market, code)
     name = _display_name(symbol_id)
 
     def _fn():
