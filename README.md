@@ -15,10 +15,10 @@
 ```
 
 **화살표는 한 방향뿐이다.** 앱은 공유 자원을 읽어도 되고, 공유 자원은 앱을 읽으면 안 된다.
-`tests/test_layering.py`가 AST로 이 경계를 검사한다.
+`tests/test_layering.py`가 AST로 층 순서 전체(core ← universe·market·research ← portfolio ← api ← dashboard_web)를 검사한다.
 
 - **유료 LLM API 절대 금지** — 판단은 Claude CLI 구독(`claude -p --safe-mode`), 요약·분류는 온호스트 open-weight(Qwen)
-- **세 권의 책(DB)** — `portfolio.db`(앱 소유) / `market.db`·`news.db`(공유). 계좌 장부 스키마는 `src/ledger`
+- **세 권의 책(DB)** — `portfolio.db`(앱 소유) / `market.db`·`news.db`(공유). 계좌 장부 스키마는 `src/portfolio/store/schema.py`
 - **화면은 인라인 페이지 둘** — `landing`·`account`. 서버가 `<head>`에 theme 토큰·`shared.css`·`shared.js`를 주입하고 응답마다 CSP nonce를 찍는다. 정적 파일 마운트는 없다
 - **PIN 없는 계좌는 닫혀 있다** — 계좌는 생성 시 PIN 필수
 
@@ -33,17 +33,17 @@ portfolio-dashboard/
 ├── autotrade/        새 quant 엔진·API (quant.jsyoo.dev)
 ├── web/              새 quant 화면
 ├── deploy/           deploy.sh · dashboard.service · nginx-portfolio.conf · make_icons.py
+│                     portfolio.cron(정기 작업의 진실) · install_cron.py
 │                     autotrade.service · autotrade.cron · nginx-quant.conf (새 quant)
 ├── docs/             기획·설계 문서 (Obsidian Vault 심링크, gitignore)
-├── tests/            pytest (tests/autotrade는 새 quant)
+├── tests/            pytest — src를 따라 층별 폴더 (tests/autotrade는 새 quant)
 ├── src/
-│   ├── core/         paths · kst · notify · security · secrets · ratelimit · backup  [공유]
-│   ├── ledger/       계좌 장부 스키마                                    [공유]
+│   ├── core/         paths · kst · notify · secrets · ratelimit · backup · llm · usage · jobs  [공유]
 │   ├── universe/     종목 마스터 (builder · search · refresh_job)    [공유]
 │   ├── market/       시세·재무·지표 (source / store / pipeline)       [공유]
 │   ├── research/     news(수집) · chart · fundamental · analyze(LLM)  [공유]
-│   ├── portfolio/    사람 계좌 앱 (store · service · jobs)            [앱]
-│   ├── api/          얇은 read/dispatch 층
+│   ├── portfolio/    사람 계좌 앱 (store · security · service · chat · supply_job)  [앱]
+│   ├── api/          라우팅만
 │   └── dashboard_web/  server.py + static/{landing,account}.html
 │                       shared.css · shared.js · icons/ · theme.json
 └── data/             운영 데이터 (gitignore) — *.db · universe/ · market/ · analysis/ · backup/ · logs/
