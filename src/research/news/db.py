@@ -77,7 +77,7 @@ CREATE INDEX IF NOT EXISTS idx_signal_themes_theme ON signal_themes(theme_id);
 -- reads `overview` directly.
 --
 -- sentiment and watchlist ride on the same call that writes the bullets: they
--- are the same reading, and the judge and the analysis need a number and a
+-- are the same reading, and the analysis needs a number and a
 -- list of open issues rather than prose. They used to come from a rolling
 -- state file with its own LLM rewrite; folding them in here costs no extra
 -- inference and leaves exactly one long memory (weekly/monthly) instead of two
@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS theme_monthly (
 -- "everything since the last cycle" — the alternative is re-reading each feed
 -- from the top and leaning on dedup, which works but grows the fetch forever.
 -- The failure columns are here so a feed that has been dead for a week is
--- visible instead of merely quiet (§10.1: source failures leave a trace).
+-- visible instead of merely quiet (ops notes §11: source failures leave a trace).
 CREATE TABLE IF NOT EXISTS source_cursor (
   source_id           TEXT PRIMARY KEY,
   last_fetched_at     TEXT,               -- ISO of the newest item we accepted

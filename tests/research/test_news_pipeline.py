@@ -479,11 +479,12 @@ def _enriched(monkeypatch, items, themes_by_index, *, day=None):
 
 
 def test_published_iso_parses_both_dialects():
-    assert read.published_iso("Sat, 11 Jul 2026 09:00:00 +0900") \
+    from src.research.news.fetch.base import published_iso
+    assert published_iso("Sat, 11 Jul 2026 09:00:00 +0900") \
         == "2026-07-11T09:00:00+09:00"
-    assert read.published_iso("2026-07-11T00:00:00Z") == "2026-07-11T00:00:00+00:00"
-    assert read.published_iso("not a date") is None
-    assert read.published_iso(None) is None
+    assert published_iso("2026-07-11T00:00:00Z") == "2026-07-11T00:00:00+00:00"
+    assert published_iso("not a date") is None
+    assert published_iso(None) is None
 
 
 def test_one_article_carries_every_theme_it_belongs_to(monkeypatch):
@@ -681,8 +682,6 @@ def test_enrichment_ignores_articles_older_than_anything_reads(monkeypatch):
             collect_all, "fetch_rss",
             lambda url, sid, timeout=15.0, t=title: [_item(t, f"http://{t}")])
         collect_all.collect_one(_feed(), [], None, now=when)
-    monkeypatch.setattr(enrich, "_since", lambda days, now=None:
-                        (NOW - timedelta(days=days - 1)).strftime("%Y-%m-%d"))
     assert [r["title"] for r in enrich.pending(now=NOW)] == ["fresh"]
     # the window can be lifted on purpose, for a hand-run backfill
     assert len(enrich.pending(now=NOW, window_days=0)) == 2

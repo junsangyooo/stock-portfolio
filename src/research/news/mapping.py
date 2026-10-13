@@ -26,8 +26,8 @@ def _norm(s: str) -> str:
 
 
 def map_etf_by_name(name: str, catalog: Catalog) -> list[str]:
-    """Map an ETF display name to active (non-shadow) theme_ids by keyword
-    substring match. Returns [] when nothing matches (needs human review).
+    """Map an ETF display name to theme_ids by keyword substring match.
+    Returns [] when nothing matches (needs human review).
 
     Only Korean-list keywords are used for matching — they already include the
     relevant English/index tokens (AI, ESS, HBM, S&P500, ...) while avoiding

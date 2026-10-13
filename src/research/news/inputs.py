@@ -35,8 +35,8 @@ def get_symbol_themes(symbol_id: str) -> list[dict]:
 # ── input assembly ────────────────────────────────────────────────────────
 
 def _trim_dev(d: dict) -> dict:
-    """Keep only the fields the rulebook references (novelty may be absent on
-    pre-fix state files — the rulebook §B falls back to lead_lag/watchlist)."""
+    """Keep only the fields the rulebook references (novelty only when given —
+    the rulebook §B falls back to lead_lag/watchlist)."""
     out = {"date": d.get("date"), "point": d.get("point"),
            "lead_lag": d.get("lead_lag"), "weight": d.get("weight")}
     if "novelty" in d:
@@ -86,32 +86,24 @@ def assemble_inputs(symbol_id: str, *, catalog: Optional[Catalog] = None) -> dic
     # ({related_theme_id: relation}) — used to annotate related themes (§E1).
     primary_id = next((t["theme_id"] for t in themes
                        if t["relation"] == "primary"), None)
-    edge_map: dict[str, str] = {}
-    if primary_id:
-        pt = catalog.get(primary_id)
-        if pt:
-            for e in pt.related:
-                if e.get("theme") and e.get("relation"):
-                    edge_map[e["theme"]] = e["relation"]
+    pt = catalog.get(primary_id) if primary_id else None
+    edge_map: dict[str, str] = {
+        e["theme"]: e["relation"] for e in (pt.related if pt else [])
+        if e.get("theme") and e.get("relation")}
 
     blocks: list[dict] = []
-    used: list[dict] = []
-    have_macro = False
+    used: list[dict] = list(themes)
     for t in themes:
-        st = theme_state(t["theme_id"])
         ct = catalog.get(t["theme_id"])
-        name_kr = ct.name_kr if ct else t["theme_id"]
-        full = t["relation"] == "primary"
         edge = edge_map.get(t["theme_id"]) if t["relation"] == "related" else None
-        blocks.append(_theme_block(st, t["relation"], float(t["weight"]),
-                                   edge, name_kr, full))
-        used.append(t)
-        if t["theme_id"] == "macro":
-            have_macro = True
+        blocks.append(_theme_block(theme_state(t["theme_id"]), t["relation"],
+                                   float(t["weight"]), edge,
+                                   ct.name_kr if ct else t["theme_id"],
+                                   full=t["relation"] == "primary"))
 
     # Always inject macro as background backbone (§F3) if not already mapped.
     macro_ct = catalog.get("macro")
-    if not have_macro and macro_ct:
+    if macro_ct and not any(t["theme_id"] == "macro" for t in themes):
         blocks.append(_theme_block(theme_state("macro"), "macro", 0.2, None,
                                    macro_ct.name_kr, full=False))
         used.append({"theme_id": "macro", "relation": "macro", "weight": 0.2})

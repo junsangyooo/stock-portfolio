@@ -7,13 +7,14 @@ now, so the shape is defined once and a schema change is one file.
 The three views:
 
     feed()         the landing page's news + social cards and 「오늘의 요약」
-    theme_state()  what a theme looks like right now — for the judge, the
-                   account page's news tab and the analysis
+    theme_state()  what a theme looks like right now — for the account page's
+                   news tab and the analysis
     read_items()   raw articles for one theme, for the company-name miner
 
 and for the news tab and the chat agent: symbol_news() (a symbol's themes),
 search() / article() (the whole archive, untagged included),
 theme_history() (daily/weekly/monthly rows) and catalog() (themes, sources).
+reverse.py's title scans read through important_titles() / titles_naming().
 
 `theme_state` replaces state.json. Its slow-moving half (horizon summary) is
 the weekly roll-up, its fast half (recent developments) is a window over the
@@ -28,7 +29,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from urllib.parse import urlparse
 
-from ...core.kst import KST
+from ...core import kst
 from .catalog import load_catalog
 from .db import connect
 
@@ -38,19 +39,11 @@ _ACTIVE_DAYS = 3       # a theme is live if it produced an overview this recentl
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
-def published_iso(published) -> Optional[str]:
-    """Normalize a feed 'published' string (RFC822 or ISO) to ISO-8601."""
-    if not published or not isinstance(published, str):
-        return None
-    from email.utils import parsedate_to_datetime
-    try:
-        return parsedate_to_datetime(published).isoformat()
-    except (TypeError, ValueError):
-        pass
-    try:
-        return datetime.fromisoformat(published.replace("Z", "+00:00")).isoformat()
-    except ValueError:
-        return None
+def window_start(days: int, now: Optional[datetime] = None) -> str:
+    """First KST day of a `days`-long window ending today: 'YYYY-MM-DD'.
+    Compared with `>=` against collected_on / date, so today counts as day 1."""
+    d = (now or kst.now()).date() - timedelta(days=max(days - 1, 0))
+    return d.isoformat()
 
 
 def _favicon(u: str) -> Optional[str]:
@@ -70,11 +63,6 @@ def _loads(raw, default):
     return v if isinstance(v, type(default)) else default
 
 
-def _days_back(n: int, now: Optional[datetime] = None) -> list[str]:
-    d = (now or datetime.now(KST)).date()
-    return [(d - timedelta(days=i)).isoformat() for i in range(n)]
-
-
 # ── themes with something to say ────────────────────────────────────────────
 def active_themes(days: int = _ACTIVE_DAYS,
                   now: Optional[datetime] = None) -> list[str]:
@@ -84,25 +72,22 @@ def active_themes(days: int = _ACTIVE_DAYS,
     what anybody owns, so "live" now means "this field actually had news",
     which is the question every caller was really asking.
     """
-    since = _days_back(days, now)[-1]
     with connect() as c:
         return [r[0] for r in c.execute(
             "SELECT DISTINCT theme_id FROM theme_daily WHERE date >= ? "
-            "ORDER BY theme_id", (since,)).fetchall()]
+            "ORDER BY theme_id", (window_start(days, now),)).fetchall()]
 
 
 # ── theme state (replaces state.json) ───────────────────────────────────────
-def _recent_developments(theme_id: str, now: datetime) -> list[dict]:
-    since = _days_back(_HORIZON_DAYS, now)[-1]
-    with connect() as c:
-        rows = c.execute(
-            "SELECT s.collected_on, s.summary, s.title, s.lead_lag, "
-            "       s.importance, s.novelty, s.url "
-            "FROM signals s JOIN signal_themes st USING (signal_id) "
-            "WHERE st.theme_id = ? AND s.collected_on >= ? "
-            "  AND s.enriched_at IS NOT NULL "
-            "ORDER BY s.importance DESC, s.collected_on DESC LIMIT ?",
-            (theme_id, since, _RECENT_CAP)).fetchall()
+def _recent_developments(c, theme_id: str, now: datetime) -> list[dict]:
+    rows = c.execute(
+        "SELECT s.collected_on, s.summary, s.title, s.lead_lag, "
+        "       s.importance, s.novelty, s.url "
+        "FROM signals s JOIN signal_themes st USING (signal_id) "
+        "WHERE st.theme_id = ? AND s.collected_on >= ? "
+        "  AND s.enriched_at IS NOT NULL "
+        "ORDER BY s.importance DESC, s.collected_on DESC LIMIT ?",
+        (theme_id, window_start(_HORIZON_DAYS, now), _RECENT_CAP)).fetchall()
     return [{
         "date": r["collected_on"],
         "point": r["summary"] or r["title"],
@@ -113,18 +98,17 @@ def _recent_developments(theme_id: str, now: datetime) -> list[dict]:
     } for r in rows]
 
 
-def _last_shift(theme_id: str) -> str:
+def _last_shift(c, theme_id: str) -> str:
     """The most recent date the sentiment direction changed.
 
     The old state file had a model write this sentence and carry it forward.
     The trend is stored per day now, so the change is a fact in the table
     rather than something to be remembered.
     """
-    with connect() as c:
-        rows = c.execute(
-            "SELECT date, sentiment_trend FROM theme_daily "
-            "WHERE theme_id = ? AND sentiment_trend IS NOT NULL "
-            "ORDER BY date DESC LIMIT 30", (theme_id,)).fetchall()
+    rows = c.execute(
+        "SELECT date, sentiment_trend FROM theme_daily "
+        "WHERE theme_id = ? AND sentiment_trend IS NOT NULL "
+        "ORDER BY date DESC LIMIT 30", (theme_id,)).fetchall()
     for newer, older in zip(rows, rows[1:]):
         if newer["sentiment_trend"] != older["sentiment_trend"]:
             return (f"{newer['date']}: {older['sentiment_trend']}"
@@ -135,7 +119,6 @@ def _last_shift(theme_id: str) -> str:
 def theme_state(theme_id: str, now: Optional[datetime] = None) -> dict:
     """Everything known about one field right now. Always returns a dict —
     an untouched theme yields the empty shape rather than None."""
-    now = now or datetime.now(KST)
     with connect() as c:
         day = c.execute(
             "SELECT date, overview, sentiment_score, sentiment_trend, watchlist "
@@ -147,9 +130,11 @@ def theme_state(theme_id: str, now: Optional[datetime] = None) -> dict:
         month = c.execute(
             "SELECT month, summary FROM theme_monthly WHERE theme_id = ? "
             "ORDER BY month DESC LIMIT 1", (theme_id,)).fetchone()
+        recent = _recent_developments(c, theme_id, now or kst.now())
+        last_shift = _last_shift(c, theme_id)
 
     # The weekly roll-up is the long memory. Before the first Sunday there is
-    # none, so today's bullets stand in rather than leaving the judge blank.
+    # none, so today's bullets stand in rather than leaving the reader blank.
     horizon = (week["summary"] if week else
                " ".join(_loads(day["overview"], []) if day else []))
     score = day["sentiment_score"] if day else None
@@ -157,11 +142,11 @@ def theme_state(theme_id: str, now: Optional[datetime] = None) -> dict:
         "theme_id": theme_id,
         "updated": day["date"] if day else None,
         "horizon_summary": horizon or "",
-        "recent_developments": _recent_developments(theme_id, now),
+        "recent_developments": recent,
         "watchlist": _loads(day["watchlist"], []) if day else [],
         "sentiment": {"score": score if score is not None else 0.0,
                       "trend": (day["sentiment_trend"] if day else None) or "flat"},
-        "last_shift": _last_shift(theme_id),
+        "last_shift": last_shift,
         "week_summary": week["summary"] if week else "",
         "month_summary": month["summary"] if month else "",
     }
@@ -172,20 +157,20 @@ def _summary_rows(theme_ids: list[str], name_kr: dict,
                   now: datetime) -> list[dict]:
     """Per theme, the newest overview from today or yesterday — before the dawn
     batch today's row does not exist yet."""
-    dates = _days_back(2, now)
-    out = []
+    today = now.date()
     with connect() as c:
-        for tid in theme_ids:
-            row = c.execute(
-                "SELECT date, overview FROM theme_daily WHERE theme_id = ? "
-                "AND date IN (?,?) ORDER BY date DESC LIMIT 1",
-                (tid, *dates)).fetchone()
-            if not row:
-                continue
-            bullets = _loads(row["overview"], [])
-            if bullets:
-                out.append({"theme": tid, "theme_kr": name_kr.get(tid, tid),
-                            "date": row["date"], "bullets": bullets})
+        # ascending, so today's row overwrites yesterday's in the dict
+        newest = {r["theme_id"]: r for r in c.execute(
+            "SELECT theme_id, date, overview FROM theme_daily "
+            "WHERE date IN (?,?) ORDER BY date",
+            (today.isoformat(), (today - timedelta(days=1)).isoformat()))}
+    out = []
+    for tid in theme_ids:
+        row = newest.get(tid)
+        bullets = _loads(row["overview"], []) if row else []
+        if bullets:
+            out.append({"theme": tid, "theme_kr": name_kr.get(tid, tid),
+                        "date": row["date"], "bullets": bullets})
     return out
 
 
@@ -199,10 +184,10 @@ def feed(limit: int = 60, days: int = 3,
     One article carries every theme it belongs to, so the badge list is a join
     instead of the merge-by-url pass the jsonl layout needed.
     """
-    now = now or datetime.now(KST)
+    now = now or kst.now()
     cat = load_catalog()
     name_kr = {t.theme_id: t.name_kr for t in cat.themes.values()}
-    since = _days_back(days, now)[-1]
+    since = window_start(days, now)
 
     # One query per lane, not one query split afterwards: news outnumbers
     # social most days, so a shared LIMIT hands the whole budget to news and
@@ -261,16 +246,37 @@ def feed(limit: int = 60, days: int = 3,
 def read_items(theme_id: str, days: int = 14,
                now: Optional[datetime] = None) -> list[dict]:
     """One theme's articles over the last `days`, newest first."""
-    since = _days_back(max(days, 1), now)[-1]
     with connect() as c:
         rows = c.execute(
             "SELECT s.title, s.body, s.summary, s.url, s.collected_on "
             "FROM signals s JOIN signal_themes st USING (signal_id) "
             "WHERE st.theme_id = ? AND s.collected_on >= ? "
             "ORDER BY s.collected_on DESC, s.signal_id DESC",
-            (theme_id, since)).fetchall()
+            (theme_id, window_start(days, now))).fetchall()
     return [{"title": r["title"], "summary": r["body"] or r["summary"] or "",
              "url": r["url"], "date": r["collected_on"]} for r in rows]
+
+
+def important_titles(days: int, min_importance: int) -> list[tuple]:
+    """(title, collected_on) of every article at or above `min_importance`
+    inside the window — the corpus reverse.recent_mentions scans."""
+    with connect() as c:
+        return [tuple(r) for r in c.execute(
+            "SELECT title, collected_on FROM signals "
+            "WHERE collected_on >= ? AND importance >= ?",
+            (window_start(days), min_importance))]
+
+
+def titles_naming(names: list[str], days: int) -> list[dict]:
+    """Articles inside the window whose title contains any of `names`,
+    newest first — reverse.mention_items' candidates."""
+    hit = " OR ".join("instr(title, ?) > 0" for _ in names)
+    with connect() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT signal_id, title, url, source_id, collected_on, importance "
+            f"FROM signals WHERE collected_on >= ? AND ({hit}) "
+            "ORDER BY collected_on DESC, signal_id DESC",
+            [window_start(days), *names])]
 
 
 # ── one symbol's news (the news tab and the chat agent) ─────────────────────
@@ -326,6 +332,14 @@ def symbol_news(symbol_id: str, include_macro: bool = False,
 _PAGE_MAX = 50
 
 
+def _page(limit, offset) -> tuple[int, int]:
+    return max(1, min(_PAGE_MAX, int(limit))), max(0, int(offset))
+
+
+def _next_offset(offset: int, returned: int, total: int) -> Optional[int]:
+    return offset + returned if offset + returned < total else None
+
+
 def _themes_of(c, signal_ids: list[int]) -> dict:
     if not signal_ids:
         return {}
@@ -375,8 +389,7 @@ def search(q: Optional[str] = None, theme: Optional[str] = None,
         where.append("s.importance >= ?")
         args.append(int(min_importance))
     cond = ("WHERE " + " AND ".join(where)) if where else ""
-    limit = max(1, min(_PAGE_MAX, int(limit)))
-    offset = max(0, int(offset))
+    limit, offset = _page(limit, offset)
     with connect() as c:
         total = c.execute(f"SELECT count(*) FROM signals s {cond}", args).fetchone()[0]
         rows = c.execute(
@@ -388,7 +401,7 @@ def search(q: Optional[str] = None, theme: Optional[str] = None,
         themes = _themes_of(c, [r["signal_id"] for r in rows])
     items = [{**dict(r), "themes": themes.get(r["signal_id"], [])} for r in rows]
     return {"total": total, "offset": offset, "returned": len(items),
-            "next_offset": offset + len(items) if offset + len(items) < total else None,
+            "next_offset": _next_offset(offset, len(items), total),
             "items": items}
 
 
@@ -429,22 +442,17 @@ def theme_history(theme_id: str, kind: str = "daily",
     if until:
         where.append(f"{key} <= ?")
         args.append(until)
-    limit = max(1, min(_PAGE_MAX, int(limit)))
-    offset = max(0, int(offset))
+    limit, offset = _page(limit, offset)
     cond = " AND ".join(where)
     with connect() as c:
         total = c.execute(f"SELECT count(*) FROM {table} WHERE {cond}", args).fetchone()[0]
         rows = c.execute(f"SELECT {cols} FROM {table} WHERE {cond} "
                          f"ORDER BY {key} DESC LIMIT ? OFFSET ?",
                          args + [limit, offset]).fetchall()
-    items = []
-    for r in rows:
-        d = dict(r)
-        for k in json_cols:
-            d[k] = _loads(d.get(k), [])
-        items.append(d)
+    items = [{**dict(r), **{k: _loads(r[k], []) for k in json_cols}}
+             for r in rows]
     return {"theme_id": theme_id, "kind": kind, "total": total, "offset": offset,
-            "next_offset": offset + len(items) if offset + len(items) < total else None,
+            "next_offset": _next_offset(offset, len(items), total),
             "items": items}
 
 

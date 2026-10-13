@@ -1,8 +1,10 @@
 """Theme → symbols (reverse of mapping.py).
 
 `mapping.py` answers "which themes does this symbol belong to?" — the direction
-the holdings pipeline needs. The discovery agent needs the opposite: given a
-theme that is moving, which listed companies are in it?
+the holdings pipeline needs. Discovery (the chat agent's theme_symbols) needs
+the opposite: given a theme that is moving, which listed companies are in it?
+The same title matcher also answers "is this symbol in the news" for
+analyze.due (recent_mentions) and the chat agent (mention_items).
 
 Two sources, because neither alone is enough:
 
@@ -26,6 +28,7 @@ from __future__ import annotations
 import re
 from typing import Iterable, Optional
 
+from .read import important_titles, read_items, titles_naming
 
 _MIN_LEN_KR = 3
 _MIN_LEN_EN = 4
@@ -72,17 +75,6 @@ def _boundary_ok(corpus: str, i: int, n: int, hangul_name: bool) -> bool:
 
 def _strip_html(s: str) -> str:
     return _WS_RE.sub(" ", _TAG_RE.sub(" ", s or ""))
-
-
-def read_items(theme_id: str, days: int) -> list[dict]:
-    """Raw articles for a theme within the window, newest first.
-
-    Thin wrapper over read.read_items: the corpus moved into news.db, and the
-    month-file walk plus the tz-aware sort it needed went with it — the date
-    axis is a stored column now.
-    """
-    from .read import read_items as _read_items
-    return _read_items(theme_id, days=days)
 
 
 # Legal suffixes news prose never carries: the universe says "Broadcom Inc"
@@ -184,26 +176,14 @@ def recent_mentions(symbol_ids: Iterable[str], days: int = 14,
     Titles only, like the rest of this module: a name in a headline is the
     story's subject, a name in the body is often a passing clause.
     """
-    from datetime import datetime, timedelta
-
-    from ...core.kst import KST
-    from .db import connect
-
-    wanted = {s for s in symbol_ids}
+    wanted = set(symbol_ids)
     if not wanted:
         return {}
     entries = [(n, s) for n, s in _name_entries() if s in wanted]
     if not entries:
         return {}
-    since = (datetime.now(KST).date()
-             - timedelta(days=max(days - 1, 0))).isoformat()
-    with connect() as c:
-        rows = c.execute(
-            "SELECT title, collected_on FROM signals "
-            "WHERE collected_on >= ? AND importance >= ?",
-            (since, min_importance)).fetchall()
     out: dict = {}
-    for title, day in rows:
+    for title, day in important_titles(days, min_importance):
         for sid in _count_masked(_strip_html(title or ""), entries):
             if day and day > out.get(sid, ""):
                 out[sid] = day
@@ -218,39 +198,18 @@ def mention_items(symbol_id: str, days: int = 14, limit: int = 20) -> list[dict]
     '한화에어로스페이스' headline — and only on titles that hold one of its
     names at all, which keeps the pass to a handful of rows.
     """
-    from datetime import datetime, timedelta
-
-    from ...core.kst import KST
-    from .db import connect
-
     entries = _name_entries()
     mine = [n for n, s in entries if s == symbol_id]
     if not mine:
         return []
     rivals = [(n, s) for n, s in entries if any(m in n for m in mine)]
-    since = (datetime.now(KST).date()
-             - timedelta(days=max(days - 1, 0))).isoformat()
-    hit = " OR ".join("instr(title, ?) > 0" for _ in mine)
-    with connect() as c:
-        rows = c.execute(
-            "SELECT signal_id, title, url, source_id, collected_on, importance "
-            f"FROM signals WHERE collected_on >= ? AND ({hit}) "
-            "ORDER BY collected_on DESC, signal_id DESC",
-            [since, *mine]).fetchall()
     out = []
-    for r in rows:
+    for r in titles_naming(mine, days):
         if symbol_id in _count_masked(_strip_html(r["title"] or ""), rivals):
-            out.append(dict(r))
+            out.append(r)
             if len(out) >= limit:
                 break
     return out
-
-
-def _tagged(theme_id: str) -> list[dict]:
-    """symbol_themes reversed — symbols somebody already mapped to this theme."""
-    from ...market.store import theme_store
-    return theme_store.symbols_for(theme_id)
-
 
 
 def symbols_for_theme(theme_id: str, days: int = 7, limit: int = 30,
@@ -264,6 +223,7 @@ def symbols_for_theme(theme_id: str, days: int = 7, limit: int = 30,
     accounts; whoever is asking marks its own positions, and two accounts
     asking the same question get the same corpus with their own flags.
     """
+    from ...market.store import theme_store
     from ...universe import search as uni_search
     from .catalog import load_catalog
 
@@ -273,10 +233,10 @@ def symbols_for_theme(theme_id: str, days: int = 7, limit: int = 30,
         return {"error": f"unknown theme_id {theme_id!r}",
                 "known_themes": sorted(catalog.themes)}
 
-    items = read_items(theme_id, days)
-    corpus = "\n".join(
-        f"{it.get('title', '')} {_strip_html(it.get('summary', ''))}"
-        for it in items)
+    items = read_items(theme_id, days=days)
+    texts = [f"{it.get('title', '')} {_strip_html(it.get('summary', ''))}"
+             for it in items]
+    corpus = "\n".join(texts)
 
     counts = _count_masked(corpus, _name_entries()) if corpus else {}
     held = set(held or ())
@@ -285,9 +245,8 @@ def symbols_for_theme(theme_id: str, days: int = 7, limit: int = 30,
     for sid, cnt in sorted(counts.items(), key=lambda kv: -kv[1])[:limit]:
         info = uni_search.get(sid) or {}
         name = info.get("name_kr") or info.get("name_en") or sid
-        urls = [it.get("url") for it in items
-                if name in f"{it.get('title', '')} "
-                           f"{_strip_html(it.get('summary', ''))}"][:3]
+        urls = [it.get("url") for it, text in zip(items, texts)
+                if name in text][:3]
         mentioned.append({
             "symbol_id": sid,
             "name": name,
@@ -298,7 +257,7 @@ def symbols_for_theme(theme_id: str, days: int = 7, limit: int = 30,
             "urls": [u for u in urls if u],
         })
 
-    tagged = _tagged(theme_id)
+    tagged = theme_store.symbols_for(theme_id)   # symbol_themes reversed
     for row in tagged:
         info = uni_search.get(row["symbol_id"]) or {}
         row["name"] = info.get("name_kr") or info.get("name_en") or row["symbol_id"]

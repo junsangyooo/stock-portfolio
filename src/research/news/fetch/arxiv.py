@@ -59,6 +59,5 @@ def fetch_arxiv(query: str, source_id: str, max_results: int = 30,
                 time.sleep(_RETRY_BACKOFF_S)
                 continue
             raise
-    items = parse_feed(data.decode("utf-8", errors="replace"),
-                       source_id, kind="arxiv")
-    return items
+    return parse_feed(data.decode("utf-8", errors="replace"),
+                      source_id, kind="arxiv")

@@ -31,13 +31,14 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
-from ...core.kst import KST
+from ...core import kst
 from ...core.llm import FAST_MODEL, ClaudeCliBackend, LocalLlamaBackend, _parse_json
 from .catalog import Catalog, load_catalog
 from .db import connect
+from .read import window_start
 
 log = logging.getLogger(__name__)
 
@@ -114,9 +115,16 @@ def _theme_pairs(raw, valid: set[str]):
         yield tid, c
 
 
-def _since(days: int, now: Optional[datetime] = None) -> str:
-    d = (now or datetime.now(KST)).date() - timedelta(days=max(days - 1, 0))
-    return d.isoformat()
+def _queue(date: Optional[str], window_days: int,
+           now: Optional[datetime]) -> tuple[str, list]:
+    """WHERE clause of the work queue: unenriched, on `date` or inside the
+    window (window_days=0 lifts it)."""
+    if date:
+        return "enriched_at IS NULL AND collected_on = ?", [date]
+    if window_days > 0:
+        return ("enriched_at IS NULL AND collected_on >= ?",
+                [window_start(window_days, now)])
+    return "enriched_at IS NULL", []
 
 
 def pending(limit: int = 0, date: Optional[str] = None,
@@ -132,16 +140,9 @@ def pending(limit: int = 0, date: Optional[str] = None,
     Bounded by `window_days` because nothing reads an older summary. Pass 0 to
     lift the window (backfilling an old date by hand).
     """
-    sql = ("SELECT signal_id, title, body FROM signals "
-           "WHERE enriched_at IS NULL")
-    args: list = []
-    if date:
-        sql += " AND collected_on = ?"
-        args.append(date)
-    elif window_days > 0:
-        sql += " AND collected_on >= ?"
-        args.append(_since(window_days, now))
-    sql += " ORDER BY collected_on DESC, signal_id DESC"
+    where, args = _queue(date, window_days, now)
+    sql = (f"SELECT signal_id, title, body FROM signals WHERE {where} "
+           "ORDER BY collected_on DESC, signal_id DESC")
     if limit > 0:
         sql += " LIMIT ?"
         args.append(limit)
@@ -155,16 +156,10 @@ def _backlog(date: Optional[str] = None,
     """Articles still waiting *inside the window* — reported so a cap that
     never drains is visible instead of merely quiet. Articles that aged out
     are not a backlog; nothing was ever going to read them."""
-    sql = "SELECT COUNT(*) FROM signals WHERE enriched_at IS NULL"
-    args: list = []
-    if date:
-        sql += " AND collected_on = ?"
-        args.append(date)
-    elif window_days > 0:
-        sql += " AND collected_on >= ?"
-        args.append(_since(window_days, now))
+    where, args = _queue(date, window_days, now)
     with connect() as c:
-        return c.execute(sql, args).fetchone()[0]
+        return c.execute(f"SELECT COUNT(*) FROM signals WHERE {where}",
+                         args).fetchone()[0]
 
 
 def _apply(items: list[dict], parsed: list[dict], valid: set[str],
@@ -220,7 +215,7 @@ def run(*, catalog: Optional[Catalog] = None, date: Optional[str] = None,
         batch = _LOCAL_BATCH
     backend = backend or ClaudeCliBackend(model=FAST_MODEL,
                                           stage="news:enrich")
-    now_iso = (now or datetime.now(KST)).isoformat()
+    now_iso = (now or kst.now()).isoformat()
     enriched = batches = failed = 0
     for i in range(0, len(todo), batch):
         chunk = todo[i:i + batch]
@@ -259,9 +254,8 @@ def redo(days: int = _WINDOW_DAYS, date: Optional[str] = None,
     than `_WINDOW_DAYS`, so re-tagging further back buys nothing and costs an
     hour of Haiku per fortnight of history.
     """
-    where, args = "collected_on >= ?", [_since(days, now)]
-    if date:
-        where, args = "collected_on = ?", [date]
+    where, args = (("collected_on = ?", [date]) if date
+                   else ("collected_on >= ?", [window_start(days, now)]))
     with connect() as c:
         n = c.execute(f"SELECT count(*) FROM signals WHERE {where} "
                       "AND enriched_at IS NOT NULL", args).fetchone()[0]

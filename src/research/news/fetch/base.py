@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from datetime import datetime
+from email.utils import parsedate_to_datetime
 from typing import Optional
 
 
@@ -11,7 +13,7 @@ class RawItem:
     """One collected item before LLM normalization.
 
     Attributes:
-        source_id:  which source it came from (themes.json source id).
+        source_id:  which source it came from (sources.json id).
         kind:       'rss' | 'arxiv' | 'x'.
         title:      headline / paper title.
         url:        canonical link (dedup key).
@@ -33,3 +35,17 @@ class RawItem:
             return self.url.strip()
         return "t:" + hashlib.sha1(self.title.strip().encode("utf-8")).hexdigest()
 
+
+def published_iso(published) -> Optional[str]:
+    """Normalize a feed 'published' string (RFC822 or ISO) to ISO-8601, or None
+    when it is missing or unparseable."""
+    if not published or not isinstance(published, str):
+        return None
+    try:
+        return parsedate_to_datetime(published).isoformat()
+    except (TypeError, ValueError):
+        pass
+    try:
+        return datetime.fromisoformat(published.replace("Z", "+00:00")).isoformat()
+    except ValueError:
+        return None

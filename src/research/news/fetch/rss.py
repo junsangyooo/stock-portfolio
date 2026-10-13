@@ -47,14 +47,11 @@ def _parse_entry(node: ET.Element, source_id: str, kind: str) -> Optional[RawIte
         if ln == "title" and not title:
             title = text
         elif ln == "link":
-            # RSS: <link>url</link> ; Atom: <link href="url" .../>
+            # RSS: <link>url</link> ; Atom: <link href="url" .../>. The first
+            # link wins, whatever its rel.
             href = c.get("href")
             if href and not url:
-                # prefer rel=alternate when multiple atom links exist
-                if c.get("rel", "alternate") == "alternate":
-                    url = href
-                elif not url:
-                    url = href
+                url = href
             elif text and not url:
                 url = text
         elif ln in ("pubdate", "published", "updated", "date") and not published:

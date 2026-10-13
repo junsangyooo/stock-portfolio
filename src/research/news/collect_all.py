@@ -25,6 +25,7 @@ from ...core.kst import KST
 from .catalog import Catalog, Feed, all_keywords, load_catalog, load_sources
 from .db import connect
 from .fetch.arxiv import fetch_arxiv
+from .fetch.base import published_iso
 from .fetch.og_image import enrich_images
 from .fetch.rss import fetch_rss
 
@@ -54,21 +55,6 @@ def _keyword_hit(title: str, summary: str, keywords: list[str]) -> bool:
         elif k in text:
             return True
     return False
-
-
-def _published_iso(raw: Optional[str]) -> Optional[str]:
-    """Feed timestamp (RFC822 or ISO) → ISO, or None when unparseable."""
-    if not raw:
-        return None
-    from email.utils import parsedate_to_datetime
-    try:
-        return parsedate_to_datetime(raw).isoformat()
-    except (TypeError, ValueError):
-        pass
-    try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00")).isoformat()
-    except ValueError:
-        return None
 
 
 def _cursors() -> dict[str, Optional[str]]:
@@ -143,14 +129,12 @@ def collect_one(feed: Feed, keywords: list[str], cursor: Optional[str],
     fresh, newest = [], cursor or ""
     floor = (now - timedelta(days=_FIRST_SWEEP_DAYS)).isoformat()
     for it in items:
-        pub = _published_iso(it.published)
-        # An item the feed dates at or before our cursor was seen last cycle.
-        # Undated items fall through to the dedup check rather than being
-        # dropped — plenty of feeds omit the field entirely.
-        if cursor and pub and pub <= cursor:
-            stat["stale"] += 1
-            continue
-        if not cursor and pub and pub < floor:
+        pub = published_iso(it.published)
+        # An item the feed dates at or before our cursor was seen last cycle;
+        # a feed with no cursor yet stops at the first-sweep floor. Undated
+        # items fall through to the dedup check rather than being dropped —
+        # plenty of feeds omit the field entirely.
+        if pub and (pub <= cursor if cursor else pub < floor):
             stat["stale"] += 1
             continue
         if feed.broad and keywords and not _keyword_hit(it.title, it.summary,
@@ -198,11 +182,9 @@ def collect_all(*, catalog: Optional[Catalog] = None,
     keywords = all_keywords(catalog)
     cursors = _cursors()
 
-    stats = []
-    for feed in load_sources():
-        stats.append(collect_one(feed, keywords, cursors.get(feed.source_id),
-                                 now=now, max_per_source=max_per_source,
-                                 timeout=timeout))
+    stats = [collect_one(feed, keywords, cursors.get(feed.source_id), now=now,
+                         max_per_source=max_per_source, timeout=timeout)
+             for feed in load_sources()]
     return {
         "date": now.strftime("%Y-%m-%d"),
         "sources": len(stats),

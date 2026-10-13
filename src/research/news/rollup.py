@@ -18,16 +18,13 @@ of an ever-growing pile.
 from __future__ import annotations
 
 import json
-import logging
 from datetime import date as _date, datetime, timedelta
 from typing import Optional
 
-from ...core.kst import KST
-from ...core.llm import FAST_MODEL, _parse_json, local_or_claude
+from ...core import kst
 from .catalog import Catalog, load_catalog
+from .daily import ask_json, clean_lines, each_theme
 from .db import connect
-
-log = logging.getLogger(__name__)
 
 _MAX_BULLETS = 10
 
@@ -47,7 +44,7 @@ def last_complete_week(now: Optional[datetime] = None) -> _date:
     Run on Sunday evening, "this week" is the week that is ending now, so the
     Monday six days back. Run on any other day it is the previous full week.
     """
-    d = (now or datetime.now(KST)).date()
+    d = (now or kst.now()).date()
     return week_start_of(d) if d.weekday() == 6 else week_start_of(d) - timedelta(days=7)
 
 
@@ -85,17 +82,10 @@ def _prompt(theme_name: str, span: str, unit: str, blocks: list[str]) -> str:
 
 
 def _call(prompt: str, stage: str, backend) -> dict:
-    if backend is not None:                       # tests inject their own
-        raw = backend.call(_SYSTEM, prompt, model=FAST_MODEL)
-    else:
-        raw, _ = local_or_claude(_SYSTEM, prompt, claude_model=FAST_MODEL,
-                                 stage=stage, validate=_parse_json)
-    data = _parse_json(raw)
-    bl = data.get("bullets") or []
+    data = ask_json(_SYSTEM, prompt, stage, backend)
     return {
         "summary": str(data.get("summary") or "").strip()[:2000],
-        "bullets": [str(b).strip()[:300] for b in bl if str(b).strip()][:_MAX_BULLETS]
-        if isinstance(bl, list) else [],
+        "bullets": clean_lines(data.get("bullets"), _MAX_BULLETS, 300),
     }
 
 
@@ -144,32 +134,26 @@ def build_month(theme_id: str, theme_name: str, month: str,
 
 
 # ── persistence ─────────────────────────────────────────────────────────────
-def write_week(row: dict) -> None:
+def _upsert(table: str, key: str, count: str, row: dict) -> None:
     with connect() as c:
         c.execute(
-            "INSERT INTO theme_weekly (theme_id, week_start, summary, bullets, "
-            "n_days, built_at) VALUES (?,?,?,?,?,?) "
-            "ON CONFLICT(theme_id, week_start) DO UPDATE SET "
+            f"INSERT INTO {table} (theme_id, {key}, summary, bullets, "
+            f"{count}, built_at) VALUES (?,?,?,?,?,?) "
+            f"ON CONFLICT(theme_id, {key}) DO UPDATE SET "
             "summary=excluded.summary, bullets=excluded.bullets, "
-            "n_days=excluded.n_days, built_at=excluded.built_at",
-            (row["theme_id"], row["week_start"], row["summary"],
-             json.dumps(row["bullets"], ensure_ascii=False), row["n_days"],
-             datetime.now(KST).isoformat()))
+            f"{count}=excluded.{count}, built_at=excluded.built_at",
+            (row["theme_id"], row[key], row["summary"],
+             json.dumps(row["bullets"], ensure_ascii=False), row[count],
+             kst.now().isoformat()))
         c.commit()
+
+
+def write_week(row: dict) -> None:
+    _upsert("theme_weekly", "week_start", "n_days", row)
 
 
 def write_month(row: dict) -> None:
-    with connect() as c:
-        c.execute(
-            "INSERT INTO theme_monthly (theme_id, month, summary, bullets, "
-            "n_weeks, built_at) VALUES (?,?,?,?,?,?) "
-            "ON CONFLICT(theme_id, month) DO UPDATE SET "
-            "summary=excluded.summary, bullets=excluded.bullets, "
-            "n_weeks=excluded.n_weeks, built_at=excluded.built_at",
-            (row["theme_id"], row["month"], row["summary"],
-             json.dumps(row["bullets"], ensure_ascii=False), row["n_weeks"],
-             datetime.now(KST).isoformat()))
-        c.commit()
+    _upsert("theme_monthly", "month", "n_weeks", row)
 
 
 # ── runners ─────────────────────────────────────────────────────────────────
@@ -177,39 +161,17 @@ def run_weekly(start: Optional[_date] = None, *,
                catalog: Optional[Catalog] = None, backend=None) -> dict:
     catalog = catalog or load_catalog()
     start = start or last_complete_week()
-    built, empty, failed = 0, 0, []
-    for t in catalog.themes.values():
-        try:
-            row = build_week(t.theme_id, t.name_kr, start, backend=backend)
-        except Exception as e:  # noqa: BLE001
-            log.warning("weekly %s failed: %s", t.theme_id, str(e)[:200])
-            failed.append(t.theme_id)
-            continue
-        if row is None:
-            empty += 1
-            continue
-        write_week(row)
-        built += 1
-    return {"cycle": "weekly", "week_start": start.isoformat(),
-            "built": built, "empty": empty, "failed": failed}
+    return {"cycle": "weekly", "week_start": start.isoformat(), **each_theme(
+        "weekly", catalog.themes.values(),
+        lambda t: build_week(t.theme_id, t.name_kr, start, backend=backend),
+        write_week)}
 
 
 def run_monthly(month: Optional[str] = None, *,
                 catalog: Optional[Catalog] = None, backend=None) -> dict:
     catalog = catalog or load_catalog()
-    month = month or datetime.now(KST).strftime("%Y-%m")
-    built, empty, failed = 0, 0, []
-    for t in catalog.themes.values():
-        try:
-            row = build_month(t.theme_id, t.name_kr, month, backend=backend)
-        except Exception as e:  # noqa: BLE001
-            log.warning("monthly %s failed: %s", t.theme_id, str(e)[:200])
-            failed.append(t.theme_id)
-            continue
-        if row is None:
-            empty += 1
-            continue
-        write_month(row)
-        built += 1
-    return {"cycle": "monthly", "month": month, "built": built,
-            "empty": empty, "failed": failed}
+    month = month or kst.now().strftime("%Y-%m")
+    return {"cycle": "monthly", "month": month, **each_theme(
+        "monthly", catalog.themes.values(),
+        lambda t: build_month(t.theme_id, t.name_kr, month, backend=backend),
+        write_month)}
