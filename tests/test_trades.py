@@ -8,26 +8,25 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.api import portfolio_api
-from src.core import security
-from src.portfolio.store import (
-    account_store, balance_store, db as pdb, holding_store, trade_store,
-)
+from src.api import accounts
+from src.portfolio import security
+from src.portfolio.store import (account_store, balance_store, db as pdb,
+                                 holding_store, trade_store)
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(pdb, "DB_PATH", str(tmp_path / "trades.db"))
     monkeypatch.setattr(pdb, "_initialized", False)
-    monkeypatch.setattr(portfolio_api.uni_search, "get", lambda sid: {
+    monkeypatch.setattr(accounts.uni_search, "get", lambda sid: {
         "currency": "USD" if sid.startswith("US:") else "KRW",
         "name_kr": "이름 " + sid, "market": sid.split(":")[0]})
-    monkeypatch.setattr(portfolio_api.gap_filler, "fill_one", lambda sid: 0)
+    monkeypatch.setattr(accounts.gap_filler, "fill_one", lambda sid: 0)
     for aid in ("alice", "bob"):
         account_store.create(aid, aid, "GENERAL")
         account_store.set_pin_hash(aid, security.hash_pin(aid, "123456"))
     app = FastAPI()
-    app.include_router(portfolio_api.router)
+    app.include_router(accounts.router)
     return TestClient(app)
 
 
@@ -157,9 +156,9 @@ def test_list_trades_newest_first(client):
 def test_every_account_route_requires_account():
     """Every /{account_id}/... route except the PIN login carries
     require_account — the server-wide gate only checks for *some* session."""
-    from src.api.portfolio_api import require_account
+    from src.api.accounts import require_account
     missing = []
-    for route in portfolio_api.router.routes:
+    for route in accounts.router.routes:
         if "{account_id}" not in route.path or route.path.endswith("/auth"):
             continue
         deps = [d.call for d in route.dependant.dependencies]
@@ -256,7 +255,7 @@ def test_buy_onto_unknown_cost_starts_at_the_buy_price(client):
 
 def test_side_case_is_normalised_everywhere(client, monkeypatch):
     filled = []
-    monkeypatch.setattr(portfolio_api.gap_filler, "fill_one",
+    monkeypatch.setattr(accounts.gap_filler, "fill_one",
                         lambda sid: filled.append(sid))
     r = _trade(client, side="BUY")
     assert r.status_code == 200, r.text

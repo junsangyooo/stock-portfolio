@@ -24,9 +24,9 @@ from typing import Optional
 from ...core.kst import KST
 from .catalog import Catalog, Feed, all_keywords, load_catalog, load_sources
 from .db import connect
-from .sources.arxiv import fetch_arxiv
-from .sources.og_image import enrich_images
-from .sources.rss import fetch_rss
+from .fetch.arxiv import fetch_arxiv
+from .fetch.og_image import enrich_images
+from .fetch.rss import fetch_rss
 
 log = logging.getLogger(__name__)
 

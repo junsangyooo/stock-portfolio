@@ -10,10 +10,10 @@ shared resource may never read an account. Otherwise the same analysis has to
 fork per account, and market.db's nightly jobs quietly cover only what the one
 book they happen to read holds.
 
-    python -m src.portfolio.jobs fundamental
-    python -m src.portfolio.jobs etf
-    python -m src.portfolio.jobs analysis [--workers 2] [--limit N]
-    python -m src.portfolio.jobs all
+    python -m src.portfolio.supply_job fundamental
+    python -m src.portfolio.supply_job etf
+    python -m src.portfolio.supply_job analysis [--workers 2] [--limit N]
+    python -m src.portfolio.supply_job all
 """
 from __future__ import annotations
 
@@ -88,7 +88,7 @@ def main() -> int:
     jobs = {
         "fundamental": ("src.market.pipeline.fundamental_job", [], held),
         "etf": ("src.market.pipeline.etf_job", [], held),
-        "analysis": ("src.research.verdict_job",
+        "analysis": ("src.research.analyze.batch_job",
                      extra + ["--effort", LOW_EFFORT],
                      lambda: to_analyze(force=args.force)),
     }

@@ -16,9 +16,9 @@ import pytest
 import requests
 
 import src.core.paths as paths
-from src.core.notify import discord
-from src.market.source import kis_auth
-from src.research.llm_backend import ClaudeCliBackend
+from src.core import notify
+from src.market.source import kis_source
+from src.core.llm import ClaudeCliBackend
 
 
 @pytest.fixture(autouse=True)
@@ -41,16 +41,16 @@ def temp_books(tmp_path, monkeypatch):
     # modules import, so they are redirected there. Without it a test that
     # opened the app wrote data/portfolio.db and read or wrote
     # data/.session_secret — on the server, the live ones.
-    from src.core import security
+    from src.portfolio import security
     from src.market.store import quote_store
     from src.portfolio.store import db as pdb
-    from src.research import verdict_job
+    from src.research.analyze import batch_job
     from src.universe import builder
     monkeypatch.setattr(pdb, "DB_PATH", tmp_path / "portfolio.db")
     monkeypatch.setattr(pdb, "_initialized", False)
     # …and every module that imported ensure_dirs by name, which otherwise
     # still creates the real data/ tree.
-    for mod in (pdb, quote_store, verdict_job, builder):
+    for mod in (pdb, quote_store, batch_job, builder):
         monkeypatch.setattr(mod, "ensure_dirs", lambda: None)
     monkeypatch.setattr(security, "_SECRET_FILE", tmp_path / ".session_secret")
     monkeypatch.setattr(security, "_secret_cache", None)
@@ -77,10 +77,10 @@ def no_live_broker(tmp_path, monkeypatch):
                         lambda url, *a, **k: _blocked("POST", url))
     monkeypatch.setattr(requests, "get",
                         lambda url, *a, **k: _blocked("GET", url))
-    monkeypatch.setattr(kis_auth, "_TOKEN_PATH", tmp_path / ".kis_token.json")
+    monkeypatch.setattr(kis_source, "_TOKEN_PATH", tmp_path / ".kis_token.json")
     # Discord too: no test may post to the real channel. A test that wants to
     # count messages patches ``discord.send`` itself; this only unplugs the URL.
-    monkeypatch.setattr(discord, "_url", lambda: None)
+    monkeypatch.setattr(notify, "_url", lambda: None)
 
 
 @pytest.fixture(autouse=True)

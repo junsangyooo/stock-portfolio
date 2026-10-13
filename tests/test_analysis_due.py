@@ -14,7 +14,7 @@ import pytest
 from src.core import paths
 from src.core.kst import KST
 from src.research.analyze import due
-from src.research.verdict import KIND
+from src.research.analyze.store import KIND
 
 NOW = datetime(2026, 9, 15, 9, 0, tzinfo=KST)        # Tuesday
 YESTERDAY = "2026-09-14"

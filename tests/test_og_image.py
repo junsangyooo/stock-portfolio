@@ -1,7 +1,7 @@
 """Tests for og:image extraction (pure) + collect keyword filter (pure)."""
 from __future__ import annotations
 
-from src.research.news.sources.og_image import extract_og_image
+from src.research.news.fetch.og_image import extract_og_image
 from src.research.news.collect_all import _keyword_hit
 
 
@@ -70,7 +70,7 @@ def test_short_ascii_keyword_needs_word_boundary():
 
 
 def test_rss_image_and_title_unescaped():
-    from src.research.news.sources.rss import parse_feed
+    from src.research.news.fetch.rss import parse_feed
     xml = ('<?xml version="1.0"?><rss version="2.0"><channel><item>'
            '<title>&amp;quot;호평&amp;quot; 데뷔</title>'
            '<link>https://ex.com/1</link>'

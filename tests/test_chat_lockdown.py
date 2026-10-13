@@ -13,10 +13,10 @@ import json
 
 from src.api import chat
 from src.core import paths
-from src.research import llm_backend
+from src.core import llm
 
 # Captured at import, before conftest replaces it.
-_REAL_CALL = llm_backend.ClaudeCliBackend.call
+_REAL_CALL = llm.ClaudeCliBackend.call
 
 _ENVELOPE = json.dumps({"result": "ok", "usage": {}})
 
@@ -28,8 +28,8 @@ def _run_capture(monkeypatch):
         seen.update(argv=argv, **kw)
         return type("R", (), {"returncode": 0, "stdout": _ENVELOPE,
                               "stderr": ""})()
-    monkeypatch.setattr(llm_backend.subprocess, "run", _run)
-    b = llm_backend.ClaudeCliBackend.__new__(llm_backend.ClaudeCliBackend)
+    monkeypatch.setattr(llm.subprocess, "run", _run)
+    b = llm.ClaudeCliBackend.__new__(llm.ClaudeCliBackend)
     b.bin, b.model, b.stage = "claude", "sonnet", "test"
     return b, seen
 
@@ -106,7 +106,7 @@ def test_chat_runs_in_the_empty_sandbox(monkeypatch, tmp_path):
 
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from src.core import security
+    from src.portfolio import security
     from src.portfolio.store import account_store, chat_store
 
     monkeypatch.setattr(chat, "ClaudeCliBackend", _Stub)

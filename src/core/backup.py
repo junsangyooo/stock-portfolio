@@ -94,9 +94,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         out = backup_all(only=args.only)
     except Exception as e:
-        from .notify import discord           # lazy: pulls httpx
+        from . import notify  # lazy: pulls httpx
         print(e, file=sys.stderr)
-        discord.send(f"🛑 DB backup FAILED — {e}")
+        notify.send(f"🛑 DB backup FAILED — {e}")
         return 1
     print(json.dumps({k: {"bytes": v["bytes"], "path": str(v["path"])}
                       for k, v in out.items()}, indent=2))

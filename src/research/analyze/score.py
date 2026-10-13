@@ -29,7 +29,7 @@ from typing import Iterable, Optional
 
 from ...core import paths
 from ...core.kst import KST
-from ..verdict import KIND
+from .store import KIND
 
 HORIZONS = (5, 10, 20)          # trading days
 FLAT_PCT = 3.0                  # a neutral call is right while price stays here

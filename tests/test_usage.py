@@ -13,11 +13,11 @@ import pytest
 
 from src.core import paths, usage
 from src.core.kst import KST
-from src.research import llm_backend
+from src.core import llm
 
 # Captured at import, before conftest replaces it — these tests exercise the
 # real subprocess wrapper with a fake `subprocess.run`.
-_REAL_CALL = llm_backend.ClaudeCliBackend.call
+_REAL_CALL = llm.ClaudeCliBackend.call
 
 NOW = datetime(2026, 9, 15, 10, 0, tzinfo=KST)
 
@@ -29,7 +29,7 @@ def log_file(tmp_path, monkeypatch):
 
 
 def _backend(stdout: str, code: int = 0, seen: list | None = None):
-    b = llm_backend.ClaudeCliBackend.__new__(llm_backend.ClaudeCliBackend)
+    b = llm.ClaudeCliBackend.__new__(llm.ClaudeCliBackend)
     b.bin, b.model, b.stage = "claude", "sonnet", "analyze"
 
     def _run(argv, **kw):
@@ -60,7 +60,7 @@ def test_only_a_session_someone_resumes_is_written_to_disk(monkeypatch, extra, p
     a day, 389MB in three weeks — though only a chat thread and an analysis
     root are ever resumed."""
     b, run = _backend(_ENVELOPE, seen=(seen := []))
-    monkeypatch.setattr(llm_backend.subprocess, "run", run)
+    monkeypatch.setattr(llm.subprocess, "run", run)
     _REAL_CALL(b, "sys", "user", extra_args=extra)
     assert ("--no-session-persistence" not in seen[0]) is persisted
 
@@ -69,7 +69,7 @@ def test_only_a_session_someone_resumes_is_written_to_disk(monkeypatch, extra, p
 
 def test_a_call_leaves_one_line_with_its_own_numbers(log_file, monkeypatch):
     b, run = _backend(_ENVELOPE, seen=(seen := []))
-    monkeypatch.setattr(llm_backend.subprocess, "run", run)
+    monkeypatch.setattr(llm.subprocess, "run", run)
     assert _REAL_CALL(b, "sys", "user") == "판정 결과"
     assert "--output-format" in seen[0] and "json" in seen[0]
 
@@ -82,7 +82,7 @@ def test_a_call_leaves_one_line_with_its_own_numbers(log_file, monkeypatch):
 def test_an_envelope_we_cannot_read_still_returns_the_answer(log_file, monkeypatch):
     """Losing the accounting for one call must not lose the generation."""
     b, run = _backend("그냥 텍스트 답")
-    monkeypatch.setattr(llm_backend.subprocess, "run", run)
+    monkeypatch.setattr(llm.subprocess, "run", run)
     assert _REAL_CALL(b, "sys", "user") == "그냥 텍스트 답"
     row = json.loads(log_file.read_text(encoding="utf-8").strip())
     assert row["envelope"] == "unreadable" and row["out"] == 0
@@ -92,7 +92,7 @@ def test_a_failed_call_is_recorded_before_it_raises(log_file, monkeypatch):
     """The week the limit ran out, the only trace was a job log. Now the
     refusal itself is a row."""
     b, run = _backend("You've hit your weekly limit", code=1)
-    monkeypatch.setattr(llm_backend.subprocess, "run", run)
+    monkeypatch.setattr(llm.subprocess, "run", run)
     with pytest.raises(RuntimeError):
         _REAL_CALL(b, "sys", "user")
     row = json.loads(log_file.read_text(encoding="utf-8").strip())
@@ -156,7 +156,7 @@ def test_an_errored_envelope_is_recorded_but_its_answer_is_kept(log_file, monkey
                            "subtype": "error_max_turns", "stop_reason": "max_tokens",
                            "usage": {"output_tokens": 32000}})
     b, run = _backend(envelope)
-    monkeypatch.setattr(llm_backend.subprocess, "run", run)
+    monkeypatch.setattr(llm.subprocess, "run", run)
     assert _REAL_CALL(b, "sys", "user") == "부분적인 답"
     row = json.loads(log_file.read_text(encoding="utf-8").strip())
     assert row["ok"] is False and row["error"] == "error_max_turns"
@@ -171,9 +171,9 @@ def test_a_dead_local_model_leaves_a_row_too(log_file, monkeypatch):
     def _boom(req, *a, **kw):
         raise urllib.error.URLError("connection refused")
 
-    monkeypatch.setattr(llm_backend.urllib.request, "urlopen", _boom)
+    monkeypatch.setattr(llm.urllib.request, "urlopen", _boom)
     with pytest.raises(RuntimeError):
-        llm_backend.LocalLlamaBackend(stage="daily").call("sys", "user")
+        llm.LocalLlamaBackend(stage="daily").call("sys", "user")
     row = json.loads(log_file.read_text(encoding="utf-8").strip())
     assert row["backend"] == "local_llama" and row["stage"] == "daily"
     assert row["ok"] is False and "unreachable" in row["error"]

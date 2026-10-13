@@ -33,7 +33,7 @@ import time
 import urllib.error
 import urllib.request
 
-from ..core import usage
+from . import usage
 
 
 FAST_MODEL = "claude-haiku-4-5-20251001"

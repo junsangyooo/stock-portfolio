@@ -107,7 +107,7 @@ def test_the_analysis_envelope_carries_no_position():
 @pytest.mark.parametrize("module,flag", [
     ("src/market/pipeline/fundamental_job.py", "--symbols"),
     ("src/market/pipeline/etf_job.py", "--symbols"),
-    ("src/research/verdict_job.py", "--symbols"),
+    ("src/research/analyze/batch_job.py", "--symbols"),
 ])
 def test_shared_batch_jobs_require_an_explicit_symbol_list(module, flag):
     """No default that quietly means 'whatever portfolio.db holds'."""

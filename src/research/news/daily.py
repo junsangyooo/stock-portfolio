@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import Optional
 
 from ...core.kst import KST
-from ..llm_backend import FAST_MODEL, _parse_json, local_or_claude
+from ...core.llm import FAST_MODEL, _parse_json, local_or_claude
 from .catalog import Catalog, load_catalog
 from .db import connect
 

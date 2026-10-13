@@ -1,7 +1,7 @@
 """Daily OHLCV store — data/market.db, table `ohlcv`.
 
 We store ONLY daily bars. Coarser periods (week/month/year) are derived on
-the fly by src/market/pipeline/resampler.py — storage cost of duplicates
+the fly by src/market/resample.py — storage cost of duplicates
 is higher than CPU cost of resampling, and avoids divergence.
 
 Was one parquet per symbol. At 53 held symbols that was fine; at the whole

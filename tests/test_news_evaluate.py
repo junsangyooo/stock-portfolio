@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.research.news import evaluate as ev
-from src.research.news.evaluate import get_symbol_themes, assemble_inputs
+from src.research.news import inputs as ev
+from src.research.news.inputs import get_symbol_themes, assemble_inputs
 from src.research.news.catalog import load_catalog
 
 

@@ -10,7 +10,7 @@ import time
 
 import httpx
 
-from .. import secrets
+from . import secrets
 
 log = logging.getLogger(__name__)
 

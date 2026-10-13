@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from src.research.chart import chart_agent
+from src.research.chart import facts
 
 
 def _daily(close: np.ndarray) -> pd.DataFrame:
@@ -26,7 +26,7 @@ def _uptrend(n=400):
 
 class TestCollectFacts(unittest.TestCase):
     def test_structure_and_timeframe_keys(self):
-        out = chart_agent.collect_facts("KR:TESTUP", daily_df=_uptrend(), persist=False)
+        out = facts.collect_facts("KR:TESTUP", daily_df=_uptrend(), persist=False)
         for k in ("symbol_id", "kind", "asof", "timeframes", "structure", "engine_version"):
             self.assertIn(k, out)
         self.assertEqual(out["kind"], "chart")
@@ -37,7 +37,7 @@ class TestCollectFacts(unittest.TestCase):
         self.assertIn("support_resistance", out["structure"])
 
     def test_facts_are_objective(self):
-        out = chart_agent.collect_facts("KR:TESTUP", daily_df=_uptrend(), persist=False)
+        out = facts.collect_facts("KR:TESTUP", daily_df=_uptrend(), persist=False)
         daily_inds = out["timeframes"]["1d"]["indicators"]
         self.assertTrue(out["timeframes"]["1d"]["has_data"])
         # every indicator carries a state, and NO judgment fields
@@ -50,18 +50,18 @@ class TestCollectFacts(unittest.TestCase):
             self.assertNotIn(forbidden, out)
 
     def test_json_serialisable(self):
-        out = chart_agent.collect_facts("KR:TESTUP", daily_df=_uptrend(), persist=False)
+        out = facts.collect_facts("KR:TESTUP", daily_df=_uptrend(), persist=False)
         parsed = json.loads(json.dumps(out, default=str))
         self.assertEqual(parsed["symbol_id"], "KR:TESTUP")
 
     def test_empty_frame_no_crash(self):
         empty = pd.DataFrame(columns=["ts", "open", "high", "low", "close", "volume"])
-        out = chart_agent.collect_facts("KR:EMPTY", daily_df=empty, persist=False)
+        out = facts.collect_facts("KR:EMPTY", daily_df=empty, persist=False)
         self.assertEqual(out["structure"], {})
         self.assertFalse(out["timeframes"]["1d"]["has_data"])
 
     def test_uptrend_facts_reflect_trend(self):
-        out = chart_agent.collect_facts("KR:TESTUP", daily_df=_uptrend(), persist=False)
+        out = facts.collect_facts("KR:TESTUP", daily_df=_uptrend(), persist=False)
         states = {i["indicator"]: i["state"] for i in out["timeframes"]["1d"]["indicators"]}
         self.assertEqual(states["ema_alignment"], "bull_stack")
         self.assertEqual(states["supertrend"], "up")

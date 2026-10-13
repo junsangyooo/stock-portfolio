@@ -1,7 +1,7 @@
 """SQLite for the human accounts — data/portfolio.db.
 
 The ledger itself (accounts, holdings, trades, cash, snapshots, plans, watch)
-is defined in src/ledger and applied here; this file only adds what is
+is defined in schema.py and applied here; this file only adds what is
 specific to this book. The human book keeps no plans — the `plans` table is
 part of the ledger definition and stays empty here.
 
@@ -19,7 +19,7 @@ from contextlib import contextmanager
 from typing import Iterator
 
 from ...core.paths import DB_PATH, ensure_dirs
-from ...ledger import apply as apply_ledger
+from .schema import apply as apply_ledger
 
 # This book's own tables, on top of the shared ledger.
 EXTENSION = """

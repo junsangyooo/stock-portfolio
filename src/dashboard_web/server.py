@@ -25,7 +25,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from src.core import security
+from src.portfolio import security
 
 STATIC = Path(__file__).resolve().parent / "static"
 THEME_PATH = STATIC / "theme.json"

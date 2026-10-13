@@ -85,7 +85,7 @@ def test_chart_input_flags_bars_that_stopped(monkeypatch):
     from src.research.analyze import inputs
 
     old = (datetime.now(KST) - timedelta(days=30)).strftime("%Y-%m-%d")
-    monkeypatch.setattr("src.research.chart.chart_agent.collect_facts",
+    monkeypatch.setattr("src.research.chart.facts.collect_facts",
                         lambda sid, force=False: {
                             "asof": old,
                             "timeframes": {"1d": {"has_data": True},
@@ -101,7 +101,7 @@ def test_chart_input_is_ok_on_current_bars(monkeypatch):
     from src.research.analyze import inputs
 
     today = datetime.now(KST).strftime("%Y-%m-%d")
-    monkeypatch.setattr("src.research.chart.chart_agent.collect_facts",
+    monkeypatch.setattr("src.research.chart.facts.collect_facts",
                         lambda sid, force=False: {
                             "asof": today,
                             "timeframes": {"1d": {"has_data": True},
@@ -115,7 +115,7 @@ def test_chart_input_keeps_saying_when_a_timeframe_is_short(monkeypatch):
     from src.research.analyze import inputs
 
     today = datetime.now(KST).strftime("%Y-%m-%d")
-    monkeypatch.setattr("src.research.chart.chart_agent.collect_facts",
+    monkeypatch.setattr("src.research.chart.facts.collect_facts",
                         lambda sid, force=False: {
                             "asof": today,
                             "timeframes": {"1d": {"has_data": True},

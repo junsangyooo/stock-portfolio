@@ -69,7 +69,7 @@ def load() -> tuple[str, pd.DataFrame]:
 
 if __name__ == "__main__":
     # Daily cron entry: warm the cache OUTSIDE the chat subprocess — the chat
-    # child has KRX_* scrubbed from its env (llm_backend), so screening from
+    # child has KRX_* scrubbed from its env (core/llm.py), so screening from
     # chat only ever reads the parquet this writes.
     import sys
     logging.basicConfig(level=logging.INFO)

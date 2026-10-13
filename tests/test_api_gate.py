@@ -7,7 +7,7 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from src.core import security
+from src.portfolio import security
 from src.dashboard_web.server import app
 
 

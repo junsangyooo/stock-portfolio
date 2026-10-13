@@ -16,7 +16,7 @@ Same-day results are skipped, so a re-run is cheap and a crash mid-batch is
 resumed rather than repeated. Failures are collected and reported to Discord
 at the end; one symbol never stops the batch.
 
-  python -m src.research.verdict_job --symbols KR:005930,US:NVDA [--workers 2]
+  python -m src.research.analyze.batch_job --symbols KR:005930,US:NVDA [--workers 2]
 """
 from __future__ import annotations
 
@@ -28,13 +28,13 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional
 
-from ..core.kst import KST as _KST
-from ..core.paths import ensure_dirs
+from ...core.kst import KST as _KST
+from ...core.paths import ensure_dirs
 
 
 def _name(symbol_id: str) -> str:
     try:
-        from ..universe import search as uni_search
+        from ...universe import search as uni_search
         item = uni_search.get(symbol_id)
         return (item or {}).get("name_kr") or symbol_id
     except Exception:  # noqa: BLE001 — a missing name never blocks a verdict
@@ -53,7 +53,7 @@ def run_symbol(symbol_id: str, date: str, *, force: bool,
                root: Optional[str] = None) -> dict:
     """One symbol's comprehensive analysis, skipped on a same-day hit.
     Never raises — failures land in the returned summary."""
-    from . import analyze
+    from .. import analyze
     out: dict = {"symbol": symbol_id, "status": None, "errors": []}
     if not force and analyze.on(symbol_id, date) is not None:
         out["status"] = "cached"
@@ -84,7 +84,7 @@ def _notify_failures(date: str, results: list[dict], n_total: int) -> None:
     no_ctx = [r["symbol"] for r in results if r.get("holding_ctx") is False]
     if not failed and not no_ctx:
         return
-    from ..core.notify import discord
+    from ...core import notify
     lines = [f"분석 배치 {date} — {n_total}종목 중 실패/폴백 {len(failed)}"]
     for r in failed[:15]:
         lines.append(f"- {r['symbol']}: {'; '.join(r['errors'])[:120]}")
@@ -92,7 +92,7 @@ def _notify_failures(date: str, results: list[dict], n_total: int) -> None:
         lines.append(f"… 외 {len(failed) - 15}종목")
     if no_ctx:
         lines.append(f"내용 없이 반환: {', '.join(no_ctx[:10])}")
-    discord.send("⚠️ **analysis-batch**\n" + "\n".join(lines))
+    notify.send("⚠️ **analysis-batch**\n" + "\n".join(lines))
 
 
 def main() -> int:
@@ -123,7 +123,7 @@ def main() -> int:
     print(f"analysis batch {date} — {len(symbols)} symbols, "
           f"workers={args.workers}", flush=True)
 
-    from . import analyze
+    from .. import analyze
     todo = [s for s in symbols if args.force or analyze.on(s, date) is None]
     # The root is made at the forks' budget: a fork whose thinking settings
     # differ from the root's does not read the cached dictionaries.

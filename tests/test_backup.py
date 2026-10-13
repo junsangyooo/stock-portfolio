@@ -106,7 +106,7 @@ def test_only_takes_several_names(books):
 
 def test_main_exit_codes(books, monkeypatch):
     sent: list[str] = []
-    monkeypatch.setattr("src.core.notify.discord.send", lambda text, **kw: sent.append(text))
+    monkeypatch.setattr("src.core.notify.send", lambda text, **kw: sent.append(text))
 
     assert backup.main(["--only", "news"]) == 0
     assert sent == []

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from ...core import paths
-from ..verdict import KIND  # noqa: F401 — re-exported by the package
+from .store import KIND  # noqa: F401 — re-exported by the package
 
 log = logging.getLogger(__name__)
 

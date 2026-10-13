@@ -7,9 +7,7 @@ from __future__ import annotations
 
 from ..market.store import ohlcv_store, quote_store
 from ..universe import search as uni_search
-from .store import (
-    account_store, balance_store, holding_store, snapshot_store,
-)
+from .store import account_store, balance_store, holding_store, snapshot_store
 
 
 def aggregate(account_id: str, *, spark_n: int = 30) -> dict:

@@ -12,11 +12,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.api import portfolio_api
-from src.portfolio.store import (
-    account_store, balance_store, holding_store, db as pdb,
-)
-from src.api.portfolio_api import require_account
+from src.api import accounts
+from src.portfolio.store import account_store, balance_store, holding_store, db as pdb
+from src.api.accounts import require_account
 
 
 @pytest.fixture
@@ -29,13 +27,13 @@ def client(tmp_path, monkeypatch):
     def fake_get(sid):
         ccy = "USD" if sid.startswith("US:") else "KRW"
         return {"currency": ccy, "market": sid.split(":")[0]}
-    monkeypatch.setattr(portfolio_api.uni_search, "get", fake_get)
+    monkeypatch.setattr(accounts.uni_search, "get", fake_get)
 
     # skip real market backfill (network)
-    monkeypatch.setattr(portfolio_api.gap_filler, "fill_one", lambda sid: 0)
+    monkeypatch.setattr(accounts.gap_filler, "fill_one", lambda sid: 0)
 
     app = FastAPI()
-    app.include_router(portfolio_api.router)
+    app.include_router(accounts.router)
     # bypass PIN auth
     app.dependency_overrides[require_account] = lambda: "acc1"
 

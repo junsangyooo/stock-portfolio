@@ -26,12 +26,10 @@ Nothing here reads portfolio.db. The analysis is about the symbol; what to
 do about it depends on a position, and that belongs to whichever account is
 asking. That is what lets one stored result serve every account.
 """
-from .inputs import build as assemble          # noqa: F401 — deterministic half
-from .read import (                            # noqa: F401
-    KIND, latest, latest_date, on, summary,
-)
-from . import score                             # noqa: F401 — the scorecard
-from .due import due_among, due_detail          # noqa: F401 — what changed
+from .inputs import build as assemble  # noqa: F401 — deterministic half
+from .read import KIND, latest, latest_date, on, summary
+from . import score  # noqa: F401 — the scorecard
+from .due import due_among, due_detail  # noqa: F401 — what changed
 from .engine import analyze as run, batch_root  # noqa: F401
 
 __all__ = ["run", "assemble", "latest", "on", "latest_date", "summary",

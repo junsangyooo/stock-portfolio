@@ -78,7 +78,7 @@ def test_unknown_page_path_404_html_and_api_404_json(client):
     assert "404" in r.text and "◆" not in r.text
     # An unknown /api path behind a valid session reaches the router: the
     # answer must stay JSON, never the HTML page.
-    from src.core import security
+    from src.portfolio import security
     cookies = {security.COOKIE_PREFIX + "x": security.make_session_token("x")}
     r = client.get("/api/nope", headers={"host": PORTFOLIO_HOST}, cookies=cookies)
     assert r.status_code == 404 and r.json() == {"detail": "Not Found"}

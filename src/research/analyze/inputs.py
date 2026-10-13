@@ -80,8 +80,8 @@ def _chart(symbol_id: str, force: bool) -> tuple[Optional[dict], str, str]:
     analysis went out stamped with today's date. Length and recency are
     different questions; both are asked here.
     """
-    from ..chart import chart_agent
-    facts = chart_agent.collect_facts(symbol_id, force=force)
+    from ..chart.facts import collect_facts
+    facts = collect_facts(symbol_id, force=force)
     tf = facts.get("timeframes") or {}
     if not any(v.get("has_data") for v in tf.values()):
         return None, "missing", "저장된 일봉이 없어 지표를 계산할 수 없다"
@@ -97,7 +97,7 @@ def _chart(symbol_id: str, force: bool) -> tuple[Optional[dict], str, str]:
 
 
 def _fundamental(symbol_id: str, name: str) -> tuple[Optional[dict], str, str]:
-    from ..fundamental.evaluate import assemble_display
+    from ..fundamental.assemble import assemble_display
     data = assemble_display(symbol_id, name=name)
     avail = data.get("data_available") or {}
     if data.get("is_etf") or avail.get("is_etf"):
@@ -111,7 +111,7 @@ def _fundamental(symbol_id: str, name: str) -> tuple[Optional[dict], str, str]:
 
 def _news(symbol_id: str) -> tuple[Optional[dict], str, str]:
     """Theme states plus the long-memory summaries the 7-day window misses."""
-    from ..news.evaluate import assemble_inputs as themes_for
+    from ..news.inputs import assemble_inputs as themes_for
     from ..news.read import theme_state
     data = themes_for(symbol_id)
     mapped = (data.get("data_available") or {}).get("themes_mapped")

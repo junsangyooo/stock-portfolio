@@ -38,7 +38,7 @@ LOGS_DIR = DATA / "logs"
 
 # Working directory of the chat agent's CLI: kept empty, because the CLI lets
 # its built-in read-only commands (head, cat, ls) read anything under the
-# working directory. See research/llm_backend.py, tool lockdown.
+# working directory. See core/llm.py, tool lockdown.
 CHAT_CWD = DATA / "chat_sandbox"
 BACKUP_DIR = DATA / "backup"
 

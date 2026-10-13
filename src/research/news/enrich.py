@@ -35,8 +35,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from ...core.kst import KST
-from ..llm_backend import (FAST_MODEL, ClaudeCliBackend, LocalLlamaBackend,
-                           _parse_json)
+from ...core.llm import FAST_MODEL, ClaudeCliBackend, LocalLlamaBackend, _parse_json
 from .catalog import Catalog, load_catalog
 from .db import connect
 

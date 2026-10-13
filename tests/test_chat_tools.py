@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from src.core import security
+from src.portfolio import security
 from src.core.kst import KST
 from src.portfolio.chat import tools
 from src.portfolio.store import (account_store, balance_store, chat_store,

@@ -17,7 +17,7 @@ import os
 import secrets
 import time
 
-from .paths import DATA
+from ..core.paths import DATA
 
 _SECRET_FILE = DATA / ".session_secret"
 _secret_cache: bytes | None = None

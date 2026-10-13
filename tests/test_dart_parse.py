@@ -1,8 +1,7 @@
 """Unit tests for DART parsing helpers — pure, no network."""
 from src.market.source.base import FinancialRow
-from src.market.source.dart_source import (
-    _parse_amount, _pick_common_dps, derive_quarter_cf, REPRT,
-)
+from src.market.source.dart_source import (_parse_amount, _pick_common_dps,
+                                           derive_quarter_cf, REPRT)
 
 
 def test_parse_amount():

@@ -10,11 +10,11 @@ agent at all:
   fundamental/  statements and derived metrics, assembled for reading.
                 No LLM.
   analyze/      the one agent: all three domains in a single call.
+                store.py (label vocabulary, write path), batch_job.py (warm a
+                given list of symbols — takes --symbols; it does not know
+                accounts exist).
 
-  verdict.py    the shared score/label vocabulary and the write path
-  llm_backend.py  claude -p subprocess + the on-host open-weight server
-  verdict_job.py  warm a given list of symbols (takes --symbols; it does not
-                  know accounts exist)
+The model backends are in core/llm.py: news, analysis and chat all call them.
 
 Shared: the portfolio app reads this and does not own it. Nothing here
 imports an account book — tests/test_layering.py enforces that.

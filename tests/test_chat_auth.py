@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api import chat
-from src.core import security
+from src.portfolio import security
 from src.portfolio.store import account_store, db as pdb
 
 

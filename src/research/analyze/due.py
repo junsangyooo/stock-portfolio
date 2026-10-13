@@ -171,6 +171,6 @@ def due_detail(symbol_ids: Iterable[str], *, limit: int = DAILY_LIMIT,
 
 def due_among(symbol_ids: Iterable[str], *, limit: int = DAILY_LIMIT,
               now: Optional[datetime] = None) -> list[str]:
-    """Just the shortlist — what a caller hands to verdict_job."""
+    """Just the shortlist — what a caller hands to batch_job."""
     return [r["symbol_id"] for r in
             due_detail(symbol_ids, limit=limit, now=now)]

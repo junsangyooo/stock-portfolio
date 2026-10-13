@@ -15,7 +15,7 @@ import logging
 from typing import Optional
 
 from .catalog import Catalog, Theme
-from ..llm_backend import ClaudeCliBackend, SLOW_MODEL, _parse_json
+from ...core.llm import ClaudeCliBackend, SLOW_MODEL, _parse_json
 
 log = logging.getLogger(__name__)
 
@@ -150,7 +150,7 @@ def ensure_theme_mapping(symbol_id: str) -> None:
     except Exception as e:  # noqa: BLE001 — background, must not surface
         log.warning("theme auto-map failed for %s: %s", symbol_id, e)
         try:
-            from ...core.notify import discord
-            discord.send(f"\u26a0\ufe0f theme auto-map failed for {symbol_id}: {str(e)[:200]}")
+            from ...core import notify
+            notify.send(f"\u26a0\ufe0f theme auto-map failed for {symbol_id}: {str(e)[:200]}")
         except Exception:  # noqa: BLE001
             pass

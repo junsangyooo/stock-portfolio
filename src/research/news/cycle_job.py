@@ -6,11 +6,11 @@ roll-up follows that: the long-memory cycles read the layer the run just
 finished writing, so chaining them here is what stops a month from missing its
 own last week.
 
-    python -m src.research.news.cycle                    # collect + enrich + daily
-    python -m src.research.news.cycle --no-collect       # re-enrich / rebuild only
-    python -m src.research.news.cycle --enrich-backend local   # force the on-host model
-    python -m src.research.news.cycle --rollup weekly    # force a roll-up
-    python -m src.research.news.cycle --date 2026-08-27
+    python -m src.research.news.cycle_job                    # collect + enrich + daily
+    python -m src.research.news.cycle_job --no-collect       # re-enrich / rebuild only
+    python -m src.research.news.cycle_job --enrich-backend local   # force the on-host model
+    python -m src.research.news.cycle_job --rollup weekly    # force a roll-up
+    python -m src.research.news.cycle_job --date 2026-08-27
 
 Exit code is non-zero only when the run produced nothing at all — a dead feed
 or a failed theme is reported, not fatal.
@@ -23,7 +23,7 @@ import sys
 from datetime import datetime
 
 from ...core.kst import KST
-from ...core.notify import discord
+from ...core import notify
 from . import collect_all, daily, enrich, rollup
 from .catalog import load_catalog
 
@@ -66,7 +66,7 @@ def _notify(date: str, out: dict) -> None:
                              f"(empty {r.get('empty', 0)})")
         if c.get("failed"):
             lines.append(f"- ⚠️ dead feeds: {', '.join(c['failed'])}")
-        discord.send_embed(
+        notify.send_embed(
             title=f"{'🚨' if bad else '📰'} news cycle {date}",
             description="\n".join(lines)[:4000],
             color=0xE74C3C if bad else 0x2E7D4F)

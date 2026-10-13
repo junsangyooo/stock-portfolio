@@ -3,12 +3,12 @@ import socket
 
 import pytest
 
-from src.core.notify import discord
-from src.market.source import kis_auth
-from src.research.llm_backend import ClaudeCliBackend
+from src.core import notify
+from src.market.source import kis_source
+from src.core.llm import ClaudeCliBackend
 
 _CREDS = {"app_key": "k", "app_secret": "s", "cano": "00000000", "prdt": "01",
-          "real": True, "base": kis_auth.REAL_URL}
+          "real": True, "base": kis_source.REAL_URL}
 
 
 @pytest.fixture(autouse=True)
@@ -24,29 +24,29 @@ def _no_socket(monkeypatch):
 
 
 def test_broker_http_is_blocked(monkeypatch):
-    monkeypatch.setattr(kis_auth, "creds", lambda: dict(_CREDS))
-    monkeypatch.setattr(kis_auth, "token", lambda force=False: "tok")
+    monkeypatch.setattr(kis_source, "creds", lambda: dict(_CREDS))
+    monkeypatch.setattr(kis_source, "token", lambda force=False: "tok")
     with pytest.raises(RuntimeError, match="test reached the live broker: GET"):
-        kis_auth.call("/x", "TR")
+        kis_source.call("/x", "TR")
 
 
 def test_token_issue_is_blocked(monkeypatch):
-    monkeypatch.setattr(kis_auth, "creds", lambda: dict(_CREDS))
+    monkeypatch.setattr(kis_source, "creds", lambda: dict(_CREDS))
     with pytest.raises(RuntimeError, match="test reached the live broker: POST"):
-        kis_auth.token(force=True)
-    assert not kis_auth._TOKEN_PATH.exists()
+        kis_source.token(force=True)
+    assert not kis_source._TOKEN_PATH.exists()
 
 
 def test_the_token_cache_is_a_throwaway_file(tmp_path):
-    assert kis_auth._TOKEN_PATH == tmp_path / ".kis_token.json"
+    assert kis_source._TOKEN_PATH == tmp_path / ".kis_token.json"
 
 
 def test_discord_is_unplugged(monkeypatch):
     posted = []
-    monkeypatch.setattr(discord.httpx, "post",
+    monkeypatch.setattr(notify.httpx, "post",
                         lambda *a, **k: posted.append(a) or None)
-    assert discord.send("x") is False
-    assert discord.send_embed("t") is False
+    assert notify.send("x") is False
+    assert notify.send_embed("t") is False
     assert posted == []
 
 

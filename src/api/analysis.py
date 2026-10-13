@@ -47,9 +47,9 @@ def analysis_summary(symbols: str) -> dict:
 
 @router.get("/news/feed")
 def news_feed(limit: int = 60) -> dict:
-    """Landing-page qualitative feed (see research/news/feed.py)."""
-    from ..research.news import feed
-    return {**feed.build(limit=limit), "queried_at": _stamp()}
+    """Landing-page qualitative feed (research/news/read.feed)."""
+    from ..research.news import read
+    return {**read.feed(limit=limit), "queried_at": _stamp()}
 
 
 @router.get("/news/{market}/{code}/signals")
@@ -73,7 +73,7 @@ def get_fundamental_facts(market: str, code: str) -> dict:
     """
     symbol_id = f"{market.upper()}:{code}"
     try:
-        from ..research.fundamental.evaluate import assemble_display
+        from ..research.fundamental.assemble import assemble_display
         facts = assemble_display(symbol_id, name=_display_name(symbol_id))
         facts["queried_at"] = _stamp()
         return facts
@@ -87,9 +87,9 @@ def get_fundamental_facts(market: str, code: str) -> dict:
 def get_chart_facts(market: str, code: str) -> dict:
     """Deterministic fact extraction, computed live (no claude -p here)."""
     symbol_id = f"{market.upper()}:{code}"
-    from ..research.chart import chart_agent  # lazy: pulls pandas
+    from ..research.chart.facts import collect_facts  # lazy: pulls pandas
     try:
-        facts = chart_agent.collect_facts(symbol_id, persist=False)
+        facts = collect_facts(symbol_id, persist=False)
         facts["queried_at"] = _stamp()
         return facts
     except Exception as e:  # noqa: BLE001 — empty OHLCV must not 500 the tab

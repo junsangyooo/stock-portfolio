@@ -15,7 +15,7 @@ from src.core.kst import KST
 from src.market.store import ohlcv_store
 from src.market.source.base import OHLCVBar
 from src.research.analyze import score
-from src.research.verdict import KIND
+from src.research.analyze.store import KIND
 
 START = datetime(2026, 9, 1, tzinfo=KST)
 

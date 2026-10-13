@@ -98,7 +98,7 @@ def _kv(args, keys: set) -> tuple[dict, list[str]]:
 def _account() -> str:
     aid = os.environ.get("PDASH_CHAT_ACCOUNT") or ""
     sig = os.environ.get("PDASH_CHAT_SIG") or ""
-    from ...core import security
+    from .. import security
     if not aid or not sig or not hmac.compare_digest(sig, security.chat_binding(aid)):
         raise PermissionError("계좌 명령은 대화가 열린 계좌에서만 쓸 수 있다 (계좌 연결 없음)")
     return aid
@@ -186,16 +186,16 @@ def _ensure_tracked(symbol_id: str) -> None:
 
 
 def _cmd_chart(symbol_id: str) -> dict:
-    from ...research.chart import chart_agent
+    from ...research.chart import facts
     market, code = _split(symbol_id)
     sid = f"{market}:{code}"
     _ensure_tracked(sid)
-    return chart_agent.collect_facts(sid, persist=False)
+    return facts.collect_facts(sid, persist=False)
 
 
 def _cmd_fundamental(symbol_id: str) -> dict:
     from ...market.store import financials_store
-    from ...research.fundamental.evaluate import assemble_display
+    from ...research.fundamental.assemble import assemble_display
     from ...universe import search as uni_search
     market, code = _split(symbol_id)
     sid = f"{market}:{code}"

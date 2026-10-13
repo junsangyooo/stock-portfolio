@@ -181,8 +181,8 @@ def kr_financials(years: int = 4, chunk: int = 100,
     from fundamental_backfill.
     """
     import requests
-    from ..source.dart_source import DartSource, REPRT, REPRT_ORDER, \
-        _ACCOUNT_RULES, _parse_amount
+    from ..source.dart_source import (DartSource, REPRT, REPRT_ORDER,
+                                      _ACCOUNT_RULES, _parse_amount)
     from ..source.base import FinancialRow
 
     from ..source.dart_source import _api_key
@@ -509,9 +509,9 @@ def main() -> int:
     _log(f"after: {_counts()}")
 
     try:
-        from ...core.notify import discord
+        from ...core import notify
         bad = [r for r in results if r.get("fatal")]
-        discord.send_embed(
+        notify.send_embed(
             title=f"{'🚨' if bad else '📦'} universe backfill — {args.step}",
             description="\n".join(f"- `{r['step']}` {json.dumps({k: v for k, v in r.items() if k != 'step'}, ensure_ascii=False)}"
                                   for r in results)[:4000],

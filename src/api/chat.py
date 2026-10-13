@@ -28,11 +28,12 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..core import paths, security
-from ..research.llm_backend import SLOW_MODEL, ClaudeCliBackend
+from ..core import paths
+from ..portfolio import security
+from ..core.llm import SLOW_MODEL, ClaudeCliBackend
 from ..portfolio import service
 from ..portfolio.store import chat_store
-from .portfolio_api import require_account
+from .accounts import require_account
 
 router = APIRouter(prefix="/api/accounts", tags=["chat"])
 
@@ -102,7 +103,7 @@ symbol_id 규약: 한국 = KR:6자리코드, 미국 = US:티커. 모르면 먼�
 # The one command the agent may run. Absolute, because the CLI runs in the
 # empty CHAT_CWD (PYTHONPATH points `-m src…` back at the repo). Bash is the
 # only tool it gets and this the only command dontAsk lets through; any other
-# command, and every file outside the empty cwd, is refused (llm_backend.py,
+# command, and every file outside the empty cwd, is refused (core/llm.py,
 # tool lockdown). No turn cap (see the module docstring).
 # The account commands read the account named in the environment, signed with
 # security.chat_binding — no command takes an account id.
@@ -239,9 +240,9 @@ def _account_context(account_id: str) -> str:
 
 
 def _news_context() -> str:
-    from ..research.news import feed as news_feed
+    from ..research.news import read
     try:
-        items = (news_feed.build(limit=NEWS_N).get("news") or [])[:NEWS_N]
+        items = (read.feed(limit=NEWS_N).get("news") or [])[:NEWS_N]
     except Exception:  # noqa: BLE001 — news is optional context
         return ""
     if not items:

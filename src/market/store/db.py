@@ -30,7 +30,7 @@ from typing import Iterator
 from ...core import paths
 
 SCHEMA = """
--- Daily bars only. Weekly/monthly are resampled on read (pipeline/resampler).
+-- Daily bars only. Weekly/monthly are resampled on read (market/resample.py).
 -- WITHOUT ROWID: the primary key IS the table, so one symbol's bars sit
 -- contiguously — the read pattern that matters ("last N bars of X") is a
 -- range scan, and at ~8M rows the saved rowid index is worth the clause.

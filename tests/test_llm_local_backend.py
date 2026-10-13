@@ -8,7 +8,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-from src.research import llm_backend as LB
+from src.core import llm as LB
 
 
 class _Resp:

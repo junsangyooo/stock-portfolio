@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from ..core.paths import analysis_path
+from ...core.paths import analysis_path
 
 KIND = "analysis"   # the one stored verdict; analyze/read.py globs the same folder
 

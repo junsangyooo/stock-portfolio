@@ -6,7 +6,8 @@ import logging
 from fastapi import APIRouter
 
 from ..market import quotes
-from ..market.pipeline import gap_filler, resampler
+from ..market.pipeline import gap_filler
+from ..market import resample
 from ..market.quotes import warm
 from ..market.source.registry import yfinance_for
 from ..market.store import ohlcv_store
@@ -68,7 +69,7 @@ def get_ohlcv(market: str, code: str, period: str = "day", n: int = 240,
 
     df = ohlcv_store.read(symbol_id)
     if period != "day":
-        df = resampler.resample(df, period)
+        df = resample.resample(df, period)
     if n > 0:
         df = df.tail(n).reset_index(drop=True)
     return {"symbol_id": symbol_id, "period": period, "n": len(df),

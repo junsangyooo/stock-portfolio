@@ -20,13 +20,12 @@ from fastapi import (
 )
 from pydantic import BaseModel
 
-from ..core import security
+from ..portfolio import security
 from ..research.news.mapping import ensure_theme_mapping
 from ..market.pipeline import gap_filler
 from ..portfolio import service
-from ..portfolio.store import (
-    account_store, balance_store, holding_store, snapshot_store, trade_store,
-)
+from ..portfolio.store import (account_store, balance_store, holding_store,
+                               snapshot_store, trade_store)
 from ..core.paths import split_symbol
 from ..universe import search as uni_search
 

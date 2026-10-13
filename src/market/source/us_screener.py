@@ -3,7 +3,7 @@
 Toss has rankings (거래대금·거래량·등락률 상위) but no conditional screener:
 there is no way to ask it for "NASDAQ, PER under 15, market cap over $2B".
 KIS answers exactly that question, so the KIS account stays alive for this
-one endpoint and nothing else; `kis_auth` signs these requests.
+one endpoint and nothing else; `kis_source` signs these requests.
 
 It is not an account concern — "NASDAQ, PER under 15" is a question about
 the market — so it lives in the market layer, where research can ask it
@@ -11,7 +11,7 @@ without importing an app.
 """
 from __future__ import annotations
 
-from .kis_auth import call
+from .kis_source import call
 
 # 조회용 거래소 코드는 (구) 주문용 코드와 다르다.
 _SCREEN_EXCD = {"NASD": "NAS", "NYSE": "NYS", "AMEX": "AMS",

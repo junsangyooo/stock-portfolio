@@ -54,7 +54,7 @@ class TestResample(unittest.TestCase):
 
     def test_weekly_ts_is_epoch_seconds(self):
         # W-FRI labels the two weeks 2024-01-05 and 2024-01-12. Pinning the
-        # absolute value guards resampler.resample's unit-agnostic conversion:
+        # absolute value guards resample.resample's unit-agnostic conversion:
         # a nanosecond/second mix-up puts every bar on 1970-01-01 instead.
         wk = engine.to_timeframe(self.daily, "1w")
         self.assertEqual(list(wk["ts"]), [_ts(2024, 1, 5), _ts(2024, 1, 12)])

@@ -10,5 +10,5 @@ Modules:
   engine.py        multi-timeframe resample + look-ahead guard
   indicators/      trend / momentum / volatility / volume -> IndicatorFact
   structure/       extrema, S/R, fib, pivots, trendlines, candle/chart patterns, gaps
-  chart_agent.py   ChartFactCollector — bundles all facts into one JSON document
+  facts.py         ChartFactCollector — bundles all facts into one JSON document
 """
