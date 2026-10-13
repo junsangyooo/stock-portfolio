@@ -15,16 +15,16 @@ in .env:
   KIS_IS_REAL                 "1"/"true" = real server, else paper
 
 Token: POST /oauth2/tokenP, valid 24h, and KIS re-issues at most once per
-minute — so the token is cached in data/quant/.kis_token.json and reused
-until 1h before expiry.
+minute — so the token is cached in data/market/.kis_token.json (0600) and
+reused until 1h before expiry.
 
 Rate limit: KIS documents only "excessive requests may be blocked"; the
 commonly cited ceiling is 20 req/s (real) which we have not verified, so the
 token bucket here is a deliberately conservative 8 req/s.
 # ponytail: fixed 8/s bucket; raise after measuring the real ceiling.
 
-Never print credentials. The old quant_investment auth.py dumped appkey and
-secret to stdout on every call (_DEBUG=True) — that behaviour must not return.
+Never print credentials. An earlier KIS client dumped appkey and secret to
+stdout on every call (_DEBUG=True) — that behaviour must not return.
 """
 from __future__ import annotations
 
@@ -38,13 +38,13 @@ from typing import Optional
 import requests
 
 from ...core import secrets
-from ...core.paths import QUANT_DIR
+from ...core.paths import MARKET_DIR
 from ...core.ratelimit import TokenBucket
 
 REAL_URL = "https://openapi.koreainvestment.com:9443"
 PAPER_URL = "https://openapivts.koreainvestment.com:29443"
 
-_TOKEN_PATH = QUANT_DIR / ".kis_token.json"
+_TOKEN_PATH = MARKET_DIR / ".kis_token.json"
 _REFRESH_MARGIN_S = 3600          # renew when less than 1h of validity remains
 
 _RATE = 8.0                       # requests per second
@@ -113,7 +113,7 @@ def token(force: bool = False) -> str:
                                     "%Y-%m-%d %H:%M:%S").timestamp()
         except (KeyError, ValueError):
             exp = time.time() + 23 * 3600
-        QUANT_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+        _TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
         # owner-only, written atomically — the file holds a live trading token
         tmp = _TOKEN_PATH.with_suffix(".tmp")
         fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
