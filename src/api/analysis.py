@@ -18,13 +18,17 @@ import logging
 
 from fastapi import APIRouter
 
+from ..core import jobs
 from ..core.kst import now as kst_now
 from ..universe import search as uni_search
-from . import analysis_jobs
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
 log = logging.getLogger(__name__)
+
+# The 다시 분석 button's runs. 'stale' past 2x the measured p95 (~1,070s;
+# n=26, 343–1,068s, mean 570s) — below the real p95 the UI gave up on live jobs.
+_RUNS = jobs.Runner(stale_s=2 * 1070)
 
 def _stamp() -> str:
     """Response timestamp — KST, the same clock the agents write dates in."""
@@ -116,8 +120,16 @@ def get_job_status(market: str, code: str) -> dict:
     GET /analysis/{m}/{c} on done.
     """
     symbol_id = f"{market.upper()}:{code}"
-    return {"kind": "analysis", "symbol_id": symbol_id,
-            **analysis_jobs.get_status(symbol_id),
+    j = _RUNS.latest(symbol_id)
+    if j is None:
+        st = {"state": "idle"}
+    elif j["state"] == "done":
+        res = j["result"] or {}
+        st = {"state": "done", "date": res.get("date"),
+              "result_status": res.get("status"), "started_at": j["started_at"]}
+    else:
+        st = {"state": j["state"], "error": j["error"], "started_at": j["started_at"]}
+    return {"kind": "analysis", "symbol_id": symbol_id, **st,
             "queried_at": _stamp()}
 
 
@@ -140,6 +152,8 @@ def run_analysis(market: str, code: str) -> dict:
         from ..research import analyze
         return analyze.run(symbol_id, name)
 
-    job = analysis_jobs.start(symbol_id, _fn)
+    _, started = _RUNS.start(symbol_id, _fn)
+    job = ({"state": "started"} if started else
+           {"state": "running", "started_at": _RUNS.latest(symbol_id)["started_at"]})
     return {"ok": True, "symbol_id": symbol_id, "job": job,
             "queued_at": _stamp()}

@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 
 from src.api import chat
+from src.core import jobs
+from src.portfolio.chat import prompt, session
 from src.core import paths
 from src.core import llm
 
@@ -79,15 +81,15 @@ def test_env_extra_survives_the_credential_scrub(monkeypatch):
 
 
 def test_chat_gets_bash_and_one_command():
-    argv = chat.TOOL_ARGS
+    argv = prompt.TOOL_ARGS
     assert _flag(argv, "--tools") == "Bash"
     allowed = _flag(argv, "--allowedTools")
-    assert allowed == f"Bash({chat.TOOL_CMD}:*)"
+    assert allowed == f"Bash({prompt.TOOL_CMD}:*)"
     assert argv.count("--allowedTools") == 1
     # Absolute: the agent runs outside the repo and cannot reach it otherwise.
-    assert chat.TOOL_CMD.startswith(str(paths.ROOT))
+    assert prompt.TOOL_CMD.startswith(str(paths.ROOT))
     # The prompt names the same command the rule allows.
-    assert "$TOOL" not in chat.SYSTEM and chat.TOOL_CMD in chat.SYSTEM
+    assert "$TOOL" not in prompt.SYSTEM and prompt.TOOL_CMD in prompt.SYSTEM
 
 
 def test_chat_runs_in_the_empty_sandbox(monkeypatch, tmp_path):
@@ -109,8 +111,8 @@ def test_chat_runs_in_the_empty_sandbox(monkeypatch, tmp_path):
     from src.portfolio import security
     from src.portfolio.store import account_store, chat_store
 
-    monkeypatch.setattr(chat, "ClaudeCliBackend", _Stub)
-    monkeypatch.setattr(chat, "_jobs", {})
+    monkeypatch.setattr(session, "ClaudeCliBackend", _Stub)
+    monkeypatch.setattr(session, "RUNNER", jobs.Runner(stale_s=1800))
     account_store.create("alice", "alice", "GENERAL")
     account_store.set_pin_hash("alice", security.hash_pin("alice", "123456"))
     sid = chat_store.create("alice", "t")
@@ -133,7 +135,7 @@ def test_chat_runs_in_the_empty_sandbox(monkeypatch, tmp_path):
     # The tools read the account the route was authorized for, signed.
     assert seen["env_extra"]["PDASH_CHAT_ACCOUNT"] == "alice"
     assert seen["env_extra"]["PDASH_CHAT_SIG"] == security.chat_binding("alice")
-    assert seen["extra_args"][:len(chat.TOOL_ARGS)] == chat.TOOL_ARGS
+    assert seen["extra_args"][:len(prompt.TOOL_ARGS)] == prompt.TOOL_ARGS
 
 
 def test_session_lookup_reads_only_the_sandbox_project(monkeypatch, tmp_path):
@@ -149,5 +151,5 @@ def test_session_lookup_reads_only_the_sandbox_project(monkeypatch, tmp_path):
                       ("-home-ubuntu-portfolio-dashboard-data-chat-sandbox", "new")):
         (proj / name).mkdir(parents=True)
         (proj / name / f"{sid}.jsonl").write_text("")
-    assert chat._cli_session_exists("new")
-    assert not chat._cli_session_exists("old")
+    assert session.cli_session_exists("new")
+    assert not session.cli_session_exists("old")

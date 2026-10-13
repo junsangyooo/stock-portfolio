@@ -2,16 +2,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-
-from ...core.kst import KST
 from typing import Dict, List
 
+from ...core.kst import KST, today
 from .db import connect
-
-
-
-def today_kst() -> str:
-    return datetime.now(KST).strftime("%Y-%m-%d")
 
 
 def has_for(date: str, account_id: str) -> bool:
@@ -63,8 +57,8 @@ def read(account_id: str, currency: str = "KRW", days: int = 90) -> List[dict]:
 
 
 def maybe_snapshot_today(account_id: str, per_currency: Dict[str, dict]) -> bool:
-    today = today_kst()
-    first = not has_for(today, account_id)
+    day = today()
+    first = not has_for(day, account_id)
     # Always re-write to capture mid-day changes (still one row per ccy/account).
-    write(today, account_id, per_currency)
+    write(day, account_id, per_currency)
     return first

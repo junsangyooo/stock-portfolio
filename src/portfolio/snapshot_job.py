@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import sys
 
+from ..core import kst
 from ..market.pipeline import gap_filler
 from ..market.source.registry import for_symbol
 from ..market.store import quote_store
@@ -77,7 +78,7 @@ def main() -> int:
             if not res.get("totals"):
                 ok.append(aid)  # empty account — nothing to snapshot
             # aggregate() swallows snapshot errors — verify the row landed
-            elif snapshot_store.has_for(snapshot_store.today_kst(), aid):
+            elif snapshot_store.has_for(kst.today(), aid):
                 ok.append(aid)
             else:
                 failed.append({"account_id": aid, "error": "snapshot row missing"})

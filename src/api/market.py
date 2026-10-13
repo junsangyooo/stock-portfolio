@@ -5,10 +5,8 @@ import logging
 
 from fastapi import APIRouter
 
-from ..market import quotes
+from ..market import quotes, resample
 from ..market.pipeline import gap_filler
-from ..market import resample
-from ..market.quotes import warm
 from ..market.source.registry import yfinance_for
 from ..market.store import ohlcv_store
 
@@ -23,21 +21,10 @@ _INTRADAY = {"1m": ("5d", "1m"), "5m": ("60d", "5m"),
 
 @router.post("/refresh")
 def refresh_all() -> dict:
-    """Gap-fill OHLCV + warm quotes for every symbol portfolio.db holds.
-
-    This is the ↻ button behind account.html, so it covers every account of
-    the book, not just the visible one, because market data is per-symbol and
-    account-agnostic (§1 단일 진실). No require_account: nothing
-    account-specific is returned.
-    """
-    from ..portfolio.store.db import connect
-    with connect() as conn:
-        sids = [r[0] for r in conn.execute(
-            "SELECT DISTINCT symbol_id FROM holdings ORDER BY symbol_id")]
-    filled = gap_filler.fill_many(sids)
-    fresh = sum(1 for q in warm(sids, max_age_s=10).values() if q is not None)
-    return {"ok": True, "symbols": len(sids),
-            "filled": filled, "quotes_fresh": fresh}
+    """The ↻ button: every held symbol's bars and quotes (portfolio.service).
+    No require_account: nothing account-specific is returned."""
+    from ..portfolio import service
+    return service.refresh_held()
 
 
 @router.get("/ohlcv/{market}/{code}")

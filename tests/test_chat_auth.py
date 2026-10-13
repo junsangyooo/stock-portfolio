@@ -14,6 +14,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api import chat
+from src.core import jobs
+from src.portfolio.chat import context, prompt, session
 from src.portfolio import security
 from src.portfolio.store import account_store, db as pdb
 
@@ -22,10 +24,10 @@ from src.portfolio.store import account_store, db as pdb
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(pdb, "DB_PATH", str(tmp_path / "chat.db"))
     monkeypatch.setattr(pdb, "_initialized", False)
-    monkeypatch.setattr(chat, "_jobs", {})
+    monkeypatch.setattr(session, "RUNNER", jobs.Runner(stale_s=1800))
     # No CLI transcript on disk in tests → every turn is a first turn unless a
     # case says otherwise.
-    monkeypatch.setattr(chat, "_cli_session_exists", lambda sid: False)
+    monkeypatch.setattr(session, "cli_session_exists", lambda sid: False)
 
     for aid in ("alice", "bob"):
         account_store.create(aid, aid, "GENERAL")
@@ -51,7 +53,7 @@ def _stub_backend(monkeypatch, reply="네, 괜찮습니다.", seen=None):
                 seen.update(system=system, user=user, extra_args=extra_args)
             return reply
 
-    monkeypatch.setattr(chat, "ClaudeCliBackend", _Stub)
+    monkeypatch.setattr(session, "ClaudeCliBackend", _Stub)
 
 
 def _wait(client, aid, job_id, timeout=5.0):
@@ -76,7 +78,7 @@ def _new_thread(client, aid="alice"):
 
 def test_other_accounts_session_is_rejected(client, monkeypatch):
     called = []
-    monkeypatch.setattr(chat, "_account_context",
+    monkeypatch.setattr(context, "account_context",
                         lambda aid: called.append(aid) or "")
     r = client.post("/api/accounts/bob/chat", cookies=_cookie("alice"),
                     json={"session_id": "x", "message": "내 포트폴리오 어때?"})
@@ -112,8 +114,8 @@ def test_thread_of_another_account_reads_as_missing(client):
 # ── ask / poll round trip ─────────────────────────────────────────────
 
 def test_answer_lands_in_the_thread(client, monkeypatch):
-    monkeypatch.setattr(chat, "_account_context", lambda aid: f"[계좌] {aid}")
-    monkeypatch.setattr(chat, "_news_context", lambda: "")
+    monkeypatch.setattr(context, "account_context", lambda aid: f"[계좌] {aid}")
+    monkeypatch.setattr(context, "news_context", lambda: "")
     seen = {}
     _stub_backend(monkeypatch, seen=seen)
 
@@ -125,10 +127,10 @@ def test_answer_lands_in_the_thread(client, monkeypatch):
     assert d["state"] == "done" and d["reply"] == "네, 괜찮습니다."
 
     assert "[계좌] alice" in seen["user"]
-    assert seen["system"] == chat.SYSTEM, "first turn carries the system prompt"
+    assert seen["system"] == prompt.SYSTEM, "first turn carries the system prompt"
     # No turn cap: the agent loop must be able to run as long as it needs.
     assert "--max-turns" not in seen["extra_args"]
-    assert seen["extra_args"] == chat.TOOL_ARGS + ["--session-id", sid]
+    assert seen["extra_args"] == prompt.TOOL_ARGS + ["--session-id", sid]
 
     thread = client.get(f"/api/accounts/alice/chats/{sid}",
                         cookies=_cookie()).json()["chat"]
@@ -137,8 +139,8 @@ def test_answer_lands_in_the_thread(client, monkeypatch):
 
 
 def test_second_turn_resumes_the_cli_session(client, monkeypatch):
-    monkeypatch.setattr(chat, "_account_context", lambda aid: "[계좌] alice")
-    monkeypatch.setattr(chat, "_news_context", lambda: "")
+    monkeypatch.setattr(context, "account_context", lambda aid: "[계좌] alice")
+    monkeypatch.setattr(context, "news_context", lambda: "")
     seen = {}
     _stub_backend(monkeypatch, seen=seen)
 
@@ -148,12 +150,12 @@ def test_second_turn_resumes_the_cli_session(client, monkeypatch):
     _wait(client, "alice", r.json()["job_id"])
 
     # the first turn's run created the CLI transcript
-    monkeypatch.setattr(chat, "_cli_session_exists", lambda s: True)
+    monkeypatch.setattr(session, "cli_session_exists", lambda s: True)
     r = client.post("/api/accounts/alice/chat", cookies=_cookie(),
                     json={"session_id": sid, "message": "그럼 피엔티는?"})
     _wait(client, "alice", r.json()["job_id"])
 
-    assert seen["extra_args"] == chat.TOOL_ARGS + ["--resume", sid]
+    assert seen["extra_args"] == prompt.TOOL_ARGS + ["--resume", sid]
     # The CLI already holds the rules and the history; only the fresh snapshot
     # and the new question go over.
     assert seen["system"] == ""
@@ -163,9 +165,9 @@ def test_second_turn_resumes_the_cli_session(client, monkeypatch):
 def test_a_failed_first_turn_still_sends_the_rules(client, monkeypatch):
     """A dead first turn can leave a session file with no rules in it. Resuming
     that one must not strip the model's tools and format."""
-    monkeypatch.setattr(chat, "_account_context", lambda aid: "")
-    monkeypatch.setattr(chat, "_news_context", lambda: "")
-    monkeypatch.setattr(chat, "_cli_session_exists", lambda s: True)
+    monkeypatch.setattr(context, "account_context", lambda aid: "")
+    monkeypatch.setattr(context, "news_context", lambda: "")
+    monkeypatch.setattr(session, "cli_session_exists", lambda s: True)
     seen = {}
     _stub_backend(monkeypatch, seen=seen)
 
@@ -174,16 +176,16 @@ def test_a_failed_first_turn_still_sends_the_rules(client, monkeypatch):
                     json={"session_id": sid, "message": "다시 물어볼게"})
     _wait(client, "alice", r.json()["job_id"])
 
-    assert seen["extra_args"] == chat.TOOL_ARGS + ["--resume", sid]
-    assert seen["system"] == chat.SYSTEM
+    assert seen["extra_args"] == prompt.TOOL_ARGS + ["--resume", sid]
+    assert seen["system"] == prompt.SYSTEM
 
 
 def test_a_thread_whose_cli_memory_was_cleared_carries_on(client, monkeypatch):
     """Session files are deleted every midnight. The next question in an old
     thread starts a new CLI session with the rules and the thread's own saved
     messages, so the conversation continues instead of starting blind."""
-    monkeypatch.setattr(chat, "_account_context", lambda aid: "[계좌]")
-    monkeypatch.setattr(chat, "_news_context", lambda: "")
+    monkeypatch.setattr(context, "account_context", lambda aid: "[계좌]")
+    monkeypatch.setattr(context, "news_context", lambda: "")
     seen = {}
     _stub_backend(monkeypatch, reply="삼성전자는 보유 비중이 큽니다.", seen=seen)
 
@@ -193,20 +195,20 @@ def test_a_thread_whose_cli_memory_was_cleared_carries_on(client, monkeypatch):
     _wait(client, "alice", r.json()["job_id"])
 
     # midnight: the CLI transcript is gone, the thread on screen is not
-    monkeypatch.setattr(chat, "_cli_session_exists", lambda s: False)
+    monkeypatch.setattr(session, "cli_session_exists", lambda s: False)
     r = client.post("/api/accounts/alice/chat", cookies=_cookie(),
                     json={"session_id": sid, "message": "그거 팔까?"})
     _wait(client, "alice", r.json()["job_id"])
 
-    assert seen["extra_args"] == chat.TOOL_ARGS + ["--session-id", sid]
-    assert seen["system"] == chat.SYSTEM
+    assert seen["extra_args"] == prompt.TOOL_ARGS + ["--session-id", sid]
+    assert seen["system"] == prompt.SYSTEM
     assert "제일 큰 종목은?" in seen["user"] and "삼성전자는 보유 비중이 큽니다." in seen["user"]
     assert seen["user"].index("[이전 대화]") < seen["user"].index("그거 팔까?")
 
 
 def test_backend_failure_surfaces_as_error(client, monkeypatch):
-    monkeypatch.setattr(chat, "_account_context", lambda aid: "")
-    monkeypatch.setattr(chat, "_news_context", lambda: "")
+    monkeypatch.setattr(context, "account_context", lambda aid: "")
+    monkeypatch.setattr(context, "news_context", lambda: "")
 
     class _Boom:
         def __init__(self, *a, **kw):
@@ -215,7 +217,7 @@ def test_backend_failure_surfaces_as_error(client, monkeypatch):
         def call(self, *a, **kw):
             raise RuntimeError("claude CLI exit 1: nope")
 
-    monkeypatch.setattr(chat, "ClaudeCliBackend", _Boom)
+    monkeypatch.setattr(session, "ClaudeCliBackend", _Boom)
     sid = _new_thread(client)
     r = client.post("/api/accounts/alice/chat", cookies=_cookie(),
                     json={"session_id": sid, "message": "안녕"})
@@ -224,7 +226,7 @@ def test_backend_failure_surfaces_as_error(client, monkeypatch):
 
 
 def test_empty_message_short_circuits(client, monkeypatch):
-    monkeypatch.setattr(chat, "ClaudeCliBackend",
+    monkeypatch.setattr(session, "ClaudeCliBackend",
                         lambda *a, **kw: pytest.fail("must not spend a call"))
     sid = _new_thread(client)
     r = client.post("/api/accounts/alice/chat", cookies=_cookie(),
@@ -233,8 +235,8 @@ def test_empty_message_short_circuits(client, monkeypatch):
 
 
 def test_one_run_per_thread(client, monkeypatch):
-    monkeypatch.setattr(chat, "_account_context", lambda aid: "")
-    monkeypatch.setattr(chat, "_news_context", lambda: "")
+    monkeypatch.setattr(context, "account_context", lambda aid: "")
+    monkeypatch.setattr(context, "news_context", lambda: "")
     release = {"go": False}
 
     class _Slow:
@@ -246,7 +248,7 @@ def test_one_run_per_thread(client, monkeypatch):
                 time.sleep(0.01)
             return "ok"
 
-    monkeypatch.setattr(chat, "ClaudeCliBackend", _Slow)
+    monkeypatch.setattr(session, "ClaudeCliBackend", _Slow)
     sid = _new_thread(client)
     first = client.post("/api/accounts/alice/chat", cookies=_cookie(),
                         json={"session_id": sid, "message": "하나"})

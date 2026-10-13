@@ -96,3 +96,15 @@ def aggregate(account_id: str, *, spark_n: int = 30) -> dict:
         "balances": cash,
         "n": len(out_holdings),
     }
+
+
+def refresh_held() -> dict:
+    """Gap-fill bars and warm quotes for every symbol any account holds — the
+    ↻ button. Market data is per-symbol, so it covers the whole book, not the
+    visible account, and returns nothing account-specific."""
+    from ..market import quotes
+    from ..market.pipeline import gap_filler
+    sids = sorted(holding_store.all_symbol_ids())
+    filled = gap_filler.fill_many(sids)
+    fresh = sum(1 for q in quotes.warm(sids, max_age_s=10).values() if q is not None)
+    return {"ok": True, "symbols": len(sids), "filled": filled, "quotes_fresh": fresh}
