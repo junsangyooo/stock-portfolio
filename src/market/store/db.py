@@ -1,9 +1,9 @@
 """SQLite for the symbol book — data/market.db.
 
-The third book. portfolio.db holds one person's accounts, quant.db holds the
-auto-trading account, and this holds everything that is true about a *symbol*
-regardless of who owns it: bars, statements, valuation, sector, ETF facts and
-theme membership. Both account books read it; neither owns it.
+The second book. portfolio.db holds one person's accounts, and this holds
+everything that is true about a *symbol* regardless of who owns it: bars,
+statements, valuation, sector, ETF facts and theme membership. The account
+book reads it and does not own it.
 
 Why one file and not kr.db + us.db: `symbol_id` has been market-agnostic since
 2026-05-23 (`KR:` | `US:`), and the queries that matter cross markets — a
@@ -18,7 +18,7 @@ Not here:
   - live quotes. quote_store stays an in-memory dict with a JSON flush; it is
     written on every poll and would only buy disk writes here.
 
-Both other books are WAL and so is this one — cron pipelines write it while
+The other books are WAL and so is this one — cron pipelines write it while
 the dashboard reads.
 """
 from __future__ import annotations
@@ -112,9 +112,8 @@ CREATE TABLE IF NOT EXISTS chart_facts (
 CREATE INDEX IF NOT EXISTS idx_chart_facts_date ON chart_facts(date);
 
 -- Theme membership is a property of the symbol, not of an account. It lived
--- in portfolio.db as `holding_themes`, which forced quant.db's symbols to be
--- fetched from the other file and spliced into an IN clause. Here both books
--- just read it.
+-- in portfolio.db as `holding_themes`; here a reader gets it without opening
+-- an account book.
 CREATE TABLE IF NOT EXISTS symbol_themes (
   symbol_id   TEXT NOT NULL,
   theme_id    TEXT NOT NULL,

@@ -1,7 +1,7 @@
 """Token bucket — `rate` tokens per second, `burst` at most (default: rate).
 
 `take()` blocks until a token is available. Thread-safe; one instance per
-limit (Toss keeps one per API group, KIS one global).
+limit (KIS keeps one global).
 """
 from __future__ import annotations
 

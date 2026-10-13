@@ -1,7 +1,6 @@
 """Filesystem layout for the new portfolio-dashboard.
 
   data/portfolio.db                                 — SQLite (ledger: accounts, holdings, trades, cash, snapshots, plans + chat_sessions)
-  data/quant.db                                     — SQLite (same ledger + cycles, journal, orders)
   data/market.db                                    — SQLite (ohlcv, valuation, financials, sector, etf, symbol_themes)
   data/news.db                                      — SQLite (signals, signal_themes, theme_daily/weekly/monthly)
   data/universe/{kr,us}.json                        — symbol master (daily refresh)
@@ -18,16 +17,9 @@ DATA = ROOT / "data"
 
 DB_PATH = DATA / "portfolio.db"
 
-# The auto-trading account lives in its own file. Pipelines and news are shared
-# (they are symbol-keyed files under data/, not SQLite), but the account side is
-# operated separately: a different schema, a different growth profile — a hot
-# append-only journal has no business sharing a file with a small static record
-# set — and a migration on one cannot reach the other.
-QUANT_DB_PATH = DATA / "quant.db"
-
 # The symbol book: bars, statements, valuation, sector, ETF facts and theme
-# membership — everything true about a symbol regardless of who owns it. Both
-# account books read it, neither owns it. See src/market/store/db.py.
+# membership — everything true about a symbol regardless of who owns it. The
+# account book reads it and does not own it. See src/market/store/db.py.
 MARKET_DB_PATH = DATA / "market.db"
 
 # The outside world: collected articles, their theme membership, and the
@@ -48,12 +40,10 @@ BACKUP_DIR = DATA / "backup"
 # KR stock code (6-digit) → DART 8-digit corp_code mapping, cached once.
 DART_CORP_CODES = UNIVERSE_DIR / "dart_corp_codes.json"
 
-QUANT_DIR = DATA / "quant"          # auto-trade runtime state (token cache, lock)
-
 
 def ensure_dirs() -> None:
     for d in (DATA, UNIVERSE_DIR, MARKET_DIR, QUOTE_DIR,
-              ANALYSIS_DIR, LOGS_DIR, BACKUP_DIR, QUANT_DIR):
+              ANALYSIS_DIR, LOGS_DIR, BACKUP_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
 

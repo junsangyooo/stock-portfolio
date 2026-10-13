@@ -1,8 +1,8 @@
 """SQLite for the qualitative pipeline — data/news.db.
 
-The fourth book, and the only one about the outside world. The three others
-answer "what do I own" (portfolio.db, quant.db) and "what is true about this
-symbol" (market.db); this one answers "what happened, when, in which field".
+The third book, and the only one about the outside world. The other two
+answer "what do I own" (portfolio.db) and "what is true about this symbol"
+(market.db); this one answers "what happened, when, in which field".
 
 It replaces data/signals/news/{theme}/{yyyymm}.jsonl, which stored one copy of
 an article per theme it belonged to and could only be searched by reading a
@@ -77,7 +77,7 @@ CREATE INDEX IF NOT EXISTS idx_signal_themes_theme ON signal_themes(theme_id);
 -- reads `overview` directly.
 --
 -- sentiment and watchlist ride on the same call that writes the bullets: they
--- are the same reading, and the judge and the quant brief need a number and a
+-- are the same reading, and the judge and the analysis need a number and a
 -- list of open issues rather than prose. They used to come from a rolling
 -- state file with its own LLM rewrite; folding them in here costs no extra
 -- inference and leaves exactly one long memory (weekly/monthly) instead of two

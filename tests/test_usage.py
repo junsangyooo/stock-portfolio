@@ -50,15 +50,15 @@ _ENVELOPE = json.dumps({
 # ── what leaves a session file behind ───────────────────────────────────────
 
 @pytest.mark.parametrize("extra, persisted", [
-    (None, False),                                          # one-shot: news, alloc
+    (None, False),                                          # one-shot: news, tagging
     (["--resume", "S", "--fork-session"], False),           # a fork is never resumed
-    (["--session-id", "S"], True),                          # a root or brief forks read
+    (["--session-id", "S"], True),                          # a root the forks read
     (["--allowedTools", "x", "--resume", "S"], True),       # a chat turn extends its thread
 ])
 def test_only_a_session_someone_resumes_is_written_to_disk(monkeypatch, extra, persisted):
     """Every `claude -p` used to leave a transcript on the server — ~100 files
-    a day, 389MB in three weeks — though only a chat thread, an analysis root
-    and a quant brief are ever resumed."""
+    a day, 389MB in three weeks — though only a chat thread and an analysis
+    root are ever resumed."""
     b, run = _backend(_ENVELOPE, seen=(seen := []))
     monkeypatch.setattr(llm_backend.subprocess, "run", run)
     _REAL_CALL(b, "sys", "user", extra_args=extra)

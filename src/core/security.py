@@ -92,21 +92,6 @@ def verify_session_token(account_id: str, token: str | None) -> bool:
         return False
 
 
-# quant's own cookie. Not the portfolio prefix: different logins on different
-# origins, and sharing the prefix would make one look like the other. Defined
-# here so server.py can name it without importing the quant package.
-QUANT_COOKIE = "pdash_q"
-
-
-def token_is_valid(token: str | None) -> bool:
-    """Self-describing check: the account id is inside the token and the
-    signature covers it, so no lookup is needed to trust it. This is how the
-    global /api gate accepts a quant session without opening quant.db."""
-    if not token:
-        return False
-    return verify_session_token(token.split("|", 1)[0], token)
-
-
 def has_any_session(cookies) -> bool:
     """True if any pdash_a_* cookie carries a valid token. Used by the global
     /api gate: proving one account unlocks the shared market/analysis data."""

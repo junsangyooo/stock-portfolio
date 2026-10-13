@@ -13,17 +13,18 @@ fixture does not drag in the whole market package (and its pykrx dependency).
 from __future__ import annotations
 
 import pytest
+import requests
 
 import src.core.paths as paths
 from src.core.notify import discord
-from src.quant.broker import toss
+from src.market.source import kis_auth
 from src.research.llm_backend import ClaudeCliBackend
 
 
 @pytest.fixture(autouse=True)
 def temp_books(tmp_path, monkeypatch):
-    """Fresh empty books (market, news, portfolio, quant), analysis tree and
-    session secret per test."""
+    """Fresh empty books (market, news, portfolio), analysis tree and session
+    secret per test."""
     monkeypatch.setattr(paths, "MARKET_DB_PATH", tmp_path / "market.db")
     monkeypatch.setattr(paths, "NEWS_DB_PATH", tmp_path / "news.db")
     # Stored analyses are read by existence (analyze.read globs the folder), so
@@ -35,23 +36,20 @@ def temp_books(tmp_path, monkeypatch):
     # the server would otherwise append rows for calls nobody made.
     monkeypatch.setattr(paths, "LOGS_DIR", tmp_path / "logs")
     monkeypatch.setattr(paths, "ensure_dirs", lambda: None)
-    # The two account books and the session secret are bound when their own
+    # The account book and the session secret are bound when their own
     # modules import, so they are redirected there. Without it a test that
     # opened the app wrote data/portfolio.db and read or wrote
     # data/.session_secret — on the server, the live ones.
     from src.core import security
     from src.market.store import quote_store
     from src.portfolio.store import db as pdb
-    from src.quant import db as qdb
     from src.research import verdict_job
     from src.universe import builder
-    for mod, attr, name in ((pdb, "DB_PATH", "portfolio.db"),
-                            (qdb, "QUANT_DB_PATH", "quant.db")):
-        monkeypatch.setattr(mod, attr, tmp_path / name)
-        monkeypatch.setattr(mod, "_initialized", False)
+    monkeypatch.setattr(pdb, "DB_PATH", tmp_path / "portfolio.db")
+    monkeypatch.setattr(pdb, "_initialized", False)
     # …and every module that imported ensure_dirs by name, which otherwise
     # still creates the real data/ tree.
-    for mod in (pdb, qdb, quote_store, verdict_job, builder):
+    for mod in (pdb, quote_store, verdict_job, builder):
         monkeypatch.setattr(mod, "ensure_dirs", lambda: None)
     monkeypatch.setattr(security, "_SECRET_FILE", tmp_path / ".session_secret")
     monkeypatch.setattr(security, "_secret_cache", None)
@@ -60,21 +58,25 @@ def temp_books(tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def no_live_broker(tmp_path, monkeypatch):
-    """Every Toss HTTP call raises unless a test stubs it itself.
+    """Every HTTP call made through ``requests`` raises unless a test stubs it
+    itself.
 
-    Local secrets make the broker live; a test that reaches it registers real
-    orders (it happened). Patched through ``toss.requests`` so a test's own
-    ``monkeypatch.setattr(toss.requests, "request", …)`` still takes precedence.
+    Local secrets are live — the KIS keys the US screener signs with among
+    them — and a test that reaches a real API spends a real token or worse (a
+    broker client once registered real orders this way). Patched on the
+    ``requests`` module itself, so a test's own
+    ``monkeypatch.setattr(module.requests, "get", …)`` still takes precedence.
+    The KIS token cache points at a throwaway file too.
     """
     def _blocked(method, url=None, *a, **k):
         raise RuntimeError(f"test reached the live broker: {method} {url}")
 
-    monkeypatch.setattr(toss.requests, "request", _blocked)
-    monkeypatch.setattr(toss.requests, "post",
+    monkeypatch.setattr(requests, "request", _blocked)
+    monkeypatch.setattr(requests, "post",
                         lambda url, *a, **k: _blocked("POST", url))
-    monkeypatch.setattr(toss.requests, "get",
+    monkeypatch.setattr(requests, "get",
                         lambda url, *a, **k: _blocked("GET", url))
-    monkeypatch.setattr(toss, "_TOKEN_PATH", tmp_path / ".toss_token.json")
+    monkeypatch.setattr(kis_auth, "_TOKEN_PATH", tmp_path / ".kis_token.json")
     # Discord too: no test may post to the real channel. A test that wants to
     # count messages patches ``discord.send`` itself; this only unplugs the URL.
     monkeypatch.setattr(discord, "_url", lambda: None)

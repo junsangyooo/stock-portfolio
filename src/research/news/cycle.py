@@ -35,8 +35,8 @@ def _log(msg: str) -> None:
 def local_enrich(now: datetime) -> bool:
     """Saturday and Sunday (KST) enrich on the on-host model.
 
-    Nothing trades until Monday — the weekend analysis, plan pass and cycles
-    are off in cron — so the slower local pass has the whole weekend, and the
+    Nothing trades until Monday — the weekend analysis is off in cron — so
+    the slower local pass has the whole weekend, and the
     Monday 06:00 run is back on Claude to pick up whatever a local batch left
     pending. Saturday 06:00 is already local: it carries the US Friday session.
     """

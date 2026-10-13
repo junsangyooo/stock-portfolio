@@ -17,6 +17,6 @@ agent at all:
                   know accounts exist)
   chat_tools.py   read-only lookups for the chat agent
 
-Shared: portfolio and quant both read this and neither owns it. Nothing here
+Shared: the portfolio app reads this and does not own it. Nothing here
 imports an account book — tests/test_layering.py enforces that.
 """

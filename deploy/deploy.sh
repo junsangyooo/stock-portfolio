@@ -200,7 +200,7 @@ record "{\"kind\": \"deploy\", \"service\": \"$SERVICE\", \"from\": \"$PREV_HEAD
 # Backup every book of the old app before anything restarts on the new code. Runs after the
 # pull so the module exists on Oracle; a failure leaves the services untouched.
 echo "[deploy] backing up the old app's DBs on Oracle..."
-ssh "$HOST" 'cd ~/portfolio-dashboard && .venv/bin/python -m src.core.backup --only portfolio quant news' \
+ssh "$HOST" 'cd ~/portfolio-dashboard && .venv/bin/python -m src.core.backup --only portfolio news' \
   || fail "DB backup failed on Oracle (service not restarted) — rollback: $ROLLBACK"
 
 # Config drift (warn only — never auto-apply): nginx and the autotrade unit are installed by hand.

@@ -1,18 +1,14 @@
-"""The account ledger — one schema, two books.
+"""The account ledger — what an account owns, what it paid, what it did.
 
-portfolio.db and quant.db hold the same thing: what an account owns, what it
-paid, what it did. They had grown two vocabularies for it —
-`holdings`/`positions`, `balances`/`cash`, `accounts`/`account` — and every
-feature had to be built twice, which is why the human book still had no trade
-history at all.
+portfolio.db applies it and adds its own `chat_sessions` on top
+(src/portfolio/store/db.py).
 
-`plans` is quant's order book. It is defined here with the rest of the ledger
-and stays empty in portfolio.db, which keeps no plans.
-
-Two files, not one, because ownership is the axis (ops notes §3): a migration
-on one book cannot touch the other, and quant's journal does not share a file
-with a static human record set. Each book adds its own tables on top —
-portfolio `chat_sessions`, quant `cycles`/`journal`/`orders`.
+Nothing writes `plans` or `watch`, nor the auto-account columns
+(`accounts.kind = 'auto'`, `accounts.mode`, `holdings.entry_plan_id`,
+`holdings.entry_rationale`, `trades.plan_id`, `plans.cycle_id`,
+`watch.added_cycle`). They stay so the file's schema does not change; a person
+keeps no plans — what to do about a holding is read off its analysis on the
+card.
 """
 from __future__ import annotations
 
@@ -34,12 +30,12 @@ CREATE TABLE IF NOT EXISTS accounts (
   created_at     INTEGER NOT NULL
 );
 
--- What the account owns right now. Not derived from `trades`: quant's truth is
--- the broker's reconcile, and a person holds things they never recorded a
--- trade for. Current state and history answer different questions.
+-- What the account owns right now. Not derived from `trades`: a person holds
+-- things they never recorded a trade for. Current state and history answer
+-- different questions.
 --
--- entry_* is written once when the position opens and reconcile leaves it
--- alone (COALESCE) — a changed quantity does not change why it was bought.
+-- opened_at is written once when the position opens and left alone after
+-- (COALESCE).
 CREATE TABLE IF NOT EXISTS holdings (
   account_id       TEXT NOT NULL REFERENCES accounts(account_id) ON DELETE CASCADE,
   symbol_id        TEXT NOT NULL,       -- 'KR:005930' | 'US:AAPL'
@@ -59,8 +55,7 @@ CREATE TABLE IF NOT EXISTS holdings (
 
 -- What actually happened. A fill, not a submission: a person trades in their
 -- broker's app and records the result, so the columns an order needs (idem
--- key, broker order id, pending→filled) would sit empty forever on that side.
--- quant keeps those in its own `orders` table and writes a trade when one fills.
+-- key, broker order id, pending→filled) would sit empty forever.
 CREATE TABLE IF NOT EXISTS trades (
   trade_id    INTEGER PRIMARY KEY AUTOINCREMENT,
   account_id  TEXT NOT NULL REFERENCES accounts(account_id) ON DELETE CASCADE,
@@ -99,20 +94,9 @@ CREATE TABLE IF NOT EXISTS snapshots (
   PRIMARY KEY (date, account_id, currency)
 );
 
--- A plan is an order ticket whoever reads it. The person's note and the
--- machine's standing order are the same row; only the executor differs.
---
--- `conditions` holds predicates a machine can evaluate. Anything qualitative
--- ("실적 발표 후") stays in `note` — for quant the next cycle re-judges it,
--- for a person it is simply something to read.
---
---   {"entry":       {"kind":"immediate"|"below"|"above"|"agent","price":N}
---    "take_profit": {"kind":"above","price":N},
---    "stop":        {"kind":"below","price":N}}
---
--- `conditional_order_id` is the single truth for who is watching a price
--- condition: the broker when set, the keeper when NULL. Only ever filled when
--- a broker is actually watching — for a human plan it stays NULL.
+-- An order ticket with its price conditions (`conditions`, JSON) and the
+-- broker's id for a registered conditional order. No code writes it (see the
+-- module docstring).
 CREATE TABLE IF NOT EXISTS plans (
   plan_id               INTEGER PRIMARY KEY AUTOINCREMENT,
   account_id            TEXT NOT NULL REFERENCES accounts(account_id) ON DELETE CASCADE,

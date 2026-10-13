@@ -1,7 +1,7 @@
-"""Screen invariants, enforced from source the way test_quant_api.py enforces
-require_quant: the two products never reference each other, and each public
-Host serves only its own pages (ops notes §2.2 — same app, same nginx block;
-only the Host header and host-only cookies separate them).
+"""Screen invariants, enforced from source: the pages never point at the
+quant product, the shared floor (theme tokens, shared.css, shared.js) is
+injected the same way into every page, and the rules of ops notes §11 화면
+hold in every file.
 """
 import re
 from pathlib import Path
@@ -10,18 +10,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.dashboard_web import server
-from src.quant import db as qdb
 
 STATIC = Path(server.__file__).resolve().parent / "static"
 PORTFOLIO_HOST = "portfolio.jsyoo.dev"
-QUANT_HOST = "quant.jsyoo.dev"
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    # /q names the quant account from quant.db — point the book at a tmp file.
-    monkeypatch.setattr(qdb, "QUANT_DB_PATH", tmp_path / "quant.db")
-    monkeypatch.setattr(qdb, "_initialized", False)
+def client():
     return TestClient(server.app)
 
 
@@ -32,42 +27,12 @@ def _hits(name: str, patterns: list[str]) -> list[str]:
             if any(re.search(p, line, re.IGNORECASE) for p in patterns)]
 
 
-def test_no_crosslinks_between_products():
+def test_no_crosslinks_to_quant():
     """Case-insensitive on purpose: with case respected a wordmark like
     '◆ QUANT-LAB' on the portfolio screen passes untouched."""
-    to_quant = [r"/q\b", r"quant", r"pdash_q"]        # 'quant' covers /api/quant
-    to_portfolio = [r"/a/", r"/api/accounts", r"pdash_a"]
-    bad = (_hits("landing.html", to_quant)
-           + _hits("account.html", to_quant)
-           + _hits("quant.html", to_portfolio))
-    assert not bad, "cross-product references:\n" + "\n".join(bad)
-
-
-def test_host_gate_on_page_routes(client):
-    """404, never a redirect — a redirect is itself a path between the
-    products. Deny-list: only the two public hosts are refused each other's
-    page, so local and IP access (laptop, Oracle shell) keeps working."""
-    def get(path, host):
-        return client.get(path, headers={"host": host}, follow_redirects=False)
-
-    assert get("/a/x", QUANT_HOST).status_code == 404
-    assert get("/q", PORTFOLIO_HOST).status_code == 404
-    assert get("/q", QUANT_HOST).status_code == 200
-    assert get("/a/x", PORTFOLIO_HOST).status_code == 200
-    for host in ("127.0.0.1:8888", "localhost:8888"):
-        assert get("/q", host).status_code == 200, host
-        assert get("/a/x", host).status_code == 200, host
-
-
-def test_quant_page_not_served_on_portfolio_host(client):
-    """The account id is injected by _serve_quant() only; its absence on the
-    portfolio host is the check (a string search on the id would match the
-    hardcoded fallback in account.html)."""
-    tag = "window.QUANT_ACCOUNT"
-    for path in ("/", "/q"):
-        r = client.get(path, headers={"host": PORTFOLIO_HOST})
-        assert tag not in r.text, path
-    assert tag in client.get("/q", headers={"host": QUANT_HOST}).text
+    to_quant = [r"/q\b", r"quant", r"pdash_q"]        # 'quant' covers its API paths too
+    bad = _hits("landing.html", to_quant) + _hits("account.html", to_quant)
+    assert not bad, "references to the quant product:\n" + "\n".join(bad)
 
 
 # ── U2: shared floor ─────────────────────────────────────────────────────
@@ -75,16 +40,16 @@ SHARED_JS = STATIC / "shared.js"
 SHARED_CSS = STATIC / "shared.css"
 THEME = STATIC / "theme.json"
 NEWS_THEMES = Path(server.__file__).resolve().parents[1] / "research" / "news" / "themes.json"
-SCREEN_FILES = ("landing.html", "account.html", "quant.html", "shared.js", "shared.css")
+SCREEN_FILES = ("landing.html", "account.html", "shared.js", "shared.css")
 
 # Every name the injected fragment exports (ui-02-architecture §4). Each must
-# be defined exactly once across the fragment and the three pages.
+# be defined exactly once across the fragment and the pages.
 SHARED_NAMES = (
     "el", "clear", "svgIco", "timeAgo", "kstClock",
     "money", "ccyMoney", "pct", "signCls",
     "designColor", "designRgba", "newsThemeColor", "newsThemeIcon",
     "srcName", "newsCard", "newsGrid", "toast", "api",
-    # U4: the card grammar both pages draw with
+    # U4: the card grammar
     "drawChart", "fmtBarDate", "drawCurve", "LABEL_KO", "freshInfo", "verdictBadge",
     # U5: the one confirm dialog (native confirm() is banned below)
     "confirmModal",
@@ -158,7 +123,7 @@ def test_shared_fragments_injected_in_order(client):
     """<head>: theme tokens → shared.css → shared.js → the page's own
     <style>/<script>. CSS coming later is cascade intent; JS coming later is
     the reason the fragment lives under one namespace (S.*)."""
-    for path, host in (("/", PORTFOLIO_HOST), ("/a/x", PORTFOLIO_HOST), ("/q", QUANT_HOST)):
+    for path, host in (("/", PORTFOLIO_HOST), ("/a/x", PORTFOLIO_HOST)):
         body = client.get(path, headers={"host": host}).text
         marks = ['<meta charset', 'id="theme-vars"', "window.__THEME_TOKENS",
                  'id="shared-css"', 'id="shared-js"', "@import url("]
@@ -264,109 +229,8 @@ def test_account_page_trade_flow_uses_trades_route():
         assert gone not in body, gone
 
 
-# ── U4: quant cockpit ────────────────────────────────────────────────────
-QUANT = STATIC / "quant.html"
-
-
-def _quant_route_paths():
-    from fastapi.routing import APIRoute
-    from src.api import quant as qapi
-    return {r.path for r in qapi.router.routes if isinstance(r, APIRoute)}
-
-
-def _call_text(src, start):
-    """The full `qapi(...)` call starting at `start`, by paren balance."""
-    depth, i = 0, src.index("(", start)
-    for j in range(i, len(src)):
-        if src[j] == "(":
-            depth += 1
-        elif src[j] == ")":
-            depth -= 1
-            if depth == 0:
-                return src[start:j + 1]
-    return src[start:]
-
-
-def test_quant_page_calls_only_existing_routes():
-    """Every qapi('/x') and '/api/quant/x' literal resolves to a route on the
-    quant router. A literal ending in '/' is followed by a path param."""
-    src = QUANT.read_text()
-    paths = _quant_route_paths()
-    lits = set(re.findall(r"qapi\('([^']+)'", src))
-    lits |= {p[len("/api/quant"):] for p in re.findall(r"'(/api/quant/[^']+)'", src)}
-    bad = []
-    for lit in lits:
-        lit = lit.split("?")[0]
-        ok = (any(p.startswith("/api/quant" + lit + "{") for p in paths)
-              if lit.endswith("/") else ("/api/quant" + lit) in paths)
-        if not ok:
-            bad.append(lit)
-    assert not bad, f"quant.html calls routes that do not exist: {sorted(bad)}"
-
-
-def test_quant_page_reads_the_uiless_apis():
-    """/snapshots, /orders, /sync, entry_rationale and the cycle header fields
-    had zero readers (ui-01-prd §2.2)."""
-    src = QUANT.read_text()
-    for needle in ("'/snapshots", "'/orders", "'/sync", "entry_rationale",
-                   "S.newsGrid(", "/api/analysis/news/feed",
-                   "/api/analysis/summary", "/api/market/ohlcv", "S.drawCurve(",
-                   "S.drawChart(", "S.verdictBadge(", "stock-card"):
-        assert needle in src, needle
-    for field in ("focus", "ended_at", "phase"):
-        assert re.search(rf"\.{field}\b", src), f"cycle.{field} is fetched but not shown"
-
-
-def test_quant_guarded_writes_carry_the_pin():
-    """The two-tier rule (ops notes §10): new plan · mode · cancel_all · sync
-    re-send the PIN in the body. Every such call site on the page does."""
-    src = QUANT.read_text()
-    guarded = ("/sync", "/mode", "/orders/cancel_all", "/plans")
-    seen, bad = 0, []
-    for m in re.finditer(r"qapi\('(" + "|".join(re.escape(g) for g in guarded) + r")(\?[^']*)?'", src):
-        call = _call_text(src, m.start())
-        if "method: 'POST'" not in call:
-            continue
-        seen += 1
-        if not re.search(r"\bpin\b", call):
-            bad.append(call.splitlines()[0])
-    assert seen >= 5, "expected the guarded POST call sites (plans×3, mode×2, cancel_all, sync×2)"
-    assert not bad, "guarded POST without pin in body:\n" + "\n".join(bad)
-    # the force path is a second confirmation, never the first call
-    assert "'/sync?force=1'" in src
-    # structured refusal, never a string match on the error sentence
-    assert "refused === 'full_close'" in src
-    assert "none of the ledger" not in src
-
-
-def test_quant_plan_author_is_a_column():
-    src = QUANT.read_text()
-    assert "[사용자" not in src, "author detection by note marker is gone"
-    assert re.search(r"\.source\s*===\s*'user'", src)
-
-
-def test_quant_journal_kind_is_not_whitelisted():
-    """Unknown kinds render with the slug and a fallback colour (FR-D3), and
-    the clamp is measured, not a character count (FR-D4)."""
-    src = QUANT.read_text()
-    assert re.search(r"KIND_LABEL\[[^\]]+\]\s*\|\|", src)
-    assert re.search(r"KIND_COLOR\[[^\]]+\]\s*\|\|", src)
-    assert not re.search(r"\.length\s*>\s*\d{2,}", src), "character-count clamp threshold"
-    assert "ResizeObserver" in src
-    assert "scrollHeight > " in src
-
-
-def test_quant_page_has_no_stale_sections():
-    """The body is two layers; the rest lives behind buttons (FR-C1/C5)."""
-    src = QUANT.read_text()
-    assert 'id="sec-now"' in src and 'id="sec-positions"' in src
-    for pid in ("panel-plans", "panel-watch", "panel-news"):
-        assert re.search(rf'id="{pid}"[^>]*\bhidden\b', src), f"{pid} must start collapsed"
-    assert 'class="nav"' not in src
-
-
 # ── U5: harness closure ──────────────────────────────────────────────────
-PAGES = ("landing.html", "account.html", "quant.html")
+PAGES = ("landing.html", "account.html")
 
 
 def test_facts_only_result_is_not_dressed_as_a_judgement():
@@ -377,8 +241,8 @@ def test_facts_only_result_is_not_dressed_as_a_judgement():
 
 
 def test_pages_route_403_to_their_own_pin_gate():
-    for f in ("account.html", "quant.html"):
-        assert re.search(r"S\.onForbidden\s*=\s*showPinGate\b", (STATIC / f).read_text()), f
+    src = (STATIC / "account.html").read_text()
+    assert re.search(r"S\.onForbidden\s*=\s*showPinGate\b", src)
     assert "onForbidden" in SHARED_JS.read_text()
 
 
@@ -396,19 +260,6 @@ def test_no_native_confirm():
         assert needle in js, needle
 
 
-def test_quant_page_blocks_on_pin_setup():
-    """A PIN-less book is closed server-side (403 'PIN을 먼저 설정하세요');
-    the page turns that answer into the operator instruction, never a form —
-    a form on a public host would let the first caller own the order book."""
-    src = QUANT.read_text()
-    assert "showPinSetup" in src and "src.quant.pin" in src
-    assert re.search(r"d\.detail === NO_PIN", src), "the gate routes the no-PIN answer"
-    assert re.search(r"e\.message === NO_PIN", src), "qapi routes the no-PIN answer"
-    setup = src[src.index("function showPinSetup"):src.index("// ── generic modal")]
-    assert "qapi('/pin'" not in setup and "input" not in setup, "no first-PIN form"
-    assert "no_pin" not in src, "/auth no longer answers no_pin — it answers 403"
-
-
 def test_el_attribute_objects_use_the_canonical_keys():
     """class: / onclick: still work (el() maps them) but two spellings of one
     key is how the pages drifted apart before U2."""
@@ -423,7 +274,7 @@ def test_el_attribute_objects_use_the_canonical_keys():
 def test_every_page_has_a_favicon(client):
     """The icon is injected by server.py (PNG routes, B8) — the served HTML
     carries it; the page files carry no icon of their own."""
-    for path, host in (("/", PORTFOLIO_HOST), ("/a/x", PORTFOLIO_HOST), ("/q", QUANT_HOST)):
+    for path, host in (("/", PORTFOLIO_HOST), ("/a/x", PORTFOLIO_HOST)):
         body = client.get(path, headers={"host": host}).text
         assert '<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">' in body, path
         assert "data:image/svg+xml" not in body, path
@@ -449,18 +300,13 @@ def test_ohlcv_and_analysis_fetches_fail_loudly():
 def test_403_gate_only_on_pin_required():
     """Only a session-missing 403 ('PIN required') opens the PIN gate; a wrong
     step-up PIN or 'PIN을 먼저 설정하세요' is a real answer and must reach the
-    caller inline. OHLCV failures are toasted, never cached as []."""
+    caller inline."""
     js = SHARED_JS.read_text()
     m = re.search(r"async function api\(.*?\n\}", js, re.DOTALL)
     assert m, "shared.js defines api()"
     body = m.group(0)
     assert body.index("'PIN required'") < body.index("onForbidden()"), \
         "api() checks detail === 'PIN required' before calling onForbidden"
-    src = QUANT.read_text()
-    bars = re.search(r"async function bars\(.*?\n\}", src, re.DOTALL).group(0)
-    assert "OHLCV.set(key, [])" not in bars
-    assert "fetch(" not in bars and "S.api(" in bars
-    assert "OHLCV.clear()" in src, "↻ refetches bars"
 
 
 def test_a11y_floor():
@@ -468,14 +314,10 @@ def test_a11y_floor():
     assert ":focus-visible" in css
     js = SHARED_JS.read_text()
     assert re.search(r"id: 'toast-host'[^}]*role: 'status'[^}]*'aria-live': 'polite'", js)
-    q = QUANT.read_text()
-    assert re.search(r'input\[type="password"\][^}]*font-size:\s*16px', q), "iOS zoom"
-    assert re.search(r"el\('label',\s*\{\s*for:", q), "field() labels its control"
-    for f in ("account.html", "quant.html"):
-        src = (STATIC / f).read_text()
-        gate = src[src.index("function showPinGate"):]
-        gate = gate[:gate.index("\n}\n")]
-        assert "'aria-label'" in gate, f"{f}: PIN gate input needs an aria-label"
+    src = ACCOUNT.read_text()
+    gate = src[src.index("function showPinGate"):]
+    gate = gate[:gate.index("\n}\n")]
+    assert "'aria-label'" in gate, "account.html: PIN gate input needs an aria-label"
 
 
 # ── U6: design-token layer (ui-open-decisions B1/B2/B3/B7/B9) ────────────
@@ -572,7 +414,7 @@ def test_label_dictionary_exported():
     js = SHARED_JS.read_text()
     m = re.search(r"const LABELS\s*=\s*\{([^}]*)\}", js)
     assert m, "shared.js defines LABELS"
-    for word in ("삭제", "취소", "확인", "저장", "닫기", "다시 분석", "가동", "끔", "전체 보기", "접기"):
+    for word in ("삭제", "취소", "확인", "저장", "닫기", "다시 분석", "전체 보기", "접기"):
         assert f"'{word}'" in m.group(1), word
     assert "제거" not in m.group(1)
     assert re.search(r"window\.S\s*=\s*\{[^}]*\bLABELS\b", js)

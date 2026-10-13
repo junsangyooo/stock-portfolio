@@ -22,9 +22,9 @@ The module is `engine`, the exported function is `run` — naming the module
 Deliberately not a fan-out. See prompt.py for why the domains have to meet
 before the judgment rather than after.
 
-Nothing here reads portfolio.db or quant.db. The analysis is about the symbol;
-what to do about it depends on a position, and that belongs to whichever book
-is asking. That is what lets one stored result serve both.
+Nothing here reads portfolio.db. The analysis is about the symbol; what to
+do about it depends on a position, and that belongs to whichever account is
+asking. That is what lets one stored result serve every account.
 """
 from .inputs import build as assemble          # noqa: F401 — deterministic half
 from .read import (                            # noqa: F401

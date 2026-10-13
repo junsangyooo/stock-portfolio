@@ -225,7 +225,7 @@ def symbols_for_theme(theme_id: str, days: int = 7, limit: int = 30,
     ranked by mention count) — the caller decides which to trust.
 
     `held` is passed in, never looked up. This module knows nothing about
-    accounts; whichever book is asking marks its own positions, and two books
+    accounts; whoever is asking marks its own positions, and two accounts
     asking the same question get the same corpus with their own flags.
     """
     from ...universe import search as uni_search

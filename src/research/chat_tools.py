@@ -250,8 +250,7 @@ _COMMANDS = {
 # of them. The ceiling sits above what the real tools return — a stored
 # analysis is 14~19KB, 200 candles ~12KB, the chart fact set is the largest
 # and still under it — so nothing an agent actually reads gets cut. What it
-# stops is the answer nobody sized — `stocks_all NASDAQ` (quant/tools.py)
-# is a whole market in one reply.
+# stops is the answer nobody sized — a whole market's list in one reply.
 _MAX_OUT_CHARS = 40_000
 
 

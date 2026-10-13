@@ -1,16 +1,16 @@
-// Shared floor for the three screens — injected by server.py right after the
+// Shared floor for the screens — injected by server.py right after the
 // theme tokens and before the page's own <script>. Everything is exported on
-// ONE namespace, window.S, so a page global can never shadow it (quant.html's
-// api() prefixes /api/quant; a global api here would send the news feed to
-// /api/quant/api/analysis/news/feed). Nothing here knows an account or a
-// symbol — both arrive as arguments (ops notes §4, the screen edition).
+// ONE namespace, window.S, so a page global can never shadow it (a page's own
+// api() with another prefix would otherwise reroute every shared call).
+// Nothing here knows an account or a symbol — both arrive as arguments
+// (ops notes §4, the screen edition).
 // Colours come only from window.__THEME_TOKENS (theme.json); no literals.
 (function () {
 'use strict';
 const T = window.__THEME_TOKENS || { colors: {}, tokens: {}, themes: {} };
 
 // ── DOM ──────────────────────────────────────────────────────────────
-// Canonical regime (account.html's + quant.html's boolean branch):
+// Canonical regime:
 //   className · style (string) · dataset (object) · on* → addEventListener
 //   null/undefined attribute → omitted (setAttribute('disabled', null) would
 //   stringify to "null" and wrongly disable) · true → '' · false → omitted
@@ -83,8 +83,7 @@ function newsThemeIcon(id) {
 //    the word from here instead of picking a synonym (삭제, never 제거).
 const LABELS = {
   delete: '삭제', cancel: '취소', confirm: '확인', save: '저장', close: '닫기',
-  reanalyze: '다시 분석', marketOn: '가동', marketOff: '끔',
-  showAll: '전체 보기', collapse: '접기',
+  reanalyze: '다시 분석', showAll: '전체 보기', collapse: '접기',
 };
 
 // ── time ─────────────────────────────────────────────────────────────
@@ -236,8 +235,8 @@ const SRC_NAME = {
 function srcName(id) { return SRC_NAME[id] || id || ''; }
 function hexA(hex, a) { return 'rgba(' + hexRgb(hex) + ',' + a + ')'; }
 
-// One feed item → one .news-card. landing and quant must render the same
-// DOM (SC-7), which is why the builder lives here and not in a page.
+// One feed item → one .news-card. The builder lives here, not in a page, so
+// every page that shows the feed renders the same DOM (SC-7).
 function newsCard(n) {
   const c = newsThemeColor(n.theme);
   // thumbnail: media/og image → source favicon → theme icon
@@ -306,8 +305,8 @@ function newsGrid(items, mount) {
 
 // ── analysis badge (Level 0) ─────────────────────────────────────────
 // The engine judges the symbol only (label); "what it means for me" is the
-// account screen's business. Both pages draw the same badge from one entry
-// of GET /api/analysis/summary.
+// account screen's business. It draws the badge from one entry of
+// GET /api/analysis/summary.
 const LABEL_KO = {
   strong_buy: '적극 긍정', buy: '긍정', neutral: '중립',
   sell: '부정', strong_sell: '적극 부정',

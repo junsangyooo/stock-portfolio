@@ -49,9 +49,10 @@ def anchors_from(envelope: dict) -> list:
     """Price levels the chart pipeline actually detected — swing S/R (with
     their test counts), fibonacci retracements, classic pivots.
 
-    Every price the model quotes is checked against these. It is the one field
-    a planner turns straight into an order, so a number that came from nowhere
-    has to be labelled as such rather than passed along looking like the rest.
+    Every price the model quotes is checked against these. The account card
+    sets these prices beside a holding as its stop and target, so a number
+    that came from nowhere has to be labelled as such rather than passed along
+    looking like the rest.
     """
     facts = next((d["data"] for d in envelope.get("domains", [])
                   if d["id"] == "chart" and d.get("data")), None) or {}

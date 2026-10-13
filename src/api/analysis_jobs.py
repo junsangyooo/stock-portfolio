@@ -12,8 +12,7 @@ Single uvicorn worker (server.py runs uvicorn.run with no workers arg), so a
 plain in-memory registry is shared across requests. A duplicate start while
 one is running is a no-op.
 
-Keys are opaque strings, not symbol ids: the quant market turn-on job runs
-here too as "market:{account}:{market}", so the two can never collide.
+Keys are opaque strings; the analysis routes use the symbol id.
 """
 from __future__ import annotations
 

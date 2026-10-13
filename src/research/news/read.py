@@ -8,7 +8,7 @@ The three views:
 
     feed()         the landing page's news + social cards and 「오늘의 요약」
     theme_state()  what a theme looks like right now — for the judge, the
-                   account page's news tab and the quant brief
+                   account page's news tab and the analysis
     read_items()   raw articles for one theme, for the company-name miner
 
 `theme_state` replaces state.json. Its slow-moving half (horizon summary) is

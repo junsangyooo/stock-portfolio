@@ -211,7 +211,7 @@ def remove_holding(account_id: str, symbol_id: str,
                    _: str = Depends(require_account)) -> dict:
     """Delete only. A sellout is recorded through POST /trades first. The
     symbol's theme mapping (market.db) stays: it is a fact about the symbol,
-    and the other book may still hold it (ops notes §4)."""
+    and another account may still hold it (ops notes §4)."""
     n = holding_store.remove(account_id, symbol_id)
     return {"ok": n > 0, "deleted": n}
 

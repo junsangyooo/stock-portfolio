@@ -7,8 +7,8 @@ about, handing them over.
 
 That direction is the whole point. An account may read a shared resource; a
 shared resource may never read an account. Otherwise the same analysis has to
-fork per book, and market.db's nightly jobs quietly stop covering whatever
-quant holds and portfolio does not.
+fork per account, and market.db's nightly jobs quietly cover only what the one
+book they happen to read holds.
 
     python -m src.portfolio.jobs fundamental
     python -m src.portfolio.jobs etf
@@ -29,7 +29,7 @@ from .store.holding_store import all_symbol_ids
 # (2026-09-15): the default spent 21,945 output tokens, `low` spent 5,448 for
 # an answer of the same shape — most of the default budget is thinking that
 # never reaches the stored result. Nothing in this book is an order (a person
-# decides and trades), so no symbol is `--hot`.
+# decides and trades), so every symbol runs at `low`.
 LOW_EFFORT = "low"
 
 

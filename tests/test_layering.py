@@ -1,17 +1,16 @@
 """The shared layers must not read an account book.
 
-market data, research and analysis serve both portfolio.db and quant.db. The
-moment one of them looks up "what do I hold", the result stops being shared:
-the same analysis has to fork per book, and whichever book the lookup happens
-to name gets covered while the other silently does not.
+market data, research and analysis are about symbols, not accounts. The moment
+one of them looks up "what do I hold", the result stops being shared: the same
+stored analysis would have to fork per account, and whatever the lookup
+happens to name gets covered while the rest silently does not.
 
 The direction is one-way. An account may read a shared resource; a shared
 resource may never read an account. A batch job that needs to know which
 symbols to work on takes them as an argument (src/portfolio/jobs.py supplies
 them for the human accounts).
 
-This is a structural rule, so it is checked structurally — the same way
-tests/test_quant_api.py checks that every quant route is gated.
+This is a structural rule, so it is checked structurally.
 """
 from __future__ import annotations
 
@@ -27,8 +26,8 @@ _SRC = Path(__file__).resolve().parents[1] / "src"
 # connection and the id — it never picks a book.
 SHARED = ("core", "universe", "market", "research", "ledger")
 
-# The books they must not reach into.
-BOOKS = ("portfolio", "quant")
+# The book they must not reach into.
+BOOKS = ("portfolio",)
 
 
 def _modules():
@@ -96,8 +95,8 @@ def test_shared_layers_never_import_an_account_book():
 
 
 def test_the_analysis_envelope_carries_no_position():
-    """The analysis is about the symbol. One stored result serves both books
-    only while it says nothing about who holds what."""
+    """The analysis is about the symbol. One stored result serves every
+    account only while it says nothing about who holds what."""
     from src.research.analyze import prompt
     src = (_SRC / "research" / "analyze" / "inputs.py").read_text(encoding="utf-8")
     assert "holdings" not in src and "avg_cost" not in src

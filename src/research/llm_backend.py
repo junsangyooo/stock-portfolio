@@ -113,8 +113,8 @@ class ClaudeCliBackend:
         # subscription-only billing, so it is not an option.)
         args = list(extra_args or [])
         # Only a session somebody resumes is written to disk: a chat thread
-        # (--resume, extended turn by turn) or a root/brief that forks read
-        # (--session-id). A one-shot call and a fork never are, and each used
+        # (--resume, extended turn by turn) or an analysis root that forks
+        # read (--session-id). A one-shot call and a fork never are, and each used
         # to leave a transcript behind (~100 a day on the server).
         if "--session-id" not in args and ("--resume" not in args
                                            or "--fork-session" in args):

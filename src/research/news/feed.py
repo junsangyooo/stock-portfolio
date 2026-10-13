@@ -2,7 +2,7 @@
 
 The query moved to read.py when the corpus moved from per-theme jsonl into
 news.db — every read of that book lives in one module. This stays as the name
-the routers and the quant tools already import.
+the routers and the chat already import.
 """
 from __future__ import annotations
 

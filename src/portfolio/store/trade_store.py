@@ -10,9 +10,6 @@ One recorded trade moves three things in one transaction (ops notes §3.1):
 
 The human book has no plans: what to do about a holding is read off its
 analysis (entry zone, stop, target) on the card, not written down as a note.
-
-quant does not share this: its holdings truth is the broker reconcile
-(execute.reconcile), so a portfolio-only module is the honest place.
 """
 from __future__ import annotations
 

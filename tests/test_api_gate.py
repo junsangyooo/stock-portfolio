@@ -61,80 +61,38 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class TestQuantSessionOnSharedData(unittest.TestCase):
-    """A quant login is a login too: its cookie opens the shared data but
-    never the portfolio ledger. The token '{account}|{issued}|{sig}' names
-    its own account and the signature covers it, so the gate needs no DB."""
+class TestAPinLessAccountIsClosed(unittest.TestCase):
+    """require_account opens a PIN-less account to anyone who passes the gate,
+    so another account's session must not be what opens its ledger — as
+    itself or re-labelled under the PIN-less account's cookie name (tokens
+    are signed per account; the ledger lock is require_account, which is
+    closed while the account has no PIN)."""
 
-    def setUp(self):
-        from src.api.quant import COOKIE_NAME
-        self.c = TestClient(app)
-        self.q = {COOKIE_NAME: security.make_session_token("robo")}
-
-    def test_opens_shared_data(self):
-        for path in ("/api/analysis/summary?symbols=KR:005930",
-                     "/api/universe/search?q=zzz"):
-            r = self.c.get(path, cookies=self.q)
-            self.assertNotEqual(r.status_code, 403, path)
-
-    def test_still_refused_on_the_ledger(self):
-        """Exactly 403 (ops notes §10) — on an account that exists and has a
-        PIN, so a 404 could not stand in for the refusal."""
+    def test_refused_on_a_pin_less_ledger_account(self):
         import tempfile
         from unittest import mock
         from src.portfolio.store import account_store, db as pdb
-        with tempfile.TemporaryDirectory() as tmp, \
-                mock.patch.object(pdb, "DB_PATH", f"{tmp}/portfolio.db"), \
-                mock.patch.object(pdb, "_initialized", False):
-            account_store.create("junisa", "junisa", "GENERAL")
-            account_store.set_pin_hash("junisa", security.hash_pin("junisa", "123456"))
-            r = self.c.get("/api/accounts/junisa", cookies=self.q)
-            self.assertEqual(r.status_code, 403)
-            # and the very same account opens to its own session
-            name, value = (security.COOKIE_PREFIX + "junisa",
-                           security.make_session_token("junisa"))
-            self.assertEqual(self.c.get("/api/accounts/junisa",
-                                        cookies={name: value}).status_code, 200)
-
-    def test_refused_on_a_pin_less_ledger_account_too(self):
-        """require_account opens a PIN-less account to anyone who passes the
-        gate, so the quant token must not be what passes it for /api/accounts."""
-        import tempfile
-        from unittest import mock
-        from src.portfolio.store import account_store, db as pdb
+        c = TestClient(app)
+        other = security.make_session_token("junisa")
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch.object(pdb, "DB_PATH", f"{tmp}/portfolio.db"), \
                 mock.patch.object(pdb, "_initialized", False):
             account_store.create("nopin", "nopin", "GENERAL")
-            # the quant token as itself, and re-labelled as a portfolio cookie
-            # (tokens are not bound to the cookie name — the ledger lock is
-            # require_account, which is closed while the book has no PIN)
-            relabelled = {security.COOKIE_PREFIX + "robo": self.q[next(iter(self.q))]}
-            for cookies in (self.q, relabelled):
+            for cookies in ({security.COOKIE_PREFIX + "junisa": other},
+                            {security.COOKIE_PREFIX + "nopin": other}):
                 for method, path in (("GET", "/api/accounts/nopin"),
                                      ("GET", "/api/accounts/nopin/trades"),
                                      ("POST", "/api/accounts/nopin/holdings")):
-                    r = self.c.request(method, path, cookies=cookies, json={})
+                    r = c.request(method, path, cookies=cookies, json={})
                     self.assertEqual(r.status_code, 403, f"{method} {path}")
             # and auth on it issues nothing
-            r = self.c.post("/api/accounts/nopin/auth", json={"pin": "123456"})
+            r = c.post("/api/accounts/nopin/auth", json={"pin": "123456"})
             self.assertEqual(r.status_code, 403)
             self.assertNotIn(security.COOKIE_PREFIX + "nopin", r.cookies)
             # a PIN is mandatory at creation, so such a row never comes from the API
-            r = self.c.post("/api/accounts", json={"account_id": "x", "name": "x",
-                                                   "account_type": "GENERAL"})
+            r = c.post("/api/accounts", json={"account_id": "x", "name": "x",
+                                              "account_type": "GENERAL"})
             self.assertEqual(r.status_code, 422)
-
-    def test_swapped_account_is_a_forgery(self):
-        from src.api.quant import COOKIE_NAME
-        acct, issued, sig = security.make_session_token("robo").split("|")
-        forged = {COOKIE_NAME: f"junisa|{issued}|{sig}"}
-        r = self.c.get("/api/analysis/summary?symbols=KR:005930", cookies=forged)
-        self.assertEqual(r.status_code, 403)
-        self.assertFalse(security.token_is_valid(f"junisa|{issued}|{sig}"))
-        self.assertTrue(security.token_is_valid(f"{acct}|{issued}|{sig}"))
-        self.assertFalse(security.token_is_valid(None))
-        self.assertFalse(security.token_is_valid("garbage"))
 
 
 class TestTheHumanBookHasNoPlanRoutes(unittest.TestCase):

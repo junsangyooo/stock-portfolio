@@ -1,15 +1,13 @@
 """FastAPI dashboard server for portfolio-dashboard.
 
 Routes:
-  GET /              — landing.html (홈 / 소식) — quant.* host serves /q instead
+  GET /              — landing.html (홈 / 소식)
   GET /a/{id}        — account.html (per-account view)
-  GET /q             — quant.html (auto-trading cockpit)
   GET /favicon*.png · /favicon.ico · /apple-touch-icon.png — product icons
   /api/universe/*    — symbol master search
   /api/accounts/*    — account CRUD + holdings + balances + snapshots + chat
   /api/market/*      — ohlcv + quotes
   /api/analysis/*    — 종합 분석 + 도메인별 facts + news feed
-  /api/quant/*       — auto-trading state, plans, watch, journal
 
 Run:
   python -m src.dashboard_web.server --port 8888 --host 127.0.0.1
@@ -60,29 +58,15 @@ _OPEN_API = {
 }
 
 
-# /api/quant/* is exempt from the aggregate gate below and gated by its own
-# router instead: every route there carries Depends(require_quant), which
-# checks the quant book's OWN cookie and PIN. The aggregate gate only asks
-# "does this request carry some portfolio account session", which is both too
-# weak for the order book and — since the quant cookie is not pdash_a_* —
-# unable to recognise a legitimate quant login at all.
-_SELF_GATED_PREFIX = "/api/quant/"
-
-
 @app.middleware("http")
 async def api_session_gate(request: Request, call_next):
     path = request.url.path
-    if (path.startswith("/api/")
-            and not path.startswith(_SELF_GATED_PREFIX)
-            and (request.method, path) not in _OPEN_API):
+    if path.startswith("/api/") and (request.method, path) not in _OPEN_API:
         is_pin_post = request.method == "POST" and path.endswith("/auth")
-        # A quant login opens the shared data too: its token names its own
-        # account and the HMAC covers it, so no quant.db lookup is needed.
-        # The ledgers stay behind require_account / require_quant, which are
-        # closed while a book has no PIN — a token is never the only lock.
-        has_session = (security.has_any_session(request.cookies)
-                       or security.token_is_valid(request.cookies.get(security.QUANT_COOKIE)))
-        if not is_pin_post and not has_session:
+        # Any account's session opens the shared data. The ledger stays behind
+        # require_account, which is closed while an account has no PIN — a
+        # token is never the only lock.
+        if not is_pin_post and not security.has_any_session(request.cookies):
             return JSONResponse({"detail": "PIN required"}, status_code=403)
     return await call_next(request)
 
@@ -260,80 +244,41 @@ def _inject_head(body: str, tag: str) -> str:
     return body[:at] + "\n" + tag + body[at:]
 
 
-def _serve(name: str, extra_tag: str = "") -> HTMLResponse:
+def _serve(name: str) -> HTMLResponse:
     try:
         body = _read(STATIC / name)
     except OSError:
         body = f"<h1>{name} missing</h1>"
-    # <head> order: icons → theme tokens → shared.css → shared.js → extra →
-    # the page's own <style>/<script>. CSS arriving first lets page rules
+    # <head> order: icons → theme tokens → shared.css → shared.js → the
+    # page's own <style>/<script>. CSS arriving first lets page rules
     # override it (the cascade); JS arriving first is why the fragment exports
     # one namespace (window.S) instead of globals a page could shadow.
-    tags = [_ICON_LINKS, _theme_style_tag(), _shared_css_tag(), _shared_js_tag(), extra_tag]
-    return _html(_inject_head(body, "\n".join(t for t in tags if t)))
+    tags = [_ICON_LINKS, _theme_style_tag(), _shared_css_tag(), _shared_js_tag()]
+    return _html(_inject_head(body, "\n".join(tags)))
 
 
-# quant.jsyoo.dev and portfolio.jsyoo.dev are the same app behind the same
-# nginx block; only the Host header separates them. Session cookies are
-# host-only, so the quant origin has its own login — a portfolio session
-# cannot reach the order book, and vice versa.
-_QUANT_HOST_RE = re.compile(r"^quant\b", re.IGNORECASE)
 _PORTFOLIO_HOST_RE = re.compile(r"^portfolio\b", re.IGNORECASE)
-
-
-def _is_quant_host(request: Request) -> bool:
-    return bool(_QUANT_HOST_RE.match(request.headers.get("host", "")))
 
 
 def _is_portfolio_host(request: Request) -> bool:
     return bool(_PORTFOLIO_HOST_RE.match(request.headers.get("host", "")))
 
 
-# Page routes refuse the *other* product's public host with a 404 — never a
-# redirect, which would itself be a path between the two products. It is a
-# deny-list, not an allow-list: a host that is neither public origin (laptop,
-# Oracle shell, the deploy health check) reaches every page.
 @app.get("/", response_class=HTMLResponse)
-def landing(request: Request) -> HTMLResponse:
-    if _is_quant_host(request):
-        return _serve_quant()
+def landing() -> HTMLResponse:
     return _serve("landing.html")
 
 
-@app.get("/q", response_class=HTMLResponse)
-def quant_page(request: Request) -> HTMLResponse:
-    if _is_portfolio_host(request):
-        raise HTTPException(status_code=404)
-    return _serve_quant()
-
-
-def _serve_quant() -> HTMLResponse:
-    """The page is bound to one account, and a fresh browser has no cookie to
-    learn which — so the id is injected here rather than opening a public
-    endpoint just to name it."""
-    from src.quant import store as qstore
-    try:
-        account_id = qstore.primary_account_id() or ""
-    except Exception as exc:  # noqa: BLE001 — an unreachable DB is not a 500 page
-        logging.error("quant account lookup failed: %s", exc)
-        account_id = ""
-    return _serve("quant.html",
-                  f'<script>window.QUANT_ACCOUNT = {json.dumps(account_id)};</script>')
-
-
 @app.get("/a/{account_id}", response_class=HTMLResponse)
-def account_page(request: Request, account_id: str) -> HTMLResponse:
-    if _is_quant_host(request):
-        raise HTTPException(status_code=404)
+def account_page(account_id: str) -> HTMLResponse:
     # account_id is read by the page's JS from window.location.pathname,
     # so the server just hands over the same shell for every account.
     return _serve("account.html")
 
 
-# The Host gate and unknown page paths answer with a page, not FastAPI's
-# JSON string — a person typed that URL. It names only the requesting host's
-# own product (no path to the other one, per the cross-link invariant) and
-# is styled from the same theme tokens. /api/* keeps the JSON body.
+# Unknown page paths answer with a page, not FastAPI's JSON string — a person
+# typed that URL. It carries the product's wordmark on the public host and is
+# styled from the same theme tokens. /api/* keeps the JSON body.
 _NOT_FOUND_HTML = """<!doctype html>
 <html lang="ko">
 <head>
@@ -362,8 +307,7 @@ p { color: var(--muted); margin: 0; font-size: 13px; }
 def not_found(request: Request, exc: Exception):
     if request.url.path.startswith("/api/"):
         return JSONResponse({"detail": getattr(exc, "detail", "Not Found")}, status_code=404)
-    mark = ("◆ QUANT" if _is_quant_host(request)
-            else "◆ PORTFOLIO" if _is_portfolio_host(request) else "")
+    mark = "◆ PORTFOLIO" if _is_portfolio_host(request) else ""
     body = _NOT_FOUND_HTML.replace("__MARK__", mark)
     return _html(_inject_head(body, _theme_style_tag()), status_code=404)
 

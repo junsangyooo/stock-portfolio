@@ -1,6 +1,6 @@
 """Weekday-rotating SQLite backups — `VACUUM INTO`, WAL-safe.
 
-    data/backup/{portfolio,quant,news}.db.{mon..sun}
+    data/backup/{portfolio,news}.db.{mon..sun}
     data/backup/market.db.latest            # one slot, overwritten daily
 
 market.db is regenerable but a 737MB recollection takes a day, so it gets a
@@ -11,13 +11,13 @@ least one table — a 0-byte source "vacuums" into an empty db), then renamed
 over the slot. A failure on one book does not stop the others; the run still
 raises at the end, because a silent backup failure is no backup.
 
-    python -m src.core.backup [--only portfolio quant news market]
+    python -m src.core.backup [--only portfolio news market]
 
-Restore (example: quant, Monday's copy):
+Restore (example: portfolio, Monday's copy):
 
     sudo systemctl stop dashboard.service
-    cp data/backup/quant.db.mon data/quant.db
-    rm -f data/quant.db-wal data/quant.db-shm
+    cp data/backup/portfolio.db.mon data/portfolio.db
+    rm -f data/portfolio.db-wal data/portfolio.db-shm
     sudo systemctl start dashboard.service
 """
 from __future__ import annotations
@@ -36,7 +36,6 @@ from . import kst, paths
 def _books() -> dict[str, Path]:
     # Read at call time so tests can redirect core.paths.
     return {"portfolio": paths.DB_PATH,
-            "quant": paths.QUANT_DB_PATH,
             "news": paths.NEWS_DB_PATH,
             "market": paths.MARKET_DB_PATH}
 

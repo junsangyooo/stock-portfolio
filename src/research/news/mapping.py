@@ -7,7 +7,7 @@ Two paths:
 Called from the holdings API when a newly-added symbol has no mapping yet.
 
 Results persist to market.db ``symbol_themes`` (relation primary|related) —
-the symbol book, so both account books read the same mapping.
+the symbol book, so every account reads the same mapping.
 """
 from __future__ import annotations
 
@@ -128,9 +128,9 @@ def ensure_theme_mapping(symbol_id: str) -> None:
     LLM tag. Collection itself does not depend on this — every field is always
     collected — but the mapping is what connects a symbol to its field's news.
 
-    Lives here, not in a router, because both books call it: portfolio when a
-    holding is added, quant when a position opens or a symbol is watched. The
-    mapping itself is stored per-symbol in market.db, so neither book owns it.
+    Lives here, not in a router: the holdings API calls it when a holding is
+    added, and the mapping itself is stored per-symbol in market.db, so no
+    account book owns it.
     """
     from ...core.paths import split_symbol
     from ...market.store import theme_store

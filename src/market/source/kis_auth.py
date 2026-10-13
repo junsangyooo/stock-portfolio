@@ -1,8 +1,7 @@
 """KIS OpenAPI auth + shared request plumbing.
 
-Sole remaining consumer: `us_screener.screen` (US 조건검색), which Toss has no
-equivalent for. Trading, balances and quotes moved to `toss.py`; the KIS
-account is kept alive for the screener alone.
+Sole consumer: `us_screener.screen` (US 조건검색), which Toss has no
+equivalent for. The KIS account is kept alive for the screener alone.
 
 Credentials come from the environment (systemd EnvironmentFile / cron sourcing
 ~/dotclaude/secrets/.env), falling back to parsing that file directly for

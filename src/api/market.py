@@ -21,14 +21,12 @@ _INTRADAY = {"1m": ("5d", "1m"), "5m": ("60d", "5m"),
 
 @router.post("/refresh")
 def refresh_all() -> dict:
-    """Gap-fill OHLCV + warm quotes for every symbol the HUMAN book holds.
+    """Gap-fill OHLCV + warm quotes for every symbol portfolio.db holds.
 
-    This is the ↻ button behind account.html, so it covers portfolio.db —
-    every account of it, not just the visible one, because market data is
-    per-symbol and account-agnostic (§1 단일 진실). It is not "every account
-    in the system": the auto book supplies its own symbols the same way the
-    shared batches get theirs (§4), from src/quant/cycle_job.py phase [0].
-    No require_account: nothing account-specific is returned.
+    This is the ↻ button behind account.html, so it covers every account of
+    the book, not just the visible one, because market data is per-symbol and
+    account-agnostic (§1 단일 진실). No require_account: nothing
+    account-specific is returned.
     """
     from ..portfolio.store.db import connect
     with connect() as conn:

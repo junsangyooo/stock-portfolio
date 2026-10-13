@@ -1,21 +1,16 @@
 """SQLite for the human accounts — data/portfolio.db.
 
 The ledger itself (accounts, holdings, trades, cash, snapshots, plans, watch)
-is defined once in src/ledger and applied here; this file only adds what is
-specific to this book. The human book keeps no plans — the `plans` table
-exists because the ledger is one definition, and stays empty here.
+is defined in src/ledger and applied here; this file only adds what is
+specific to this book. The human book keeps no plans — the `plans` table is
+part of the ledger definition and stays empty here.
 
   chat_sessions   per-account chat threads + their transcript
-
-The auto-trading book is NOT here — it has its own file, data/quant.db
-(src/quant/db.py), built from the same ledger. Ownership is the axis: a
-migration on one cannot touch the other, and quant's journal does not share a
-file with a static human record set.
 
 Symbol master lives in data/universe/*.json (too volatile for SQLite, loaded
 into memory by src/universe). Everything true about a *symbol* — bars,
 statements, valuation, sector, ETF facts, theme membership — lives in
-data/market.db, shared with the quant book.
+data/market.db.
 """
 from __future__ import annotations
 

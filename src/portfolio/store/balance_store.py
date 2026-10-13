@@ -1,6 +1,6 @@
 """cash (account_id, currency) — 예수금.
 
-The table is `cash` in both books; it was `balances` here until the
+The table is `cash` (src/ledger); it was `balances` here until the
 ledger was unified. The module keeps its name because callers say
 "balance" for the amount.
 """

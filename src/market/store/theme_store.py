@@ -1,12 +1,11 @@
 """Symbol → theme membership — data/market.db, table `symbol_themes`.
 
-Theme membership is a property of the symbol, not of an account: two books
-hold the same stock and it is in the same themes for both. It used to live in
-portfolio.db as `holding_themes`, which meant quant.db's symbols had to be
-read out of the other file and spliced into an IN clause to be seen at all.
+Theme membership is a property of the symbol, not of an account: two
+accounts hold the same stock and it is in the same themes for both. It used to
+live in portfolio.db as `holding_themes`.
 
 Written by src/research/news/mapping.py (ETF name rule / one LLM tagging call),
-read by the news agents, the account page and the quant brief.
+read by the news agents and the account page.
 """
 from __future__ import annotations
 

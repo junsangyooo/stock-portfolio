@@ -12,7 +12,6 @@ import sys
 import pytest
 
 from src.portfolio import jobs as pjobs
-from src.quant import jobs as qjobs
 from src.research import analyze, verdict_job
 
 
@@ -31,35 +30,11 @@ def seen_due(monkeypatch):
 
 
 @pytest.fixture
-def quant_book(monkeypatch):
-    monkeypatch.setattr(qjobs, "account_ids", lambda: ["robo", "robo_paper"])
-    monkeypatch.setattr(qjobs, "active_markets", lambda a: {"KR", "US"})
-    monkeypatch.setattr(qjobs, "analysis_symbols",
-                        lambda a: ["KR:HELD", "KR:PLANNED"] if a == "robo"
-                        else ["KR:PLANNED"])
-    monkeypatch.setattr(qjobs, "tracked_symbols",
-                        lambda a: ["KR:HELD", "KR:PLANNED", "KR:WATCHED"])
-
-
-@pytest.fixture
 def human_book(monkeypatch):
     monkeypatch.setattr(pjobs, "all_symbol_ids", lambda: ["KR:HELD"])
 
 
 # ── who gets a model call ───────────────────────────────────────────────────
-
-def test_quant_analyzes_every_held_and_planned_symbol_daily_at_full_budget(
-        quant_book, seen_due):
-    """A quant plan is an order nobody reads first: no change trigger decides
-    whether its analysis is redone, and none of it runs at the cheap budget."""
-    assert qjobs.to_analyze() == ["KR:HELD", "KR:PLANNED"]   # no KR:WATCHED
-    assert seen_due == {}
-
-
-def test_a_disabled_market_is_not_analyzed(quant_book, monkeypatch):
-    monkeypatch.setattr(qjobs, "active_markets", lambda a: {"US"})
-    assert qjobs.to_analyze() == []
-
 
 def test_the_human_analysis_set_is_held_and_changed(human_book, seen_due):
     assert pjobs.to_analyze() == ["KR:HELD"]
@@ -82,25 +57,17 @@ def _capture(monkeypatch, mod):
     return calls
 
 
-def test_market_data_still_covers_everything_tracked(monkeypatch, quant_book):
+def test_market_data_still_covers_every_held_symbol(monkeypatch, seen_due):
     """Only the model call is narrowed. Swapping these lists would quietly
-    stop collecting bars for symbols the book still watches."""
-    calls = _capture(monkeypatch, qjobs)
+    stop collecting bars for symbols the book still holds."""
+    monkeypatch.setattr(pjobs, "all_symbol_ids", lambda: ["KR:CHANGED", "KR:QUIET"])
+    calls = _capture(monkeypatch, pjobs)
     monkeypatch.setattr(sys, "argv", ["jobs", "all"])
-    qjobs.main()
-    by = {m: (s, e) for m, s, e in calls}
-    assert by["src.market.pipeline.fundamental_job"][0] == [
-        "KR:HELD", "KR:PLANNED", "KR:WATCHED"]
-    assert by["src.market.pipeline.etf_job"][0] == by[
-        "src.market.pipeline.fundamental_job"][0]
-    assert by["src.research.verdict_job"][0] == ["KR:HELD", "KR:PLANNED"]
-
-
-def test_the_quant_analysis_job_runs_at_the_full_budget(monkeypatch, quant_book):
-    calls = _capture(monkeypatch, qjobs)
-    monkeypatch.setattr(sys, "argv", ["jobs", "analysis"])
-    qjobs.main()
-    assert "--effort" not in calls[0][2]
+    pjobs.main()
+    by = {m: s for m, s, e in calls}
+    assert by["src.market.pipeline.fundamental_job"] == ["KR:CHANGED", "KR:QUIET"]
+    assert by["src.market.pipeline.etf_job"] == by["src.market.pipeline.fundamental_job"]
+    assert by["src.research.verdict_job"] == ["KR:CHANGED"]   # what the selector kept
 
 
 def test_the_human_book_runs_at_its_budget_with_nothing_hot(monkeypatch, human_book,

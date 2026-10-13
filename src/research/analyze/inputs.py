@@ -17,8 +17,9 @@ through, say, the chart reference.
 
 Nothing here knows about an account. The analysis is about the symbol — what
 it is worth doing about it depends on what you hold and at what price, and
-that is a question for whichever book is asking. Keeping positions out is what
-lets one stored result serve both books instead of forking per account.
+that is a question for whichever account is asking. Keeping positions out is
+what lets one stored result serve every account instead of forking per
+account.
 """
 from __future__ import annotations
 

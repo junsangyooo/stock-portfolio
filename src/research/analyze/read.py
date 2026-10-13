@@ -7,7 +7,7 @@ works this way (research/news/read.py) and seven call sites go through it.
 
 Results live at data/analysis/analysis/{SYMBOL}/{YYYYMMDD}.json, one per
 symbol per day, written by verdict.persist. Nothing here knows about an
-account: the same stored result serves both books.
+account: the same stored result serves every account.
 """
 from __future__ import annotations
 

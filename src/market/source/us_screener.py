@@ -3,14 +3,11 @@
 Toss has rankings (거래대금·거래량·등락률 상위) but no conditional screener:
 there is no way to ask it for "NASDAQ, PER under 15, market cap over $2B".
 KIS answers exactly that question, so the KIS account stays alive for this
-one endpoint and nothing else. Orders, balances, quotes and 수급 all moved to
-`broker/toss.py`; `broker/auth.py` survives only to sign these requests.
+one endpoint and nothing else; `kis_auth` signs these requests.
 
-The rest of the old KIS trading code lives in archive/quant/broker/.
-
-It sat under quant/broker/ while KIS was the broker. It is not an account
-concern — "NASDAQ, PER under 15" is a question about the market — and leaving
-it there meant the shared research layer had to import quant to ask it.
+It is not an account concern — "NASDAQ, PER under 15" is a question about
+the market — so it lives in the market layer, where research can ask it
+without importing an app.
 """
 from __future__ import annotations
 

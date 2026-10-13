@@ -126,8 +126,8 @@ button { min-height: 24px; min-width: 24px; }
 .s-btn.danger:hover { background: var(--red); color: var(--bg); }
 @media (pointer: coarse) { .s-btn { min-height: 44px; } }
 
-/* ── news card (S.newsCard / S.newsGrid) — landing and quant render the
-      same DOM, so they get the same rules. Default (phones) is a dense scan
+/* ── news card (S.newsCard / S.newsGrid) — the shared builder's DOM gets
+      shared rules. Default (phones) is a dense scan
       list, ~6-8 rows per screen; from 600px it becomes the 2-column card
       grid. ── */
 .news-grid { display:grid; grid-template-columns:1fr; gap:0; }
@@ -209,8 +209,8 @@ button { min-height: 24px; min-width: 24px; }
   .news-meta .imp-m { display:none; }
 }
 
-/* ── holdings card — the grammar portfolio and quant both use. The CSS is
-      shared; each page keeps its own builder (tools and badges differ). ── */
+/* ── holdings card — account.html's card grammar. The CSS sits in the
+      shared floor; the page keeps its own builder. ── */
 /* STOCK CARD GRID */
 .stock-grid {
   display: grid;
