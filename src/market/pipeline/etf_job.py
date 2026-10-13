@@ -21,14 +21,16 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
 
-from ...core.kst import KST as _KST
-
+from ...core import kst
+from ...core.paths import split_symbol
 from ..source import naver_etf_source
 from ..store import etf_store
 from ...universe import search as uni_search
 
+
+def _summary(total: int, ok: int, results: list) -> dict:
+    return {"date": kst.today(), "total": total, "ok": ok, "results": results}
 
 
 def run(symbols) -> dict:
@@ -41,21 +43,18 @@ def run(symbols) -> dict:
     symbols = [s for s in symbols
                if (uni_search.get(s) or {}).get("is_etf")]
     if not symbols:
-        return {"date": datetime.now(_KST).strftime("%Y-%m-%d"),
-                "total": 0, "ok": 0, "results": []}
+        return _summary(0, 0, [])
 
     # one fetch covers them all — Naver returns the full ETF list.
     all_items = naver_etf_source.fetch_all()
     if not all_items:
-        return {"date": datetime.now(_KST).strftime("%Y-%m-%d"),
-                "total": len(symbols), "ok": 0,
-                "results": [{"symbol_id": s, "fatal": "naver fetch failed"}
-                            for s in symbols]}
+        return _summary(len(symbols), 0,
+                        [{"symbol_id": s, "fatal": "naver fetch failed"}
+                         for s in symbols])
 
     results, ok = [], 0
     for sid in symbols:
-        _, code = sid.split(":", 1)
-        item = all_items.get(code)
+        item = all_items.get(split_symbol(sid)[1])
         if not item:
             results.append({"symbol_id": sid, "fatal": "not in Naver ETF list"})
             continue
@@ -68,8 +67,7 @@ def run(symbols) -> dict:
             ok += 1
         except Exception as e:  # noqa: BLE001 — per-symbol non-fatal
             results.append({"symbol_id": sid, "fatal": str(e)[:200]})
-    return {"date": datetime.now(_KST).strftime("%Y-%m-%d"),
-            "total": len(symbols), "ok": ok, "results": results}
+    return _summary(len(symbols), ok, results)
 
 
 def main() -> int:

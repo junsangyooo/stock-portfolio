@@ -15,12 +15,12 @@ for weeks exactly because of silent empties).
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pandas as pd
 from pykrx import stock as pkx  # type: ignore
 
-from ...core.kst import KST
+from ...core import kst
 from ...core.paths import MARKET_DIR
 
 log = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ def _try_day(ymd: str) -> pd.DataFrame | None:
 
 def load() -> tuple[str, pd.DataFrame]:
     """Latest trading day's factor table, cached. Returns (yyyymmdd, df)."""
-    today = datetime.now(KST)
+    today = kst.now()
     for back in range(8):
         ymd = (today - timedelta(days=back)).strftime("%Y%m%d")
         path = SCREENER_DIR / f"{ymd}.parquet"

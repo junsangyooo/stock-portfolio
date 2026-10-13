@@ -40,18 +40,13 @@ def write(symbol_id: str, bars: Iterable[OHLCVBar]) -> int:
 
 def read(symbol_id: str, n: int = 0) -> pd.DataFrame:
     """Ascending daily bars; `n` > 0 keeps only the most recent n."""
+    sql = f"SELECT {', '.join(COLS)} FROM ohlcv WHERE symbol_id = ? ORDER BY ts"
     with connect() as c:
         if n > 0:
             # newest n, then flip back to ascending
-            rows = c.execute(
-                "SELECT ts, open, high, low, close, volume FROM ohlcv "
-                "WHERE symbol_id = ? ORDER BY ts DESC LIMIT ?",
-                (symbol_id, n)).fetchall()
-            rows = rows[::-1]
+            rows = c.execute(sql + " DESC LIMIT ?", (symbol_id, n)).fetchall()[::-1]
         else:
-            rows = c.execute(
-                "SELECT ts, open, high, low, close, volume FROM ohlcv "
-                "WHERE symbol_id = ? ORDER BY ts", (symbol_id,)).fetchall()
+            rows = c.execute(sql, (symbol_id,)).fetchall()
     if not rows:
         return pd.DataFrame(columns=COLS)
     df = pd.DataFrame([tuple(r) for r in rows], columns=COLS)

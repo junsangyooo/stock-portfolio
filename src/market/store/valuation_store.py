@@ -19,6 +19,7 @@ from .db import connect
 COLS = ["ts", "per", "pbr", "psr", "eps", "bps", "dps", "div_yield",
         "market_cap"]
 _VAL_COLS = COLS[1:]
+_SELECT = ", ".join(COLS)
 
 
 def write(symbol_id: str, points: Iterable[ValuationPoint]) -> int:
@@ -28,8 +29,8 @@ def write(symbol_id: str, points: Iterable[ValuationPoint]) -> int:
         return 0
     # Later duplicates within one batch win, matching the old concat+keep=last.
     by_ts = {int(p.ts): p for p in points}
+    marks = ",".join("?" * len(by_ts))
     with connect() as c:
-        marks = ",".join("?" * len(by_ts))
         existing = {r[0] for r in c.execute(
             f"SELECT ts FROM valuation WHERE symbol_id = ? AND ts IN ({marks})",
             [symbol_id, *by_ts]).fetchall()}
@@ -48,16 +49,12 @@ def write(symbol_id: str, points: Iterable[ValuationPoint]) -> int:
 
 
 def read(symbol_id: str, n: int = 0) -> pd.DataFrame:
-    cols = ", ".join(COLS)
+    sql = f"SELECT {_SELECT} FROM valuation WHERE symbol_id = ? ORDER BY ts"
     with connect() as c:
         if n > 0:
-            rows = c.execute(
-                f"SELECT {cols} FROM valuation WHERE symbol_id = ? "
-                "ORDER BY ts DESC LIMIT ?", (symbol_id, n)).fetchall()[::-1]
+            rows = c.execute(sql + " DESC LIMIT ?", (symbol_id, n)).fetchall()[::-1]
         else:
-            rows = c.execute(
-                f"SELECT {cols} FROM valuation WHERE symbol_id = ? ORDER BY ts",
-                (symbol_id,)).fetchall()
+            rows = c.execute(sql, (symbol_id,)).fetchall()
     if not rows:
         return pd.DataFrame(columns=COLS)
     df = pd.DataFrame([tuple(r) for r in rows], columns=COLS)
@@ -68,10 +65,9 @@ def read(symbol_id: str, n: int = 0) -> pd.DataFrame:
 
 def latest(symbol_id: str) -> dict:
     """Most recent valuation row as a dict (or empty dict)."""
-    cols = ", ".join(COLS)
     with connect() as c:
         row = c.execute(
-            f"SELECT {cols} FROM valuation WHERE symbol_id = ? "
+            f"SELECT {_SELECT} FROM valuation WHERE symbol_id = ? "
             "ORDER BY ts DESC LIMIT 1", (symbol_id,)).fetchone()
     if row is None:
         return {}

@@ -49,14 +49,10 @@ def screen(exchange: str, filters: dict, limit: int = 30) -> dict:
         params[f"CO_EN_{stem}"] = str(int((hi if hi is not None else 999999999) * scale))
     data = call("/uapi/overseas-price/v1/quotations/inquire-search",
                 "HHDFS76410000", params=params)
-    rows = None
-    for k in ("output2", "output1", "output"):
-        v = data.get(k)
-        if isinstance(v, list) and v:
-            rows = v
-            break
+    rows = next((v for k in ("output2", "output1", "output")
+                 if isinstance(v := data.get(k), list) and v), [])
     out = []
-    for r in rows or []:
+    for r in rows:
         sym = r.get("symb") or r.get("rsym", "")[-6:].strip()
         if not sym:
             continue

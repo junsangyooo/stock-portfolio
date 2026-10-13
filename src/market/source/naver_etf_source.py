@@ -56,23 +56,12 @@ def fetch_all(timeout: float = 12.0) -> dict[str, dict]:
     # back mojibake — we keep them anyway (yf_ticker resolves the canonical
     # name via universe/search later, so the name here is just diagnostic).
     try:
-        body = raw.decode("euc-kr")
-    except UnicodeDecodeError:
-        body = raw.decode("euc-kr", errors="replace")
-
-    try:
-        doc = json.loads(body)
+        doc = json.loads(raw.decode("euc-kr", errors="replace"))
     except json.JSONDecodeError:
         return {}
 
     items = doc.get("result", {}).get("etfItemList", []) or []
-    out: dict[str, dict] = {}
-    for it in items:
-        code = it.get("itemcode")
-        if not code:
-            continue
-        out[code] = it
-    return out
+    return {it["itemcode"]: it for it in items if it.get("itemcode")}
 
 
 def shape(item: dict) -> dict:
@@ -91,11 +80,9 @@ def shape(item: dict) -> dict:
         except (TypeError, ValueError):
             return None
 
-    now = _f("nowVal")
-    nav = _f("nav")
-    premium_pct: Optional[float] = None
-    if now is not None and nav and nav > 0:
-        premium_pct = round((now - nav) / nav * 100.0, 3)
+    now, nav = _f("nowVal"), _f("nav")
+    premium_pct = (round((now - nav) / nav * 100.0, 3)
+                   if now is not None and nav and nav > 0 else None)
 
     tab = item.get("etfTabCode")
     try:
@@ -114,7 +101,7 @@ def shape(item: dict) -> dict:
         "aum_eokwon": _f("marketSum"),                 # 시가총액(억원) ≈ 운용자산
         "volume": _f("quant"),
         "value_mwon": _f("amonut"),                    # 거래대금(백만원)
-        "category": _TAB_LABEL.get(tab_i, None) if tab_i else None,
+        "category": _TAB_LABEL.get(tab_i),
         "tab_code": tab_i,
         "source": "naver",
     }

@@ -30,7 +30,8 @@ API key: env DART_API_KEY (or DART_PERSONAL_API_KEY); falls back to parsing
 from __future__ import annotations
 
 import json
-from typing import Dict, List, Optional
+from datetime import date
+from typing import Dict, Iterable, List, Optional
 
 from .base import FinancialRow
 from ...core import secrets
@@ -77,6 +78,25 @@ def _parse_amount(raw) -> Optional[float]:
         return float(s)
     except ValueError:
         return None
+
+
+def match_accounts(entries: Iterable) -> Dict[str, float]:
+    """Run _ACCOUNT_RULES over one statement's rows (dict-likes carrying
+    sj_div / account_nm / thstrm_amount) → {field: amount}. Shared by the
+    per-symbol finstate_all parse and the bulk fnlttMultiAcnt backfill."""
+    fields: Dict[str, float] = {}
+    for r in entries:
+        sj = str(r.get("sj_div") or "").strip()
+        name = str(r.get("account_nm") or "").strip()
+        amount = _parse_amount(r.get("thstrm_amount"))
+        if amount is None:
+            continue
+        for sj_set, field, subs in _ACCOUNT_RULES:
+            if field in fields or sj not in sj_set:
+                continue
+            if any(sub in name for sub in subs):
+                fields[field] = amount
+    return fields
 
 
 _CF_FIELDS = ("operating_cf", "investing_cf", "financing_cf")
@@ -184,8 +204,7 @@ class DartSource:
         market, code = split_symbol(symbol_id)
         if market != "KR":
             return []
-        import datetime as _dt
-        this_year = _dt.date.today().year
+        this_year = date.today().year
         rows: List[FinancialRow] = []
         for year in range(this_year, this_year - years - 1, -1):
             for reprt in REPRT_ORDER:
@@ -203,8 +222,7 @@ class DartSource:
         market, code = split_symbol(symbol_id)
         if market != "KR":
             return None
-        import datetime as _dt
-        last_fy = _dt.date.today().year - 1
+        last_fy = date.today().year - 1
         for year in range(last_fy, last_fy - 3, -1):
             try:
                 df = self._client().report(code, "배당", year,
@@ -238,18 +256,7 @@ class DartSource:
     def _parse(self, df, year: int, reprt: str,
                fs_div: str = "CFS") -> Optional[FinancialRow]:
         """Map a finstate_all DataFrame → one FinancialRow via account names."""
-        fields: Dict[str, Optional[float]] = {}
-        for _, r in df.iterrows():
-            sj = str(r.get("sj_div") or "").strip()
-            name = str(r.get("account_nm") or "").strip()
-            amount = _parse_amount(r.get("thstrm_amount"))
-            if amount is None:
-                continue
-            for sj_set, field, subs in _ACCOUNT_RULES:
-                if field in fields or sj not in sj_set:
-                    continue
-                if any(sub in name for sub in subs):
-                    fields[field] = amount
+        fields = match_accounts(r for _, r in df.iterrows())
         if not fields:
             return None
         return FinancialRow(

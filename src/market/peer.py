@@ -30,7 +30,6 @@ _METRICS = ("per", "pbr", "psr", "div_yield", "market_cap")
 # the caller is told which direction "high" means.
 _LOWER_IS_CHEAPER = {"per", "pbr", "psr"}
 
-
 _STALE_DAYS = 45          # a peer whose last valuation is older than this is out
 
 

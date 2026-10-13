@@ -82,8 +82,6 @@ def get(symbol_id: str, *, max_age_s: int = 0) -> Optional[Quote]:
     with _lock:
         _load_disk()
         q = _cache.get(symbol_id)
-        if q is None:
-            return None
-        if max_age_s > 0 and (time.time() - q.ts) > max_age_s:
+        if q is not None and max_age_s > 0 and time.time() - q.ts > max_age_s:
             return None
         return q

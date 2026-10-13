@@ -18,13 +18,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
-
-from ...core.kst import KST as _KST
 from typing import Optional
 
+from ...core import kst
 from . import fundamental_backfill
-
 
 
 def _refresh_sector(sid: str) -> Optional[str]:
@@ -32,8 +29,7 @@ def _refresh_sector(sid: str) -> Optional[str]:
     returns the resolved sector (or None) and never raises."""
     from ..store import sector_store
     if sector_store.is_fresh(sid):
-        rec = sector_store.read(sid) or {}
-        return rec.get("sector")
+        return (sector_store.read(sid) or {}).get("sector")
     try:
         from ..source import sector_source
         tag = sector_source.fetch(sid)
@@ -60,7 +56,7 @@ def run(symbols, years: int = 4) -> dict:
             ok += 1
         except Exception as e:  # noqa: BLE001 — keep going, report per-symbol
             results.append({"symbol_id": sid, "fatal": str(e)[:200]})
-    return {"date": datetime.now(_KST).strftime("%Y-%m-%d"),
+    return {"date": kst.today(),
             "total": len(symbols), "ok": ok, "results": results}
 
 

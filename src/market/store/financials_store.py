@@ -47,7 +47,7 @@ def write(symbol_id: str, rows: Iterable[FinancialRow],
     rows = list(rows)
     if not rows:
         return 0
-    by_period = {r.period: r for r in rows}
+    by_period = {r.period: asdict(r) for r in rows}
     placeholders = ",".join(["?"] * (len(COLS) + 2))  # + symbol_id, filed_at
     # A batch that does not know the filing date must not erase one we already
     # have: the daily backfill passes None, so `filed_at=excluded.filed_at`
@@ -55,8 +55,8 @@ def write(symbol_id: str, rows: Iterable[FinancialRow],
     updates = ", ".join(
         [f"{c}=excluded.{c}" for c in COLS[1:]]
         + ["filed_at=COALESCE(excluded.filed_at, financials.filed_at)"])
+    marks = ",".join("?" * len(by_period))
     with connect() as c:
-        marks = ",".join("?" * len(by_period))
         existing = {r[0] for r in c.execute(
             f"SELECT period FROM financials WHERE symbol_id = ? "
             f"AND period IN ({marks})", [symbol_id, *by_period]).fetchall()}
@@ -64,8 +64,8 @@ def write(symbol_id: str, rows: Iterable[FinancialRow],
             f"INSERT INTO financials (symbol_id, {', '.join(COLS)}, filed_at) "
             f"VALUES ({placeholders}) "
             f"ON CONFLICT(symbol_id, period) DO UPDATE SET {updates}",
-            [(symbol_id, *[asdict(r)[k] for k in COLS], filed_at)
-             for r in by_period.values()],
+            [(symbol_id, *[d[k] for k in COLS], filed_at)
+             for d in by_period.values()],
         )
         c.commit()
     return len(by_period) - len(existing)
@@ -87,20 +87,13 @@ def read(symbol_id: str, n: int = 0) -> pd.DataFrame:
     return df
 
 
-def _row_to_dict(row) -> dict:
-    out = {}
-    for c in COLS:
-        v = row[c]
-        if c in NUMERIC:
-            out[c] = None if pd.isna(v) else float(v)
-        else:
-            out[c] = None if pd.isna(v) else str(v)
-    return out
+_NUMERIC = set(NUMERIC)
 
 
 def rows_as_dicts(symbol_id: str, n: int = 0) -> List[dict]:
-    df = read(symbol_id, n=n)
-    return [_row_to_dict(df.iloc[i]) for i in range(len(df))]
+    return [{c: None if pd.isna(v) else (float(v) if c in _NUMERIC else str(v))
+             for c, v in row.items()}
+            for row in read(symbol_id, n=n).to_dict("records")]
 
 
 def latest_filed_at(symbol_ids: Iterable[str]) -> dict:
@@ -121,5 +114,3 @@ def latest_filed_at(symbol_ids: Iterable[str]) -> dict:
             "WHERE filed_at IS NOT NULL AND symbol_id IN (" + marks + ") "
             "GROUP BY symbol_id", ids).fetchall()
     return {str(sid): str(f) for sid, f in rows if f}
-
-

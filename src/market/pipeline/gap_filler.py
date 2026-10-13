@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-
-from ...core.kst import KST
 from typing import Iterable
 
+from ...core import kst
+from ...core.kst import KST
 from ..source.registry import for_symbol
 from ..store import ohlcv_store
-
 
 
 def _ymd(d: datetime) -> str:
@@ -20,7 +19,7 @@ def fill_one(symbol_id: str) -> int:
     if src is None:
         return 0
     last = ohlcv_store.last_ts(symbol_id)
-    today = datetime.now(KST)
+    today = kst.now()
     if last <= 0:
         start = today - timedelta(days=365 * 3 + 10)
     else:

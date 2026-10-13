@@ -11,7 +11,6 @@ Idempotent: stores append/upsert and dedup. Safe to call repeatedly.
 from __future__ import annotations
 
 import logging
-
 import sys
 from typing import List
 
@@ -20,12 +19,10 @@ from ..store import valuation_store, financials_store, ohlcv_store
 from .. import kr_valuation, fundamental_metrics
 from ...core.paths import split_symbol
 
+log = logging.getLogger(__name__)
 
 _yf = YFinanceSource()
 _dart = None  # lazy: only constructed when a KR symbol needs DART
-
-
-log = logging.getLogger(__name__)
 
 
 def _dart_source():
@@ -45,8 +42,7 @@ def valuation(symbol_id: str, n: int = 760) -> int:
     market, _ = split_symbol(symbol_id)
     rows = financials_store.rows_as_dicts(symbol_id)
     df = ohlcv_store.read(symbol_id, n=n)
-    closes = ([] if df.empty else
-              [(int(r.ts), float(r.close)) for r in df.itertuples(index=False)])
+    closes = [(int(r.ts), float(r.close)) for r in df.itertuples(index=False)]
     if market == "KR":
         if not rows or not closes:
             return 0
@@ -112,8 +108,7 @@ def _is_etf(symbol_id: str) -> bool:
     the fundamental backfill. The etf_job covers them with NAV/AUM snapshots."""
     try:
         from ...universe import search as uni_search
-        rec = uni_search.get(symbol_id) or {}
-        return bool(rec.get("is_etf"))
+        return bool((uni_search.get(symbol_id) or {}).get("is_etf"))
     except Exception:  # noqa: BLE001 — fall through to non-etf path
         return False
 

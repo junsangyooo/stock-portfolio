@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import List, Optional
 
 from pykrx import stock as pkx  # type: ignore
 
 from .base import Source, OHLCVBar, Quote
+from ...core import kst
 from ...core.kst import KST
 from ...core.paths import split_symbol
 
@@ -36,18 +37,12 @@ class PykrxSource(Source):
         except Exception as e:  # noqa: BLE001 — pykrx scrapes KRX; stay soft
             log.warning("pykrx get_daily %s failed: %s", symbol_id, e)
             return []
-        bars: List[OHLCVBar] = []
-        for ts_pd, row in df.iterrows():
-            dt = ts_pd.to_pydatetime().replace(tzinfo=KST)
-            bars.append(OHLCVBar(
-                ts=int(dt.timestamp()),
-                open=float(row["시가"]),
-                high=float(row["고가"]),
-                low=float(row["저가"]),
-                close=float(row["종가"]),
-                volume=float(row["거래량"]),
-            ))
-        return bars
+        return [OHLCVBar(
+                    ts=int(ts_pd.to_pydatetime().replace(tzinfo=KST).timestamp()),
+                    open=float(row["시가"]), high=float(row["고가"]),
+                    low=float(row["저가"]), close=float(row["종가"]),
+                    volume=float(row["거래량"]))
+                for ts_pd, row in df.iterrows()]
 
     def get_quote(self, symbol_id: str) -> Optional[Quote]:
         """pykrx has no live tick. Returns the most recent close as a
@@ -55,8 +50,9 @@ class PykrxSource(Source):
         market, code = split_symbol(symbol_id)
         if market != "KR":
             return None
-        end = datetime.now(KST).strftime("%Y%m%d")
-        start = (datetime.now(KST) - timedelta(days=10)).strftime("%Y%m%d")
+        now = kst.now()
+        end = now.strftime("%Y%m%d")
+        start = (now - timedelta(days=10)).strftime("%Y%m%d")
         try:
             df = pkx.get_market_ohlcv_by_date(start, end, code)
         except Exception as e:  # noqa: BLE001 — pykrx scrapes KRX; stay soft

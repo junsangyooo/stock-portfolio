@@ -123,13 +123,8 @@ def get_financials(symbol_id: str, years: int = 6) -> List[FinancialRow]:
 def latest_filed(facts: dict) -> Optional[str]:
     """Newest `filed` date anywhere in a companyfacts blob — what the symbol's
     financial rows should be stamped with."""
-    newest = ""
-    for concepts in _CONCEPTS.values():
-        for e in _iter_entries(facts, concepts):
-            f = e.get("filed") or ""
-            if f > newest:
-                newest = f
-    return newest or None
+    return max((e.get("filed") or "" for concepts in _CONCEPTS.values()
+                for e in _iter_entries(facts, concepts)), default="") or None
 
 
 def rows_from_facts(facts: dict, years: int = 6) -> List[FinancialRow]:
@@ -139,7 +134,8 @@ def rows_from_facts(facts: dict, years: int = 6) -> List[FinancialRow]:
     companyfacts.zip — 7,069 symbols in one download instead of one request
     each — without a second copy of this mapping.
     """
-    cutoff = date.today().replace(year=date.today().year - years)
+    today = date.today()
+    cutoff = today.replace(year=today.year - years)
     # (period_label, field) -> (filed, value); latest filing wins (restatements)
     cells: Dict[tuple, tuple] = {}
     ends: Dict[str, date] = {}
@@ -157,7 +153,7 @@ def rows_from_facts(facts: dict, years: int = 6) -> List[FinancialRow]:
                 continue
             filed = e.get("filed") or ""
             if field in _INSTANT:
-                labels = [_q_label(end)]
+                label = _q_label(end)
             else:
                 try:
                     start = datetime.strptime(e["start"], "%Y-%m-%d").date()
@@ -165,16 +161,15 @@ def rows_from_facts(facts: dict, years: int = 6) -> List[FinancialRow]:
                     continue
                 days = (end - start).days
                 if 70 <= days <= 100:
-                    labels = [_q_label(end)]
+                    label = _q_label(end)
                 elif 350 <= days <= 380:
-                    labels = [f"{end.year}FY"]
+                    label = f"{end.year}FY"
                 else:
                     continue        # H1/9M cumulatives — skip, quarters suffice
-            for label in labels:
-                key = (label, field)
-                if key not in cells or filed > cells[key][0]:
-                    cells[key] = (filed, val)
-                ends.setdefault(label, end)
+            key = (label, field)
+            if key not in cells or filed > cells[key][0]:
+                cells[key] = (filed, val)
+            ends.setdefault(label, end)
 
     periods = sorted({label for label, _ in cells},
                      key=lambda p: (ends.get(p, date.min), p.endswith("FY")))

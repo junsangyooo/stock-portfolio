@@ -7,8 +7,6 @@ with None fields on failure rather than raising.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 import yfinance as yf  # type: ignore
 
 from .yfinance_source import _yf_ticker
@@ -17,12 +15,9 @@ from .yfinance_source import _yf_ticker
 def fetch(symbol_id: str) -> dict:
     """Return {sector, industry} (either may be None). Never raises."""
     ticker = _yf_ticker(symbol_id)
-    sector: Optional[str] = None
-    industry: Optional[str] = None
     try:
         info = yf.Ticker(ticker).info or {}
-        sector = info.get("sector") or None
-        industry = info.get("industry") or None
+        return {"sector": info.get("sector") or None,
+                "industry": info.get("industry") or None}
     except Exception:  # noqa: BLE001 — network/parse flakiness is expected
-        pass
-    return {"sector": sector, "industry": industry}
+        return {"sector": None, "industry": None}

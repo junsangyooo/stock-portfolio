@@ -31,9 +31,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
+from ...core import kst
 from ...core.kst import KST
 from ...core.paths import MARKET_DIR, UNIVERSE_DIR
 from ..store.db import connect
+from ..store.financials_store import COLS as _FIN_COLS
 
 log = logging.getLogger(__name__)
 
@@ -45,7 +47,7 @@ _BULK_DAY_MIN = 1000
 
 
 def _log(msg: str) -> None:
-    print(f"[{datetime.now(KST):%H:%M:%S}] {msg}", flush=True)
+    print(f"[{kst.now():%H:%M:%S}] {msg}", flush=True)
 
 
 # ── universe ────────────────────────────────────────────────────────────────
@@ -64,13 +66,16 @@ def _kst_midnight(d) -> int:
 def _business_days(years: int) -> list:
     """Weekdays from today back `years`, newest first. Market holidays are not
     filtered — the source returns nothing for them and the day is skipped."""
-    today = datetime.now(KST).date()
-    days = []
-    for i in range(int(years * 365.25) + 1):
-        d = today - timedelta(days=i)
-        if d.weekday() < 5:
-            days.append(d)
-    return days
+    today = kst.now().date()
+    days = (today - timedelta(days=i) for i in range(int(years * 365.25) + 1))
+    return [d for d in days if d.weekday() < 5]
+
+
+def _kr_bar_rows(df, ts: int) -> list:
+    """pykrx whole-market frame (index = code) → ohlcv insert rows."""
+    return [(f"KR:{code}", ts, float(r["시가"]), float(r["고가"]),
+             float(r["저가"]), float(r["종가"]), float(r["거래량"]))
+            for code, r in df.iterrows()]
 
 
 # ── KR: bars + valuation, one call per day for the whole market ─────────────
@@ -109,11 +114,7 @@ def kr_daily(years: int = 3, sleep_s: float = 0.15) -> dict:
             log.warning("kr_daily fundamental %s failed: %s", ymd, e)
             fund = None
 
-        bar_rows = [
-            (f"KR:{code}", ts, float(r["시가"]), float(r["고가"]),
-             float(r["저가"]), float(r["종가"]), float(r["거래량"]))
-            for code, r in ohlcv.iterrows()
-        ]
+        bar_rows = _kr_bar_rows(ohlcv, ts)
         # ETFs are a separate listing to pykrx and absent from market="ALL";
         # without this every KR ETF would have an empty chart.
         try:
@@ -122,21 +123,15 @@ def kr_daily(years: int = 3, sleep_s: float = 0.15) -> dict:
             log.warning("kr_daily etf %s failed: %s", ymd, e)
             etf = None
         if etf is not None and not etf.empty:
-            bar_rows.extend(
-                (f"KR:{code}", ts, float(r["시가"]), float(r["고가"]),
-                 float(r["저가"]), float(r["종가"]), float(r["거래량"]))
-                for code, r in etf.iterrows())
+            bar_rows.extend(_kr_bar_rows(etf, ts))
         # market_cap rides along with the bars; the ratios need the second call
         caps = {f"KR:{code}": float(r["시가총액"])
                 for code, r in ohlcv.iterrows()} if "시가총액" in ohlcv else {}
-        val_rows = []
-        if fund is not None and not fund.empty:
-            for code, r in fund.iterrows():
-                sid = f"KR:{code}"
-                val_rows.append((
-                    sid, ts, _f(r.get("PER")), _f(r.get("PBR")), None,
-                    _f(r.get("EPS")), _f(r.get("BPS")), _f(r.get("DPS")),
-                    _f(r.get("DIV")), caps.get(sid)))
+        val_rows = [] if fund is None or fund.empty else [
+            (f"KR:{code}", ts, _f(r.get("PER")), _f(r.get("PBR")), None,
+             _f(r.get("EPS")), _f(r.get("BPS")), _f(r.get("DPS")),
+             _f(r.get("DIV")), caps.get(f"KR:{code}"))
+            for code, r in fund.iterrows()]
 
         with connect() as c:
             c.executemany(
@@ -181,11 +176,10 @@ def kr_financials(years: int = 4, chunk: int = 100,
     from fundamental_backfill.
     """
     import requests
-    from ..source.dart_source import (DartSource, REPRT, REPRT_ORDER,
-                                      _ACCOUNT_RULES, _parse_amount)
     from ..source.base import FinancialRow
+    from ..source.dart_source import (DartSource, REPRT, REPRT_ORDER,
+                                      _api_key, match_accounts)
 
-    from ..source.dart_source import _api_key
     ds = DartSource()
     key = _api_key()
     if not key:
@@ -194,12 +188,11 @@ def kr_financials(years: int = 4, chunk: int = 100,
     codes = [s["code"] for s in _universe("kr") if not s.get("is_etf")]
     corp_of: dict[str, str] = {}
     for code in codes:
-        cc = ds.corp_code(code)
-        if cc:
+        if cc := ds.corp_code(code):
             corp_of[cc] = code
     _log(f"  kr-financials: {len(corp_of):,} companies resolved to corp_code")
 
-    this_year = datetime.now(KST).year
+    this_year = kst.now().year
     written = calls = 0
     for year in range(this_year, this_year - years - 1, -1):
         for reprt in REPRT_ORDER:
@@ -233,37 +226,19 @@ def kr_financials(years: int = 4, chunk: int = 100,
                     code = corp_of.get(corp)
                     if not code:
                         continue
-                    fields = _match_accounts(entries, _ACCOUNT_RULES,
-                                             _parse_amount)
+                    fields = match_accounts(entries)
                     if not fields:
                         continue
                     fr = FinancialRow(
                         period=period, fs_div="CFS",
                         report_date=f"{year}-12-31" if reprt == "11011" else "",
                         source="dart-multi", **fields)
-                    rows.append((f"KR:{code}", fr))
-                written += _insert_financials(rows)
+                    rows.append((f"KR:{code}", fr, None))
+                written += _write_financials(rows, "IGNORE")
                 time.sleep(sleep_s)
             _log(f"  kr-financials {period}: {written:,} rows so far "
                  f"({calls} calls)")
     return {"step": "kr-financials", "rows": written, "calls": calls}
-
-
-def _match_accounts(entries: list, rules, parse_amount) -> dict:
-    """Run the shared account-name rules over one company's rows."""
-    fields: dict = {}
-    for r in entries:
-        sj = str(r.get("sj_div") or "").strip()
-        name = str(r.get("account_nm") or "").strip()
-        amount = parse_amount(r.get("thstrm_amount"))
-        if amount is None:
-            continue
-        for sj_set, field, subs in rules:
-            if field in fields or sj not in sj_set:
-                continue
-            if any(sub in name for sub in subs):
-                fields[field] = amount
-    return fields
 
 
 def _pending_corps(corp_of: dict[str, str], period: str) -> list[str]:
@@ -275,24 +250,24 @@ def _pending_corps(corp_of: dict[str, str], period: str) -> list[str]:
     return [corp for corp, code in corp_of.items() if f"KR:{code}" not in have]
 
 
-def _insert_financials(rows: list, filed_at: Optional[str] = None) -> int:
-    """rows = [(symbol_id, FinancialRow)].
+def _write_financials(rows: list, conflict: str) -> int:
+    """rows = [(symbol_id, FinancialRow, filed_at)]; conflict = IGNORE | REPLACE.
 
-    OR IGNORE, not OR REPLACE: these carry only the headline accounts, and a
-    held symbol already has the full finstate_all row for the same period.
-    Replacing would quietly strip gross profit, EPS and cash flows from exactly
-    the symbols that matter.
+    kr-financials writes OR IGNORE, not OR REPLACE: its rows carry only the
+    headline accounts, and a held symbol already has the full finstate_all row
+    for the same period. Replacing would quietly strip gross profit, EPS and
+    cash flows from exactly the symbols that matter. us-financials carries the
+    whole companyfacts history and replaces.
     """
     if not rows:
         return 0
-    from dataclasses import asdict
-    from ..store.financials_store import COLS
     with connect() as c:
         c.executemany(
-            f"INSERT OR IGNORE INTO financials (symbol_id, {', '.join(COLS)}, "
-            f"filed_at) VALUES ({','.join('?' * (len(COLS) + 2))})",
-            [(sid, *[asdict(fr)[k] for k in COLS], filed_at)
-             for sid, fr in rows])
+            f"INSERT OR {conflict} INTO financials (symbol_id, "
+            f"{', '.join(_FIN_COLS)}, filed_at) "
+            f"VALUES ({','.join('?' * (len(_FIN_COLS) + 2))})",
+            [(sid, *[getattr(fr, k) for k in _FIN_COLS], filed)
+             for sid, fr, filed in rows])
         c.commit()
     return len(rows)
 
@@ -310,7 +285,7 @@ def us_daily(years: int = 3, chunk: int = 60, sleep_s: float = 1.0) -> dict:
     import yfinance as yf
 
     syms = _universe("us")
-    end = datetime.now(KST).date() + timedelta(days=1)
+    end = kst.now().date() + timedelta(days=1)
     start = end - timedelta(days=int(years * 365.25))
 
     pending = _pending_us(syms)
@@ -442,28 +417,12 @@ def us_financials(years: int = 6, zip_path: Optional[Path] = None) -> dict:
             filed = latest_filed(facts)
             batch.extend((sid, fr, filed) for fr in rows)
             if len(batch) >= 5000:
-                written += _flush_facts(batch)
+                written += _write_financials(batch, "REPLACE")
                 batch = []
                 _log(f"  us-financials: {seen:,} filers, {written:,} rows")
-    written += _flush_facts(batch)
+    written += _write_financials(batch, "REPLACE")
     return {"step": "us-financials", "filers": seen, "rows": written,
             "not_in_universe": missing}
-
-
-def _flush_facts(batch: list) -> int:
-    """batch = [(symbol_id, FinancialRow, filed_at)]."""
-    if not batch:
-        return 0
-    from dataclasses import asdict
-    from ..store.financials_store import COLS
-    with connect() as c:
-        c.executemany(
-            f"INSERT OR REPLACE INTO financials (symbol_id, {', '.join(COLS)}, "
-            f"filed_at) VALUES ({','.join('?' * (len(COLS) + 2))})",
-            [(sid, *[asdict(fr)[k] for k in COLS], filed)
-             for sid, fr, filed in batch])
-        c.commit()
-    return len(batch)
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────

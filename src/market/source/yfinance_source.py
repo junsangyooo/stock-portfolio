@@ -6,7 +6,6 @@ For 'US:AAPL' we just pass code directly.
 from __future__ import annotations
 
 import logging
-
 import time
 from typing import List, Optional
 
@@ -16,6 +15,7 @@ from .base import Source, OHLCVBar, Quote, ValuationPoint, FinancialRow
 from ...core.paths import split_symbol
 from ...universe import search as uni_search
 
+log = logging.getLogger(__name__)
 
 # yfinance statement line-item label → standardized field. First hit wins.
 _FIN_ALIASES = {
@@ -49,58 +49,32 @@ def _yf_ticker(symbol_id: str) -> str:
     return f"{code}.KS"  # safe default for KR
 
 
-log = logging.getLogger(__name__)
+def _history(symbol_id: str, **kw) -> List[OHLCVBar]:
+    """Ticker.history → bars. Empty on any failure (yfinance is scrape-flaky)."""
+    ticker = _yf_ticker(symbol_id)
+    try:
+        df = yf.Ticker(ticker).history(auto_adjust=False, **kw)
+    except Exception as e:  # noqa: BLE001 — yfinance is scrape-flaky
+        log.warning("yfinance %s failed: %s", symbol_id, e)
+        return []
+    if df is None or df.empty:
+        return []
+    return [OHLCVBar(ts=int(ts_pd.to_pydatetime().timestamp()),
+                     open=float(row["Open"]), high=float(row["High"]),
+                     low=float(row["Low"]), close=float(row["Close"]),
+                     volume=float(row.get("Volume", 0) or 0))
+            for ts_pd, row in df.iterrows()]
 
 
 class YFinanceSource(Source):
     name = "yfinance"
 
     def get_daily(self, symbol_id: str, start: str, end: str) -> List[OHLCVBar]:
-        ticker = _yf_ticker(symbol_id)
-        try:
-            t = yf.Ticker(ticker)
-            df = t.history(start=start, end=end, interval="1d", auto_adjust=False)
-        except Exception as e:  # noqa: BLE001 — yfinance is scrape-flaky
-            log.warning("yfinance %s failed: %s", symbol_id, e)
-            return []
-        if df is None or df.empty:
-            return []
-        bars: List[OHLCVBar] = []
-        for ts_pd, row in df.iterrows():
-            dt = ts_pd.to_pydatetime()
-            bars.append(OHLCVBar(
-                ts=int(dt.timestamp()),
-                open=float(row["Open"]),
-                high=float(row["High"]),
-                low=float(row["Low"]),
-                close=float(row["Close"]),
-                volume=float(row.get("Volume", 0) or 0),
-            ))
-        return bars
+        return _history(symbol_id, start=start, end=end, interval="1d")
 
     def get_intraday(self, symbol_id: str, interval: str = "5m",
                      period: str = "5d") -> List[OHLCVBar]:
-        ticker = _yf_ticker(symbol_id)
-        try:
-            t = yf.Ticker(ticker)
-            df = t.history(period=period, interval=interval, auto_adjust=False)
-        except Exception as e:  # noqa: BLE001 — yfinance is scrape-flaky
-            log.warning("yfinance %s failed: %s", symbol_id, e)
-            return []
-        if df is None or df.empty:
-            return []
-        bars: List[OHLCVBar] = []
-        for ts_pd, row in df.iterrows():
-            dt = ts_pd.to_pydatetime()
-            bars.append(OHLCVBar(
-                ts=int(dt.timestamp()),
-                open=float(row["Open"]),
-                high=float(row["High"]),
-                low=float(row["Low"]),
-                close=float(row["Close"]),
-                volume=float(row.get("Volume", 0) or 0),
-            ))
-        return bars
+        return _history(symbol_id, period=period, interval=interval)
 
     def get_valuation(self, symbol_id: str, start: str = "",
                       end: str = "") -> List[ValuationPoint]:
@@ -164,12 +138,18 @@ class YFinanceSource(Source):
                         return None
             return None
 
+        # each standardized field comes from one statement
+        stmt_of = {
+            **dict.fromkeys(("revenue", "gross_profit", "operating_income",
+                             "net_income"), inc),
+            **dict.fromkeys(("total_assets", "total_liabilities", "total_equity",
+                             "current_assets", "current_liabilities"), bs),
+            **dict.fromkeys(("operating_cf", "investing_cf", "financing_cf"), cf),
+        }
         # union of all period-end columns across the three statements
-        cols = []
-        for df in (inc, bs, cf):
-            if df is not None and not df.empty:
-                cols.extend(list(df.columns))
-        cols = sorted(set(cols), reverse=True)[: years * 4]
+        cols = sorted({c for df in (inc, bs, cf)
+                       if df is not None and not df.empty for c in df.columns},
+                      reverse=True)[: years * 4]
 
         rows: List[FinancialRow] = []
         for col in cols:
@@ -177,24 +157,10 @@ class YFinanceSource(Source):
                 dt = col.to_pydatetime()
             except AttributeError:
                 continue
-            q = (dt.month - 1) // 3 + 1
-            row = FinancialRow(
-                period=f"{dt.year}Q{q}", fs_div="CFS",
+            rows.append(FinancialRow(
+                period=f"{dt.year}Q{(dt.month - 1) // 3 + 1}", fs_div="CFS",
                 report_date=dt.strftime("%Y-%m-%d"), source="yfinance",
-                revenue=_val(inc, "revenue", col),
-                gross_profit=_val(inc, "gross_profit", col),
-                operating_income=_val(inc, "operating_income", col),
-                net_income=_val(inc, "net_income", col),
-                total_assets=_val(bs, "total_assets", col),
-                total_liabilities=_val(bs, "total_liabilities", col),
-                total_equity=_val(bs, "total_equity", col),
-                current_assets=_val(bs, "current_assets", col),
-                current_liabilities=_val(bs, "current_liabilities", col),
-                operating_cf=_val(cf, "operating_cf", col),
-                investing_cf=_val(cf, "investing_cf", col),
-                financing_cf=_val(cf, "financing_cf", col),
-            )
-            rows.append(row)
+                **{f: _val(df, f, col) for f, df in stmt_of.items()}))
         return rows
 
     def get_quote(self, symbol_id: str) -> Optional[Quote]:
