@@ -107,14 +107,7 @@ function kstClock() {
 }
 
 // ── numbers ──────────────────────────────────────────────────────────
-const isUS = sid => (sid || '').startsWith('US:');
-function money(v, sid) {
-  if (v == null || isNaN(v)) return '—';
-  return isUS(sid) ? '$' + Number(v).toLocaleString('en-US',
-           { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                   : Number(v).toLocaleString('ko-KR',
-           { maximumFractionDigits: 0 }) + '원';
-}
+// The chart labels' money (drawCurve). money/pct/signCls went with the old quant page.
 function ccyMoney(v, ccy) {
   if (v == null || isNaN(v)) return '—';
   return ccy === 'USD' ? '$' + Number(v).toLocaleString('en-US',
@@ -122,9 +115,6 @@ function ccyMoney(v, ccy) {
                        : Number(v).toLocaleString('ko-KR',
            { maximumFractionDigits: 0 }) + '원';
 }
-const pct = v => (v == null || !isFinite(v)) ? '—'   // prev_close 0 → Infinity, not '+Infinity%'
-  : (v >= 0 ? '+' : '') + Number(v).toFixed(2) + '%';
-const signCls = v => v == null ? '' : (v >= 0 ? 'pos' : 'neg');
 
 // ── feedback ─────────────────────────────────────────────────────────
 // The one error channel: a failure must never look like an empty screen.
@@ -743,8 +733,7 @@ function whenVisible(fn, ms) {
 window.S = {
   el, clear, svgIco,
   designColor, designRgba, designToken, newsThemeColor, newsThemeIcon, LABELS,
-  timeAgo, itemTime, kstClock,
-  money, ccyMoney, pct, signCls,
+  itemTime, kstClock,
   toast, api, confirmModal, trapFocus, whenVisible,
   srcName, newsCard, newsGrid,
   LABEL_KO, freshInfo, verdictBadge,

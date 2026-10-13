@@ -45,8 +45,7 @@ SCREEN_FILES = ("landing.html", "account.html", "shared.js", "shared.css")
 # Every name the injected fragment exports (ui-02-architecture §4). Each must
 # be defined exactly once across the fragment and the pages.
 SHARED_NAMES = (
-    "el", "clear", "svgIco", "timeAgo", "kstClock",
-    "money", "ccyMoney", "pct", "signCls",
+    "el", "clear", "svgIco", "kstClock",
     "designColor", "designRgba", "newsThemeColor", "newsThemeIcon",
     "srcName", "newsCard", "newsGrid", "toast", "api",
     # U4: the card grammar
