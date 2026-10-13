@@ -90,13 +90,17 @@ def test_the_batch_passes_its_budget_to_every_symbol(monkeypatch):
 
     monkeypatch.setattr(verdict_job, "run_symbol", _run)
     monkeypatch.setattr(analyze, "on", lambda sid, date: None)
-    monkeypatch.setattr(analyze, "batch_root", lambda: "sess-1")
+    roots: list = []
+    monkeypatch.setattr(analyze, "batch_root",
+                        lambda effort=None: roots.append(effort) or "sess-1")
     monkeypatch.setattr(sys, "argv",
                         ["verdict_job", "--symbols", "KR:AAA,KR:BBB",
                          "--effort", "low", "--workers", "1"])
     verdict_job.main()
     assert seen["KR:AAA"]["effort"] == seen["KR:BBB"]["effort"] == "low"
     assert seen["KR:AAA"]["root"] == "sess-1"      # two to run → a root pays
+    # the root is made at the forks' budget, or the forks miss its cache
+    assert roots == ["low"]
 
 
 def test_a_single_symbol_batch_does_not_open_a_root(monkeypatch):
@@ -109,7 +113,7 @@ def test_a_single_symbol_batch_does_not_open_a_root(monkeypatch):
                         or {"symbol": s, "status": "ok", "errors": []})
     monkeypatch.setattr(analyze, "on", lambda sid, date: None)
     monkeypatch.setattr(analyze, "batch_root",
-                        lambda: pytest.fail("root opened for one symbol"))
+                        lambda **kw: pytest.fail("root opened for one symbol"))
     monkeypatch.setattr(sys, "argv",
                         ["verdict_job", "--symbols", "KR:AAA", "--workers", "1"])
     verdict_job.main()

@@ -125,7 +125,10 @@ def main() -> int:
 
     from . import analyze
     todo = [s for s in symbols if args.force or analyze.on(s, date) is None]
-    root = analyze.batch_root() if len(todo) >= _ROOT_MIN_BATCH else None
+    # The root is made at the forks' budget: a fork whose thinking settings
+    # differ from the root's does not read the cached dictionaries.
+    root = (analyze.batch_root(effort=args.effort)
+            if len(todo) >= _ROOT_MIN_BATCH else None)
     print(f"batch root: {'yes' if root else 'no'} ({len(todo)} to run)",
           flush=True)
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as ex:

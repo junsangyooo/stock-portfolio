@@ -260,11 +260,17 @@ def _facts_only(envelope: dict, reason: str) -> dict:
 # One refresh is one cheap call — a cold root would cost the whole prompt on
 # every symbol after it.
 _ROOT_TTL_S = 20 * 60
-_root: Optional[tuple] = None
+# One root per reasoning budget, keyed by the `--effort` value (None = the CLI
+# default). The thinking settings are part of what the prompt cache matches
+# on, so a fork asked at `low` off a root made at the default most likely
+# bought the dictionaries again: in the week to 2026-10-13 the server read
+# only about 20% of its input from cache, with every fork at `low` and the
+# root at the default.
+_roots: dict[Optional[str], tuple] = {}
 _root_lock = threading.Lock()
 
 
-def batch_root(backend=None) -> Optional[str]:
+def batch_root(backend=None, effort: Optional[str] = None) -> Optional[str]:
     """A session that already holds the dictionaries, for a batch to fork.
 
     Measured: a fork reads 50,743 tokens from cache and pays only for the
@@ -273,19 +279,26 @@ def batch_root(backend=None) -> Optional[str]:
     session boundary is the only place the saving can come from; reordering
     inside one message saves nothing.
 
+    `effort` must be the budget the forks will be asked at: the root is made
+    with the same `--effort`, so a fork's thinking settings match the cached
+    prefix. Each budget keeps its own root.
+
     None means the root call failed. The caller then sends the full prompt,
     which is exactly what every call did before this existed.
     """
-    global _root
     with _root_lock:
-        if _root and time.monotonic() - _root[0] < _ROOT_TTL_S:
-            return _root[1]
+        held = _roots.get(effort)
+        if held and time.monotonic() - held[0] < _ROOT_TTL_S:
+            return held[1]
         sid = str(uuid.uuid4())
+        extra = ["--session-id", sid]
+        if effort:
+            extra += ["--effort", effort]
         try:
             (backend or ClaudeCliBackend(model=SLOW_MODEL,
                                          stage="analyze:root")).call(
                 prompt.SYSTEM, prompt.root_context(inputs.references()),
-                model=SLOW_MODEL, extra_args=["--session-id", sid])
+                model=SLOW_MODEL, extra_args=extra)
         except Exception as e:  # noqa: BLE001 — a dead root is a slower batch
             # Remember the failure for the same TTL. Without this a caller
             # asking per symbol retries root creation for every one of them,
@@ -293,9 +306,9 @@ def batch_root(backend=None) -> Optional[str]:
             # turns a 20-symbol batch into 40 failing calls.
             log.warning("batch root failed, full prompts instead: %s",
                         str(e)[:200])
-            _root = (time.monotonic(), None)
+            _roots[effort] = (time.monotonic(), None)
             return None
-        _root = (time.monotonic(), sid)
+        _roots[effort] = (time.monotonic(), sid)
         return sid
 
 
@@ -308,7 +321,9 @@ def analyze(symbol_id: str, name: Optional[str] = None, *,
     `root` is a batch session holding the dictionaries (see `batch_root`); the
     first attempt forks it and sends only this symbol's data. The retry always
     sends the whole prompt — if the fork failed, the session is the first
-    thing to suspect, and a symbol must not be lost to it.
+    thing to suspect, and a symbol must not be lost to it. The root must have
+    been made with the same `effort` (`batch_root(effort=…)`), or the fork
+    re-buys the dictionaries.
 
     `effort` is the CLI's reasoning budget (low|medium|high|xhigh|max).
     Measured on US:DHT 2026-09-15: the default spent 21,945 output tokens,

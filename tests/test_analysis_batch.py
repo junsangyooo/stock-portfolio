@@ -38,7 +38,7 @@ def assembled(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _cold_root(monkeypatch):
-    monkeypatch.setattr(engine, "_root", None)
+    monkeypatch.setattr(engine, "_roots", {})
 
 
 # ── the two halves ──────────────────────────────────────────────────────────
@@ -119,6 +119,38 @@ def test_one_root_serves_the_batch_until_it_is_old(monkeypatch):
     clock[0] += 2                               # past the refresh
     second = engine.batch_root(backend=be)
     assert second != first and len(be.calls) == 2
+
+
+def test_the_root_is_made_at_the_forks_budget(monkeypatch):
+    """The thinking settings are part of what the cache matches on: a fork at
+    `low` off a root made at the default would buy the dictionaries again."""
+    be = _Backend()
+    monkeypatch.setattr(inputs, "references", lambda: [])
+    sid = engine.batch_root(backend=be, effort="low")
+    assert be.calls[0]["extra"] == ["--session-id", sid, "--effort", "low"]
+
+
+def test_each_budget_keeps_its_own_root(monkeypatch):
+    be = _Backend()
+    monkeypatch.setattr(inputs, "references", lambda: [])
+    low = engine.batch_root(backend=be, effort="low")
+    default = engine.batch_root(backend=be)
+    assert low and default and low != default and len(be.calls) == 2
+    assert be.calls[1]["extra"] == ["--session-id", default]   # no --effort
+    # each is reused for its own budget inside the TTL
+    assert engine.batch_root(backend=be, effort="low") == low
+    assert engine.batch_root(backend=be) == default
+    assert len(be.calls) == 2
+
+
+def test_a_dead_root_for_one_budget_leaves_the_other(monkeypatch):
+    class _Boom:
+        def call(self, *a, **kw):
+            raise RuntimeError("claude CLI exit 1")
+
+    monkeypatch.setattr(inputs, "references", lambda: [])
+    assert engine.batch_root(backend=_Boom(), effort="low") is None
+    assert engine.batch_root(backend=_Backend()) is not None
 
 
 def test_a_dead_root_is_not_fatal(monkeypatch):
