@@ -68,7 +68,7 @@ import sys
 # both are held to their real shape: `verdict KR:005930 ../../..` must not
 # walk out of the analysis tree.
 _SYMBOL = re.compile(r"(KR|US):[A-Z0-9][A-Z0-9. \-]{0,11}")
-_DAY = re.compile(r"\d{4}-?\d{2}-?\d{2}")
+_DAY = re.compile(r"[0-9]{4}-?[0-9]{2}-?[0-9]{2}")
 
 
 def _split(symbol_id: str) -> tuple[str, str]:
