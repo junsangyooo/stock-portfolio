@@ -32,7 +32,6 @@ from ..core import paths
 from ..research.llm_backend import SLOW_MODEL, ClaudeCliBackend
 from ..portfolio import service
 from ..portfolio.store import chat_store
-from . import analysis
 from .portfolio_api import require_account
 
 router = APIRouter(prefix="/api/accounts", tags=["chat"])
@@ -146,6 +145,40 @@ def _fmt(n, ccy: str) -> str:
     return f"{sym}{n:,.0f}" if ccy == "KRW" else f"{sym}{n:,.2f}"
 
 
+# The badge's words (shared.js LABEL_KO), so the answer and the card agree.
+LABEL_KO = {"strong_buy": "적극 긍정", "buy": "긍정", "neutral": "중립",
+            "sell": "부정", "strong_sell": "적극 부정"}
+
+
+def _opinion(v: dict, held: bool, price, ccy: str) -> str:
+    """' | 종합의견 …' for one holding, or '' when nothing is stored.
+
+    Same reading as the card's coordinate line (account.html coordLineText):
+    a holding gets stop and target, a watch row the entry zone as well, each
+    against the current price. A facts-only result is not an opinion."""
+    if not v or not v.get("date"):
+        return ""
+    if v.get("status") == "facts_only":
+        return f" | 종합의견 판단 없음(사실만, {v['date']})"
+    ko = LABEL_KO.get(v.get("label"))
+    if not ko:
+        return ""
+
+    def at(x):
+        pct = f" ({(x / price - 1) * 100:+.1f}%)" if price else ""
+        return _fmt(x, ccy) + pct
+
+    c = v.get("coords") or {}
+    bits = []
+    if not held and c.get("entry_low") is not None and c.get("entry_high") is not None:
+        bits.append(f"진입구간 {_fmt(c['entry_low'], ccy)}~{_fmt(c['entry_high'], ccy)}")
+    if c.get("stop") is not None:
+        bits.append("손절 " + at(c["stop"]))
+    if c.get("target") is not None:
+        bits.append("목표 " + at(c["target"]))
+    return f" | 종합의견 {ko} ({v['date']})" + "".join(" · " + b for b in bits)
+
+
 def _account_context(account_id: str) -> str:
     agg = service.aggregate(account_id, spark_n=2)
     if not agg.get("exists"):
@@ -164,7 +197,8 @@ def _account_context(account_id: str) -> str:
     holdings = agg.get("holdings") or []
     sids = [h["symbol_id"] for h in holdings]
     try:
-        verdicts = analysis.analysis_summary(",".join(sids)).get("symbols", {})
+        from ..research import analyze
+        verdicts = analyze.summary(sids)
     except Exception:  # noqa: BLE001 — chat must survive a missing verdict dir
         verdicts = {}
 
@@ -175,8 +209,7 @@ def _account_context(account_id: str) -> str:
         price, avg, qty = h.get("price"), h.get("avg_cost"), h.get("qty")
         pnl_pct = ((price - avg) / avg * 100) if (price and avg) else None
         hold = (f"{qty}주 @{_fmt(avg, ccy)}" if qty else "관심(미보유)")
-        v = verdicts.get(h["symbol_id"]) or {}
-        verdict = f" | 종합의견 {v['action_ko']} ({v.get('date')})" if v.get("action_ko") else ""
+        verdict = _opinion(verdicts.get(h["symbol_id"]) or {}, bool(qty), price, ccy)
         etf = " [ETF]" if h.get("is_etf") else ""
         lines.append(
             f"  {name} {h['symbol_id']}{etf} | {hold} | 현재 {_fmt(price, ccy)}"
