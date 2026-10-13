@@ -18,8 +18,8 @@ Billing: ClaudeCliBackend (subscription), never the paid API. See ops notes §7.
 """
 from __future__ import annotations
 
-import glob
 import os
+import re
 import threading
 import time
 import uuid
@@ -28,6 +28,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from ..core import paths
 from ..research.llm_backend import SLOW_MODEL, ClaudeCliBackend
 from ..portfolio import service
 from ..portfolio.store import chat_store
@@ -52,17 +53,17 @@ SYSTEM = """당신은 개인 투자자의 포트폴리오 대시보드에 내장
 추가 조회 도구 (읽기 전용):
 스냅샷에 없는 데이터가 필요하면 Bash로 아래 명령을 실행해 JSON으로 조회할 수 있다.
 반드시 이 명령만 사용한다 (다른 명령·파일 접근 금지):
-  .venv/bin/python -m src.research.chat_tools search <검색어>        # 종목 검색 (이름/코드)
-  .venv/bin/python -m src.research.chat_tools quote KR:005930        # 현재가
-  .venv/bin/python -m src.research.chat_tools chart US:AAPL          # 차트 지표 요약
-  .venv/bin/python -m src.research.chat_tools fundamental KR:005930  # 재무·밸류에이션
-  .venv/bin/python -m src.research.chat_tools verdict KR:005930      # 최신 AI 종합 판단
-  .venv/bin/python -m src.research.chat_tools news KR:005930         # 연결 뉴스·이슈
-  .venv/bin/python -m src.research.chat_tools screen per_max=8 pbr_max=1 div_min=3 mcap_min=5000
+  $TOOL search <검색어>        # 종목 검색 (이름/코드)
+  $TOOL quote KR:005930        # 현재가
+  $TOOL chart US:AAPL          # 차트 지표 요약
+  $TOOL fundamental KR:005930  # 재무·밸류에이션
+  $TOOL verdict KR:005930      # 최신 AI 종합 판단
+  $TOOL news KR:005930         # 연결 뉴스·이슈
+  $TOOL screen per_max=8 pbr_max=1 div_min=3 mcap_min=5000
       # 한국 전 종목 조건 스크리닝 (종목 발굴). 키: per_min/per_max, pbr_min/pbr_max,
       # div_min(배당%), eps_min, mcap_min/mcap_max(억원), value_min(거래대금 억원),
       # market=KOSPI|KOSDAQ, sort=per|pbr|div|mcap|value, limit(최대 20)
-  .venv/bin/python -m src.research.chat_tools theme_symbols semiconductor days=7
+  $TOOL theme_symbols semiconductor days=7
       # 테마에 걸린 종목 (테마 id: battery ai_sw bio semiconductor robotics space
       # fintech shipbuilding adv_manufacturing macro 등). tagged=종목에 붙은 테마(종목 속성, market.db symbol_themes),
       # mentioned=최근 뉴스 본문에 이름이 나온 종목(발굴용, 오탐 가능)
@@ -83,11 +84,14 @@ symbol_id 규약: 한국 = KR:6자리코드, 미국 = US:티커. 모르면 먼�
 
 
 
-# claude -p 도구 허용: 위 조회 CLI 한 가지만. 그 외 Bash·파일·네트워크는
-# 헤드리스 모드에서 자동 거부된다. 턴 수 제한 없음 (모듈 docstring 참고).
-TOOL_ARGS = [
-    "--allowedTools", "Bash(.venv/bin/python -m src.research.chat_tools:*)",
-]
+# The one command the agent may run. Absolute, because the CLI runs in the
+# empty CHAT_CWD (PYTHONPATH points `-m src…` back at the repo). Bash is the
+# only tool it gets and this the only command dontAsk lets through; any other
+# command, and every file outside the empty cwd, is refused (llm_backend.py,
+# tool lockdown). No turn cap (see the module docstring).
+TOOL_CMD = f"{paths.ROOT / '.venv' / 'bin' / 'python'} -m src.research.chat_tools"
+TOOL_ARGS = ["--tools", "Bash", "--allowedTools", f"Bash({TOOL_CMD}:*)"]
+SYSTEM = SYSTEM.replace("$TOOL", TOOL_CMD)
 
 
 # ── job registry ──────────────────────────────────────────────────────
@@ -122,9 +126,15 @@ def _cli_session_exists(session_id: str) -> bool:
     Ground truth for --session-id vs --resume: our message log can disagree
     (a first turn that died after the CLI wrote its file would otherwise be
     retried with --session-id and rejected as already taken).
+
+    Only the chat cwd's project counts: --resume finds a session by the
+    directory it runs in, so a transcript elsewhere (a turn from before the
+    cwd moved) is one it cannot resume. The CLI names a project after its
+    path with every non-alphanumeric character turned into '-'.
     """
-    return bool(glob.glob(os.path.expanduser(
-        f"~/.claude/projects/*/{session_id}.jsonl")))
+    project = re.sub(r"[^A-Za-z0-9]", "-", str(paths.CHAT_CWD))
+    return os.path.exists(os.path.expanduser(
+        f"~/.claude/projects/{project}/{session_id}.jsonl"))
 
 
 # ── prompt assembly ───────────────────────────────────────────────────
@@ -305,8 +315,11 @@ def chat(account_id: str, body: ChatIn,
     def _run() -> None:
         try:
             system, user = _build(account_id, msg, seeded, history)
+            paths.CHAT_CWD.mkdir(parents=True, exist_ok=True)
             reply = ClaudeCliBackend(model=SLOW_MODEL, stage="chat").call(
-                system, user, extra_args=TOOL_ARGS + session_args)
+                system, user, extra_args=TOOL_ARGS + session_args,
+                cwd=str(paths.CHAT_CWD),
+                env_extra={"PYTHONPATH": str(paths.ROOT)})
             chat_store.append(account_id, body.session_id, "assistant", reply)
             with _lock:
                 if job_id in _jobs:

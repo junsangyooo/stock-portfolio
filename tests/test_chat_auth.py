@@ -45,7 +45,8 @@ def _stub_backend(monkeypatch, reply="네, 괜찮습니다.", seen=None):
         def __init__(self, *a, **kw):
             pass
 
-        def call(self, system, user, timeout_s=60, model=None, extra_args=None):
+        def call(self, system, user, model=None, extra_args=None, cwd=None,
+                 env_extra=None):
             if seen is not None:
                 seen.update(system=system, user=user, extra_args=extra_args)
             return reply

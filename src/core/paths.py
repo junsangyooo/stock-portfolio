@@ -35,6 +35,11 @@ QUOTE_DIR = MARKET_DIR / "quote"   # last.json only — the rest is market.db
 ANALYSIS_DIR = DATA / "analysis"
 
 LOGS_DIR = DATA / "logs"
+
+# Working directory of the chat agent's CLI: kept empty, because the CLI lets
+# its built-in read-only commands (head, cat, ls) read anything under the
+# working directory. See research/llm_backend.py, tool lockdown.
+CHAT_CWD = DATA / "chat_sandbox"
 BACKUP_DIR = DATA / "backup"
 
 # KR stock code (6-digit) → DART 8-digit corp_code mapping, cached once.

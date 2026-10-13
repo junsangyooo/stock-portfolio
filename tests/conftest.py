@@ -36,6 +36,7 @@ def temp_books(tmp_path, monkeypatch):
     # the server would otherwise append rows for calls nobody made.
     monkeypatch.setattr(paths, "LOGS_DIR", tmp_path / "logs")
     monkeypatch.setattr(paths, "ensure_dirs", lambda: None)
+    monkeypatch.setattr(paths, "CHAT_CWD", tmp_path / "chat_sandbox")
     # The account book and the session secret are bound when their own
     # modules import, so they are redirected there. Without it a test that
     # opened the app wrote data/portfolio.db and read or wrote

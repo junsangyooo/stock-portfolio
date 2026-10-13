@@ -91,9 +91,13 @@ class ClaudeCliBackend:
             raise RuntimeError("`claude` CLI not found (PATH or nvm/usr/local)")
 
     def call(self, system: str, user: str, model: str | None = None,
-             extra_args: list[str] | None = None) -> str:
-        # extra_args: appended CLI flags, e.g. --allowedTools for the chat
-        # agent's read-only lookup tool. Default None = plain text call.
+             extra_args: list[str] | None = None, cwd: str | None = None,
+             env_extra: dict | None = None) -> str:
+        # extra_args: appended CLI flags, e.g. `--tools Bash --allowedTools …`
+        # for the chat agent's lookup command. Default None = no tools at all.
+        # cwd: where the CLI runs. A tool-enabled call must run in an empty
+        # directory — see the tool lockdown below.
+        # env_extra: set after the scrub, for the tool child to read.
         prompt = system + "\n\n---\n\n" + user
         m = model or self.model
         env = os.environ.copy()
@@ -103,6 +107,7 @@ class ClaudeCliBackend:
         # shaped. Text-only agent calls never need these either.
         for k in [k for k in env if _SENSITIVE_ENV.search(k)]:
             env.pop(k, None)
+        env.update(env_extra or {})
         # --safe-mode: no project instruction files / hooks / plugins / MCP in the agent
         # context. Without it every call from the repo root ingested the
         # 500-line ops document (verified 2026-08-27: the agent quoted
@@ -112,6 +117,18 @@ class ClaudeCliBackend:
         # it. (--bare is stronger but never reads OAuth → breaks §7
         # subscription-only billing, so it is not an option.)
         args = list(extra_args or [])
+        # Tool lockdown (measured 2026-10-13, CLI 2.1.296). Under --safe-mode
+        # alone a chat agent read ops notes through the Read tool and through
+        # `head`, and the server's own ~/.claude/settings.local.json allow
+        # rules (`sudo rm *`, `crontab *`) still applied — safe mode keeps
+        # permissions. --restricted drops user/project/local settings, and
+        # dontAsk denies whatever no allow rule names. Neither stops the CLI's
+        # built-in read-only commands (head, cat, ls), which it allows inside
+        # the working directory — only an empty cwd confines those
+        # (`chat_cwd`). A call that asks for no tools gets none.
+        args = ["--restricted", "--permission-mode", "dontAsk"] + args
+        if "--tools" not in args:
+            args += ["--tools", ""]
         # Only a session somebody resumes is written to disk: a chat thread
         # (--resume, extended turn by turn) or an analysis root that forks
         # read (--session-id). A one-shot call and a fork never are, and each used
@@ -126,7 +143,7 @@ class ClaudeCliBackend:
         r = subprocess.run(
             [self.bin, "-p", "--safe-mode",
              "--output-format", "json", "--model", m] + args,
-            input=prompt, capture_output=True, text=True, env=env,
+            input=prompt, capture_output=True, text=True, env=env, cwd=cwd,
         )
         elapsed = time.monotonic() - t0
         if r.returncode != 0:
