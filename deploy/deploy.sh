@@ -22,13 +22,21 @@
 #     migrated (5) it answers 503 schema until the restart (7), and the 5-minute tick refuses to
 #     run against a schema its code was not written for. A failure after step 2 prints the exact
 #     rollback command.
-#   ./deploy/deploy.sh rollback [<commit>] [--yes]
+#   ./deploy/deploy.sh rollback [<commit>] [--yes] [--drop-live]
 #       Back to <commit>, by default the commit before the last deploy (data/deploy/history.jsonl
 #       on Oracle). It shows the plan first. When the autotrade database is at a newer schema than
 #       that commit's code, it restores the newest predeploy backup at that commit's schema: what
 #       was written since then (runs, orders, fills, snapshots, events, AI calls, logins, PIN and
 #       lockout changes) leaves the live database, which is moved aside (never deleted), and every
-#       session is closed. That restore asks you to type 'restore' unless --yes is given. Then:
+#       session is closed. That restore asks you to type 'restore' unless --yes is given. When no
+#       predeploy backup has that schema (older ones are pruned), it names the daily copies that
+#       do and how to use one.
+#       The live ledger (실전): while the database has it (a live start, the mode 'live', or an
+#       order still open at Toss or waiting for its cancel), a restore refuses unless --drop-live
+#       is given (--yes does not cover it): the restored copy predates its record, and code before
+#       schema 6 has no Toss link to cancel or book what is open there. Turn live off on the mode
+#       screen and wait for its cancels (the next tick, within 5 minutes) first; with --drop-live
+#       the live ledger stays in the moved-aside database. Then:
 #       ticks and the AI runner are held off (their locks), autotrade.service is stopped, the tree
 #       is checked out at <commit> (a detached HEAD: main keeps the rolled-back commit, so the next
 #       deploy fast-forwards from it), web/dist goes back to that commit's release (built first if
@@ -80,25 +88,29 @@ autotrade_health() {
 }
 
 rollback() {
-  local target="" yes="" plan out
+  local target="" yes="" drop="" plan out
   for arg in "$@"; do
     case "$arg" in
       --yes) yes=1 ;;
+      --drop-live) drop=1 ;;   # a restore may set the live ledger aside (release.py live_refusal)
       -*) fail "unknown option $arg" ;;
       *) target="$arg" ;;
     esac
   done
   [ -z "$target" ] || target=$(git rev-parse --verify "$target^{commit}") || fail "no commit $target here"
-  plan=$(helper rollback-plan ${target:+"$target"}) || fail "cannot roll back: $(why "$plan") (nothing changed)"
+  plan=$(helper rollback-plan ${target:+"$target"} ${drop:+--drop-live}) || fail "cannot roll back: $(why "$plan") (nothing changed)"
   python3 -c 'import json, sys
 for line in json.load(sys.stdin)["say"]: print("[rollback] " + line)' <<<"$plan"
-  local head to restore release
+  local head to restore release live
   head=$(field head <<<"$plan")
   to=$(field target <<<"$plan")
   restore=$(field restore <<<"$plan")
   release=$(field release <<<"$plan")
+  live=$(field live <<<"$plan")   # set only when --drop-live lets the live ledger go
   if [ -n "$restore" ] && [ -z "$yes" ]; then
-    read -r -p "[rollback] type 'restore' to replace the live autotrade DB with that backup: " answer \
+    local what="that backup"
+    [ -z "$live" ] || what="that backup, the live ledger (실전) leaving with the replaced one"
+    read -r -p "[rollback] type 'restore' to replace the live autotrade DB with $what: " answer \
       || answer=""   # no terminal (end of input): not a yes
     [ "$answer" = "restore" ] || fail "rollback cancelled (nothing changed)"
   fi
@@ -108,7 +120,7 @@ for line in json.load(sys.stdin)["say"]: print("[rollback] " + line)' <<<"$plan"
     release=$(field release <<<"$out")
   fi
   echo "[rollback] holding off the jobs, stopping autotrade, checking out ${to:0:7}..."
-  out=$(helper rollback-apply "$to" ${restore:+--restore "$restore"} ${release:+--release "$release"}) \
+  out=$(helper rollback-apply "$to" ${restore:+--restore "$restore"} ${release:+--release "$release"} ${drop:+--drop-live}) \
     || fail "rollback stopped: $(why "$out")"
   record "{\"kind\": \"rollback\", \"from\": \"$head\", \"to\": \"$to\", \"release\": \"$release\"}"
   local hint="the tree is at ${to:0:7}; fix and deploy again, or roll back to another commit"
@@ -122,9 +134,16 @@ for line in json.load(sys.stdin)["say"]: print("[rollback] " + line)' <<<"$plan"
   fi
   if [ -n "$restore" ]; then
     python3 -c 'import json, sys
+out = json.load(sys.stdin)
 print("[rollback] restored {backup} (schema {schema}); the replaced database is kept at"
       " {setAside}; {closedSessions} sessions closed: log in again, with the PIN of that"
-      " backup".format(**json.load(sys.stdin)["restored"]))' <<<"$out"
+      " backup".format(**out["restored"]))
+live = out.get("liveDropped")
+if live:
+    print("[rollback] the live ledger (실전) left the live DB: it is in {}{}".format(
+        out["restored"]["setAside"],
+        "; orders may still be open at Toss: cancel them in the Toss app"
+        if live["on"] or live["openOrders"] else ""))' <<<"$out"
   fi
   echo "[rollback] done: Oracle at ${to:0:7} (detached; the next ./deploy/deploy.sh returns to main)"
 }
