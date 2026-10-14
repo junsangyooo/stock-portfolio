@@ -39,6 +39,17 @@ class TestApiGate(unittest.TestCase):
         r = self.c.post("/api/accounts", json={})
         self.assertEqual(r.status_code, 422)   # reached validation, not gated
 
+    def test_redesign_open_reads(self):
+        """The field grid and panel (no PII), this device's open accounts
+        (empty without a cookie) and its own lock need no session."""
+        for path in ("/api/analysis/news/themes", "/api/analysis/news/themes/macro",
+                     "/api/accounts/session"):
+            self.assertNotEqual(self.c.get(path).status_code, 403, path)
+        self.assertEqual(self.c.post("/api/accounts/junisa/lock").status_code, 200)
+        # …but nothing else under those prefixes opens
+        self.assertEqual(self.c.post("/api/analysis/news/themes/macro").status_code, 403)
+        self.assertEqual(self.c.get("/api/accounts/junisa/lock").status_code, 403)
+
     def test_cookie_opens_shared_data(self):
         name, value = self.cookie
         r = self.c.get("/api/analysis/summary?symbols=KR:005930",

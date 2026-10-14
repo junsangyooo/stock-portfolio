@@ -40,7 +40,7 @@ SHARED_JS = STATIC / "shared.js"
 SHARED_CSS = STATIC / "shared.css"
 THEME = STATIC / "theme.json"
 NEWS_THEMES = Path(server.__file__).resolve().parents[1] / "research" / "news" / "themes.json"
-SCREEN_FILES = ("landing.html", "account.html", "sources.html", "shared.js", "shared.css")
+SCREEN_FILES = ("landing.html", "account.html", "sources.html", "shared.js", "shared.css", "legacy.css")
 
 # Every name the injected fragment exports (ui-02-architecture §4). Each must
 # be defined exactly once across the fragment and the pages.
@@ -54,7 +54,16 @@ SHARED_NAMES = (
     "confirmModal",
     # modal focus trap and tab-aware polling, used by every page's modals/timers
     "trapFocus", "whenVisible",
+    # redesign stage 1 (FOUNDATION.md): formatters and rules of 인계 §3.1–3.5
+    "fmtPrice", "fmtMoney", "fmtPnl", "fmtPnlPct", "fmtChange", "fmtChangePct", "fmtQty",
+    "fmtAxisMan", "fmtDate", "fmtDateTime", "pnlLabel", "quoteState", "analysisState", "moodBand",
+    # …and the shared parts
+    "topBar", "bottomTab", "chrome", "segmented", "dialog", "panel", "menu", "pinGate",
+    "pinInput", "pinPrompt", "stateBlock", "banner", "skeleton", "spinner",
 )
+
+LEGACY_PAGES = ("landing.html", "account.html")   # redone in redesign stage 3
+STAGE1_NAMES = set(SHARED_NAMES[SHARED_NAMES.index("fmtPrice"):])
 
 # A colour literal in a VALUE position: after ':' / '=' / '(' / ',' or an
 # opening quote. Anchoring on the value keeps '#account-tabs' (a CSS id whose
@@ -75,15 +84,19 @@ def test_no_color_literals():
 
 def test_every_news_theme_has_a_token():
     """themes.json is the taxonomy, theme.json the design tokens — two files
-    that can drift. Drift is allowed to exist but not to be silent."""
+    that can drift. Drift is allowed to exist but not to be silent. Fields
+    show by icon only (user decision): no colour on a theme token; the old
+    colours live in legacy.theme_colors until landing/account are redone."""
     import json
     ids = [t["theme_id"] for t in json.loads(NEWS_THEMES.read_text())["themes"]]
-    tokens = json.loads(THEME.read_text())["themes"]
+    theme = json.loads(THEME.read_text())
+    tokens = theme["themes"]
     missing = [i for i in ids if i not in tokens]
-    assert not missing, f"news themes without a colour/icon token: {missing}"
+    assert not missing, f"news themes without an icon token: {missing}"
     for tid in ids:
-        assert re.fullmatch(r"#[0-9a-fA-F]{6}", tokens[tid]["color"]), tid
-        assert tokens[tid]["icon"], tid
+        assert set(tokens[tid]) == {"icon"}, tid
+        assert re.fullmatch(r"[a-z0-9-]+", tokens[tid]["icon"]), tid
+    assert set(theme["legacy"]["theme_colors"]) <= set(ids)
 
 
 def test_every_theme_icon_in_sprite():
@@ -103,7 +116,10 @@ def test_shared_names_defined_once():
             rf"^(?:async\s+)?function\s+{name}\s*\(|^(?:const|let|var)\s+{name}\s*=",
             re.MULTILINE)
         hits = {f: len(pat.findall((STATIC / f).read_text()))
-                for f in SCREEN_FILES if f.endswith((".js", ".html"))}
+                for f in SCREEN_FILES if f.endswith((".js", ".html"))
+                # account.html keeps page-local fmtPrice/fmtQty until stage 3
+                # replaces it; it never reads the shared ones bare
+                if not (f in LEGACY_PAGES and name in STAGE1_NAMES)}
         total = sum(hits.values())
         if total > 1:
             dup.append(f"{name}: {hits}")
@@ -114,7 +130,8 @@ def test_shared_names_defined_once():
     assert not none, f"shared names never defined: {none}"
     exported = re.search(r"window\.S\s*=\s*\{([^}]*)\}", SHARED_JS.read_text())
     assert exported, "shared.js must export window.S = { ... }"
-    names = {n.strip() for n in exported.group(1).split(",") if n.strip()}
+    body = re.sub(r"//[^\n]*", "", exported.group(1))
+    names = {n.strip() for n in body.split(",") if n.strip()}
     assert set(SHARED_NAMES) <= names, set(SHARED_NAMES) - names
 
 
@@ -333,35 +350,124 @@ def _contrast(a: str, b: str) -> float:
     return (la + 0.05) / (lb + 0.05)
 
 
-def test_theme_text_tokens_meet_contrast():
-    """WCAG AA for the 9–12px mono text these tokens colour: 4.5:1 against
-    both surfaces text sits on. News-theme colours are badge text → 3:1."""
+def _theme():
     import json
-    theme = json.loads(THEME.read_text())
-    c = theme["colors"]
+    return json.loads(THEME.read_text())
+
+
+# Text colours and the surfaces they sit on (Figma: white cards on the subtle
+# page). WCAG AA 4.5:1 for every pair; text/disabled is exempt (WCAG 1.4.3
+# excludes inactive controls) and fills (mood cells, verdict/negative) carry
+# no text.
+TEXT_TOKENS = ("text/primary", "text/muted", "accent/default", "accent/hover",
+               "status/success", "status/warning", "status/error", "status/error-hover",
+               "market/up", "market/down", "verdict/positive", "verdict/negative-text",
+               "mood/negative-text")
+TEXT_SURFACES = ("bg/default", "bg/subtle")
+INVERSE_PAIRS = (("text/inverse", "bg/inverse"), ("text/inverse", "accent/default"),
+                 ("text/inverse", "accent/hover"), ("text/inverse", "status/error"),
+                 ("text/inverse", "status/error-hover"), ("text/inverse", "verdict/negative-fill"),
+                 ("text/inverse", "mood/positive-strong"))
+LEGACY_TEXT = ("fg", "dim", "muted", "cyan", "green", "red", "yellow", "orange", "purple")
+
+
+def test_theme_text_tokens_meet_contrast():
+    values = server.theme_values(_theme())
+    legacy = _theme()["legacy"]
     bad = []
-    for tok in ("fg", "dim", "muted", "cyan", "green", "red", "yellow", "orange", "purple"):
-        for surface in ("bg", "panel"):
-            r = _contrast(c[tok], c[surface])
+    for tok in TEXT_TOKENS:
+        for surface in TEXT_SURFACES:
+            r = _contrast(values[tok], values[surface])
             if r < 4.5:
                 bad.append(f"{tok} on {surface}: {r:.2f}")
-    for tid, v in theme["themes"].items():
-        r = _contrast(v["color"], c["panel"])
+    for fg, bg in INVERSE_PAIRS:
+        r = _contrast(values[fg], values[bg])
+        if r < 4.5:
+            bad.append(f"{fg} on {bg}: {r:.2f}")
+    # the temporary Ink wash aliases keep the old pages readable too
+    old = {k: values[v] for k, v in legacy["colors"].items()}
+    for tok in LEGACY_TEXT:
+        for surface in ("bg", "panel"):
+            r = _contrast(old[tok], old[surface])
+            if r < 4.5:
+                bad.append(f"legacy {tok} on {surface}: {r:.2f}")
+    for tid, col in legacy["theme_colors"].items():
+        r = _contrast(col, old["panel"])
         if r < 3.0:
-            bad.append(f"theme {tid} on panel: {r:.2f}")
+            bad.append(f"legacy theme {tid} on panel: {r:.2f}")
     assert not bad, "contrast below AA:\n" + "\n".join(bad)
 
 
+def test_theme_is_the_design_file_token_set():
+    """tokens.items of the design project (156, primitive + semantic) moved
+    over unrenamed; code-only additions sit apart in code_tokens."""
+    theme = _theme()
+    toks = theme["tokens"]
+    assert len(toks) == 156
+    assert {t["layer"] for t in toks} == {"primitive", "semantic"}
+    names = [t["name"] for t in toks + theme["code_tokens"]]
+    assert len(names) == len(set(names))
+    by = {t["name"]: t for t in toks}
+    for t in toks:
+        if "alias" in t:
+            assert by[t["alias"]]["layer"] == "primitive", t["name"]
+    for name in ("bg/default", "bg/subtle", "text/primary", "accent/default", "market/up",
+                 "market/down", "mood/positive-strong", "verdict/negative-text", "skeleton/fill",
+                 "space/page", "radius/card", "type/body/size", "type/number-lg/style"):
+        assert name in by, name
+    assert all(t["layer"] == "code" and t.get("source") for t in theme["code_tokens"])
+    assert "다크 모드 값은 없다" in theme["description"]
+
+
+def test_css_variable_naming_rule():
+    """One deterministic rule: 'a/b/c' → --a-b-c. No two tokens (or a token
+    and a legacy alias) may land on the same variable."""
+    theme = _theme()
+    assert "'/'를 '-'로" in theme["description"]
+    assert server.css_var("bg/default") == "--bg-default"
+    assert server.css_var("type/heading-1/size") == "--type-heading-1-size"
+    names = [t["name"] for t in theme["tokens"] + theme["code_tokens"]]
+    vars_ = [server.css_var(n) for n in names]
+    legacy = ["--" + k for k in list(theme["legacy"]["colors"]) + list(theme["legacy"]["tokens"])]
+    legacy += [v + "-rgb" for v in legacy]
+    assert len(set(vars_ + legacy)) == len(vars_) + len(legacy)
+    tag = server._theme_style_tag()
+    assert "--bg-default: var(--primitive-neutral-0);" in tag
+    assert "--primitive-neutral-0: #FFFFFF;" in tag
+    assert "--type-body-size: var(--primitive-size-14);" in tag
+    assert "--primitive-size-14: 14px;" in tag
+    assert "--primitive-weight-number: 600;" in tag
+    assert "--type-body-line-height: 1.5;" in tag
+    assert "Pretendard Variable" in tag and "--primitive-icon-set" not in tag
+    # legacy aliases point at the new tokens (3단계 끝에 지움)
+    assert "--cyan: var(--accent-default);" in tag and "--cyan-rgb: 11, 122, 107;" in tag
+    assert "3단계" in theme["legacy"]["note"]
+
+
+def test_pages_use_semantic_tokens_only():
+    """Primitives exist so semantic tokens can point at them; a page that
+    reaches past the semantic layer breaks the next palette change."""
+    bad = []
+    for f in SCREEN_FILES:
+        for i, line in enumerate((STATIC / f).read_text().splitlines(), 1):
+            if "--primitive-" in line or re.search(r"designColor\('primitive/", line):
+                bad.append(f"{f}:{i}: {line.strip()}")
+    assert not bad, "primitive tokens used directly:\n" + "\n".join(bad)
+
+
 def test_theme_has_layout_tokens():
-    import json
-    tokens = json.loads(THEME.read_text())["tokens"]
-    for name in ("space-1", "space-2", "space-3", "space-4", "space-5", "space-6",
-                 "text-xs", "text-sm", "text-md", "text-lg", "text-xl",
-                 "lh-tight", "lh-body", "h1", "h2", "h3", "bp-sm", "bp-md", "bp-lg"):
-        assert name in tokens, name
-    assert float(tokens["lh-body"]) >= 1.5
-    # server.py emits every key under `tokens` as --name; these must reach CSS
-    assert "--space-1" in server._theme_style_tag()
+    values = server.theme_values(_theme())
+    for name in ("space/gap-xs", "space/gap-sm", "space/gap-md", "space/gap-lg", "space/card",
+                 "space/section", "space/page", "space/page-compact",
+                 "type/caption/size", "type/body/size", "type/heading-2/size", "type/heading-1/size",
+                 "type/body/line-height", "bp/sm", "bp/md", "bp/lg",
+                 "layout/topbar-height", "layout/topbar-height-compact", "layout/bottomtab-height",
+                 "layout/content-max", "layout/panel-min", "layout/panel-max", "control/height-seg-lg"):
+        assert name in values, name
+    assert float(values["type/body/line-height"]) >= 1.5
+    assert (values["bp/sm"], values["bp/md"], values["bp/lg"]) == ("600px", "900px", "1100px")
+    assert values["control/height-seg-lg"] == "49px"
+    assert "--space-gap-xs" in server._theme_style_tag()
     assert "--bp-sm" in server._theme_style_tag()
 
 
@@ -395,7 +501,7 @@ def test_btn_family_and_a11y_base():
                 ".skip-link", ".sr-only", "img {"):
         assert sel in css, sel
     assert "min-height: 24px" in css and "min-height: 44px" in css
-    assert re.search(r"body\s*\{[^}]*line-height:\s*var\(--lh-body\)", css)
+    assert re.search(r"body\s*\{[^}]*line-height:\s*var\(--type-body-line-height\)", css)
     # the other shared verbs: no stray 5th variant
     variants = set(re.findall(r"\.btn-([a-z]+)", css))
     assert variants == {"primary", "danger", "sm"}, variants
@@ -413,19 +519,58 @@ def test_label_dictionary_exported():
     js = SHARED_JS.read_text()
     m = re.search(r"const LABELS\s*=\s*\{([^}]*)\}", js)
     assert m, "shared.js defines LABELS"
-    for word in ("삭제", "취소", "확인", "저장", "닫기", "다시 분석", "전체 보기", "접기"):
+    for word in ("삭제", "취소", "확인", "저장", "닫기", "다시 분석", "전체 보기", "접기",
+                 # 인계 §3.6 additions
+                 "거르기 풀기", "다시 시도", "버리기", "계속 입력", "되돌리기", "거래 보기", "거래 기록",
+                 "매수", "매도", "관심 추가", "보유 정정", "예수금 정정", "이 기기에서 잠그기", "바꾸기",
+                 "전량", "현재가", "새 대화", "보내기", "만들기", "계좌 추가", "기록", "이 종목 묻기",
+                 "지난 좌표 보기", "날짜 선택"):
         assert f"'{word}'" in m.group(1), word
-    assert "제거" not in m.group(1)
+    for banned in BANNED_WORDS:
+        assert banned not in m.group(1)
     assert re.search(r"window\.S\s*=\s*\{[^}]*\bLABELS\b", js)
 
 
+BANNED_WORDS = ("제거", "해제", "지우기")   # 인계 §3.6 — 삭제 · 거르기 풀기 · 버리기 instead
+
+
 def test_label_dictionary_used():
-    """One verb per action: 삭제, never 제거, in anything a user reads
-    (button text, confirmLabel, aria-label, dialog body). Comments are exempt."""
+    """One verb per action: 삭제, never 제거 — and no 해제 or 지우기 either —
+    in anything a user reads (button text, confirmLabel, aria-label, dialog
+    body). Comments are exempt."""
     bad = []
-    for f in PAGES:
+    for f in PAGES + ("shared.js",):
         for i, line in enumerate((STATIC / f).read_text().splitlines(), 1):
             code = line.split("//")[0]
-            if "제거" in code:
+            if any(w in code for w in BANNED_WORDS):
                 bad.append(f"{f}:{i}: {line.strip()}")
-    assert not bad, "'제거' in user-facing text — use S.LABELS.delete:\n" + "\n".join(bad)
+    assert not bad, "banned words in user-facing text — use S.LABELS:\n" + "\n".join(bad)
+
+
+# Every Lucide icon the design file uses (Figma 디자인 page, Icon/* instances,
+# read 2026-10-14) — the 23 field icons and the six source-status icons included.
+FIGMA_ICONS = (
+    "activity", "arrow-left", "arrow-left-right", "arrow-up-down", "arrow-up-to-line", "atom",
+    "ban", "battery-charging", "bot", "brain-circuit", "briefcase", "car", "chart-line",
+    "chevron-down", "chevron-right", "circle-check", "circle-dashed", "circle-x", "cpu",
+    "download", "ellipsis", "external-link", "factory", "flame", "gamepad-2", "gem", "globe",
+    "heart-pulse", "info", "landmark", "loader-circle", "lock", "message-circle", "moon",
+    "newspaper", "pencil", "pill", "plus", "printer", "refresh-cw", "rocket", "search",
+    "server", "shield", "ship", "shopping-cart", "star", "trending-down", "triangle-alert",
+    "wallet", "wrench", "x", "zap")
+
+
+def test_sprite_has_every_design_icon():
+    js = SHARED_JS.read_text()
+    sprite = set(re.findall(r'<symbol id="i-([a-z0-9-]+)"', js))
+    missing = sorted(set(FIGMA_ICONS) - sprite)
+    assert not missing, f"Figma icons absent from the sprite: {missing}"
+    # every literal icon name the shared parts and the redesigned pages use
+    used = set(re.findall(r"svgIco\('([a-z0-9-]+)'", js))
+    used |= set(re.findall(r"icon: '([a-z0-9-]+)'", js))
+    for f in ("sources.html",):
+        src = (STATIC / f).read_text()
+        used |= set(re.findall(r"svgIco\('([a-z0-9-]+)'", src))
+        used |= set(re.findall(r'href="#i-([a-z0-9-]+)"', src))
+    assert not sorted(used - sprite), sorted(used - sprite)
+    assert "Lucide 1.55.0" in js

@@ -5,6 +5,7 @@ Routes:
   GET /a/{id}        — account.html (per-account view)
   GET /sources       — sources.html (source and job health)
   GET /favicon*.png · /favicon.ico · /apple-touch-icon.png — product icons
+  GET /fonts/PretendardVariable.woff2 — the one web font (OFL, static/fonts/)
   /api/universe/*    — symbol master search
   /api/accounts/*    — account CRUD + holdings + balances + snapshots + chat
   /api/market/*      — ohlcv + quotes
@@ -56,13 +57,23 @@ _OPEN_API = {
     ("GET", "/api/accounts"),                 # account list — names only
     ("POST", "/api/accounts"),                # account creation — own PIN set in-form
     ("GET", "/api/analysis/news/feed"),       # landing page news, no PII
+    ("GET", "/api/analysis/news/themes"),     # the field grid, no PII
+    ("GET", "/api/accounts/session"),         # this device's open accounts — [] when none
 }
+# Prefix-open: a field's panel (no PII) and this device's own lock (clears
+# its own cookie only).
+_OPEN_PREFIX = (("GET", "/api/analysis/news/themes/"),)
+_OPEN_SUFFIX = (("POST", "/lock"),)
 
 
 @app.middleware("http")
 async def api_session_gate(request: Request, call_next):
     path = request.url.path
-    if path.startswith("/api/") and (request.method, path) not in _OPEN_API:
+    open_ = ((request.method, path) in _OPEN_API
+             or any(request.method == m and path.startswith(pre) for m, pre in _OPEN_PREFIX)
+             or any(request.method == m and path.startswith("/api/accounts/") and path.endswith(suf)
+                    for m, suf in _OPEN_SUFFIX))
+    if path.startswith("/api/") and not open_:
         is_pin_post = request.method == "POST" and path.endswith("/auth")
         # Any account's session opens the shared data. The ledger stays behind
         # require_account, which is closed while an account has no PIN — a
@@ -80,20 +91,22 @@ _NO_CACHE_HEADERS = {
 
 
 # ── CSP ────────────────────────────────────────────────────────────────────
-# Every <script>/<style> on a page is inline (the page's own pair plus the
-# fragments injected below), so the policy is a per-response nonce, never
-# 'unsafe-inline'. Consequences the static files have to live with: a
-# style="…" attribute and setAttribute('style', …) are blocked (CSSOM writes —
-# el.style.cssText / el.style.x — are not); Google Fonts is reached through
-# @import inside the nonced <style>, hence the fonts host in style-src; news
-# thumbnails and source favicons are external https images.
+# Every <script>/<style> on a page is inline (the page's own pair, the
+# fragments injected below and the <!--#include--> pieces), so the policy is a
+# per-response nonce, never 'unsafe-inline'. Consequences the static files have
+# to live with: a style="…" attribute and setAttribute('style', …) are blocked
+# (CSSOM writes — el.style.cssText / el.style.x — are not); news thumbnails and
+# source favicons are external https images. Pretendard is served from this
+# origin (font-src 'self'). The Google Fonts hosts stay only for the two pages
+# not yet redesigned (landing·account @import JetBrains Mono) — remove them
+# with those imports at the end of redesign stage 3.
 _TAG_RE = re.compile(r"<(script|style)\b", re.IGNORECASE)
 
 
 def _csp(nonce: str) -> str:
     return (f"default-src 'self'; script-src 'nonce-{nonce}'; "
             f"style-src 'nonce-{nonce}' https://fonts.googleapis.com; "
-            "font-src https://fonts.gstatic.com; img-src 'self' data: https:; "
+            "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; "
             "connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; "
             "form-action 'self'")
 
@@ -135,6 +148,21 @@ for _p in _ICONS:
     _icon_route(_p)
 
 
+# ── font ───────────────────────────────────────────────────────────────────
+# Pretendard Variable (OFL-1.1, static/fonts/LICENSE.txt), from the npm
+# `pretendard@1.3.9` package. Same treatment as the icons: read once at
+# import, a fixed route, immutable cache. Every page preloads it.
+FONT_PATH = "/fonts/PretendardVariable.woff2"
+_FONT = (STATIC / "fonts" / "PretendardVariable.woff2").read_bytes()
+_FONT_LINK = (f'<link rel="preload" href="{FONT_PATH}" as="font" '
+              'type="font/woff2" crossorigin>')
+
+
+@app.get(FONT_PATH, include_in_schema=False)
+def font() -> Response:
+    return Response(content=_FONT, media_type="font/woff2", headers=_ICON_HEADERS)
+
+
 def _hex_to_rgb_csv(hex_str: str) -> str:
     """'#0e1117' → '14, 17, 23'. Used for rgba(var(--xxx-rgb), alpha)."""
     h = hex_str.lstrip("#")
@@ -150,7 +178,7 @@ def _hex_to_rgb_csv(hex_str: str) -> str:
 # The pages and their fragments are read per request so an edit shows without
 # a restart; keying the cache on mtime keeps that while making the steady
 # state zero disk reads. The nonce in _html stays per response.
-@functools.lru_cache(maxsize=16)
+@functools.lru_cache(maxsize=64)
 def _text_at(path: str, mtime_ns: int) -> str:
     return Path(path).read_text()
 
@@ -169,8 +197,7 @@ def _mtime(path: Path) -> int:
 
 
 def _load_theme() -> dict:
-    """Full theme dict (colors + tokens) from theme.json, the single source of
-    truth for every design literal.
+    """theme.json, the single source of truth for every design literal.
 
     No built-in fallback palette on purpose: theme.json ships with the code, so
     it can only be missing or corrupt if the deploy itself is broken, and a
@@ -184,29 +211,98 @@ def _load_theme() -> dict:
         return {}
 
 
+# ── design tokens → CSS ──────────────────────────────────────────────────────
+# The one naming rule (theme.json "description"): token 'a/b/c' is the CSS
+# variable --a-b-c. Semantic tokens point at their primitive through var(), so
+# the cascade keeps the alias the design file has.
+FONT_STACK = ("'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, "
+              "system-ui, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif")
+_WEIGHTS = {"Thin": 100, "ExtraLight": 200, "Light": 300, "Regular": 400,
+            "Medium": 500, "SemiBold": 600, "Bold": 700, "ExtraBold": 800, "Black": 900}
+
+
+def css_var(name: str) -> str:
+    """'bg/default' → '--bg-default'."""
+    return "--" + name.replace("/", "-")
+
+
+def _token_value(tok: dict) -> str | None:
+    """A design-file token's literal CSS value, or None when it has no CSS
+    form (primitive/icon-set is metadata)."""
+    name, typ, val = tok["name"], tok.get("type"), tok.get("value")
+    if tok.get("layer") == "code":
+        return str(val)
+    if typ == "color":
+        return str(val)
+    if typ == "number":
+        return f"{val}px"
+    if name.startswith("primitive/font/"):
+        return FONT_STACK
+    if name.startswith("primitive/weight/"):
+        return str(_WEIGHTS[val])
+    return None
+
+
+def theme_values(theme: dict | None = None) -> dict:
+    """Every token name → its resolved literal (aliases followed), for the
+    JS side (canvas cannot render var()) and for the tests."""
+    theme = _load_theme() if theme is None else theme
+    toks = list(theme.get("tokens") or []) + list(theme.get("code_tokens") or [])
+    by_name = {t["name"]: t for t in toks}
+    out = {}
+    for t in toks:
+        cur, seen = t, set()
+        while "alias" in cur and cur["name"] not in seen:
+            seen.add(cur["name"])
+            cur = by_name[cur["alias"]]
+        v = _token_value(cur)
+        if v is not None:
+            out[t["name"]] = v
+    return out
+
+
+def theme_css(theme: dict) -> list[str]:
+    toks = list(theme.get("tokens") or []) + list(theme.get("code_tokens") or [])
+    values = theme_values(theme)
+    lines = []
+    for t in toks:
+        if t["name"] not in values:
+            continue
+        val = f"var({css_var(t['alias'])})" if "alias" in t else values[t["name"]]
+        lines.append(f"  {css_var(t['name'])}: {val};")
+    # Temporary aliases for landing.html / account.html (old Ink wash names →
+    # new tokens). Removed at the end of redesign stage 3.
+    legacy = theme.get("legacy") or {}
+    for old, new in (legacy.get("colors") or {}).items():
+        lines.append(f"  --{old}: var({css_var(new)});")
+        lines.append(f"  --{old}-rgb: {_hex_to_rgb_csv(values[new])};")
+    for old, val in (legacy.get("tokens") or {}).items():
+        lines.append(f"  --{old}: {val};")
+    return lines
+
+
 def _theme_style_tag() -> str:
-    """Emit a single <style id="theme-vars"> defining:
-      - --xxx + --xxx-rgb  for every color token (rgba(var(--xxx-rgb), a))
-      - --xxx              for every non-color token (radius, shadow, …)
-    Page CSS references only these tokens — no hardcoded design literals
-    allowed in the static files."""
+    """One <style id="theme-vars"> with every token as a CSS variable, plus the
+    same values as window.__THEME_TOKENS for the shared JS. Page CSS
+    references only these variables — no design literals in the static files."""
     return _theme_style_tag_at(_mtime(THEME_PATH))
 
 
 @functools.lru_cache(maxsize=4)
 def _theme_style_tag_at(mtime_ns: int) -> str:
     theme = _load_theme()
-    lines = [":root {"]
-    for name, hex_val in (theme.get("colors") or {}).items():
-        lines.append(f"  --{name}: {hex_val};")
-        lines.append(f"  --{name}-rgb: {_hex_to_rgb_csv(hex_val)};")
-    for name, val in (theme.get("tokens") or {}).items():
-        lines.append(f"  --{name}: {val};")
-    lines.append("}")
-    # The same tokens as JSON for the shared JS: canvas cannot render
-    # 'var(--x)', and the per-news-theme colours/icons have no CSS form.
-    tokens = json.dumps({k: theme.get(k) or {} for k in ("colors", "tokens", "themes")},
-                        ensure_ascii=False)
+    lines = [":root {"] + theme_css(theme) + ["}"] if theme else [":root {", "}"]
+    values = theme_values(theme) if theme else {}
+    legacy = theme.get("legacy") or {}
+    js = {
+        "values": values,
+        "themes": theme.get("themes") or {},
+        # legacy (stage 3 removes): old colour names as hex, old tokens, field colours
+        "colors": {old: values[new] for old, new in (legacy.get("colors") or {}).items()},
+        "tokens": legacy.get("tokens") or {},
+        "themeColors": legacy.get("theme_colors") or {},
+    }
+    tokens = json.dumps(js, ensure_ascii=False)
     return ('<style id="theme-vars">\n' + "\n".join(lines) + "\n</style>\n"
             f'<script>window.__THEME_TOKENS = {tokens};</script>')
 
@@ -245,16 +341,55 @@ def _inject_head(body: str, tag: str) -> str:
     return body[:at] + "\n" + tag + body[at:]
 
 
+# ── page fragments ────────────────────────────────────────────────────────
+# A page can be several files: `<!--#include account/stock.js-->` in the HTML
+# is replaced by that file under static/, inline — .js as a <script>, .css as
+# a <style>, .html as is — so the nonce CSP stamps it like any other tag and
+# no /static mount exists. Same mtime cache as the pages; a missing fragment
+# is a 500, never a page with a hole in it.
+_INCLUDE_RE = re.compile(r"<!--#include\s+([^\s>]+?)\s*-->")
+_INCLUDE_TAGS = {".js": ("<script data-include=\"{}\">", "</script>"),
+                 ".css": ("<style data-include=\"{}\">", "</style>"),
+                 ".html": ("", "")}
+
+
+def _include(rel: str) -> str:
+    path = (STATIC / rel).resolve()
+    suffix = path.suffix.lower()
+    if (suffix not in _INCLUDE_TAGS or not path.is_relative_to(STATIC.resolve())
+            or not re.fullmatch(r"[\w./-]+", rel)):
+        logging.error("include refused: %s", rel)
+        raise HTTPException(status_code=500, detail=f"include {rel} refused")
+    try:
+        text = _read(path)
+    except OSError as exc:
+        logging.error("include %s unusable: %s", rel, exc)
+        raise HTTPException(status_code=500, detail=f"{rel} missing") from exc
+    open_tag, close_tag = _INCLUDE_TAGS[suffix]
+    if close_tag and close_tag[:-1].lower() in text.lower():
+        # '</script' inside a script ends the tag early and spills the rest as markup
+        raise HTTPException(status_code=500, detail=f"{rel} contains {close_tag[:-1]}")
+    if not open_tag:
+        return text
+    return open_tag.format(rel) + "\n" + text + "\n" + close_tag
+
+
+def expand_includes(body: str) -> str:
+    return _INCLUDE_RE.sub(lambda m: _include(m.group(1)), body)
+
+
 def _serve(name: str) -> HTMLResponse:
     try:
         body = _read(STATIC / name)
     except OSError:
         body = f"<h1>{name} missing</h1>"
-    # <head> order: icons → theme tokens → shared.css → shared.js → the
-    # page's own <style>/<script>. CSS arriving first lets page rules
-    # override it (the cascade); JS arriving first is why the fragment exports
-    # one namespace (window.S) instead of globals a page could shadow.
-    tags = [_ICON_LINKS, _theme_style_tag(), _shared_css_tag(), _shared_js_tag()]
+    body = expand_includes(body)
+    # <head> order: icons + font preload → theme tokens → shared.css →
+    # shared.js → the page's own <style>/<script>. CSS arriving first lets
+    # page rules override it (the cascade); JS arriving first is why the
+    # fragment exports one namespace (window.S) instead of globals a page
+    # could shadow.
+    tags = [_ICON_LINKS, _FONT_LINK, _theme_style_tag(), _shared_css_tag(), _shared_js_tag()]
     return _html(_inject_head(body, "\n".join(tags)))
 
 
@@ -294,17 +429,19 @@ _NOT_FOUND_HTML = """<!doctype html>
 <title>404</title>
 <style>
 body { margin: 0; min-height: 100vh; display: grid; place-items: center;
-       background: var(--bg); color: var(--fg); font-family: ui-monospace, monospace; }
+       background: var(--bg-subtle); color: var(--text-primary);
+       font-family: var(--type-body-family); }
 main { text-align: center; }
-.mark { font-size: 14px; letter-spacing: .12em; color: var(--dim); margin-bottom: 18px; }
-h1 { font-size: 48px; margin: 0 0 8px; font-weight: 500; }
-p { color: var(--muted); margin: 0; font-size: 13px; }
+.mark { font-size: var(--type-body-size); letter-spacing: .12em; color: var(--text-muted);
+        margin-bottom: var(--space-gap-lg); }
+h1 { font-size: var(--type-number-lg-size); margin: 0 0 var(--space-gap-sm); font-weight: 700; }
+p { color: var(--text-muted); margin: 0; font-size: var(--type-body-size); }
 </style>
 </head>
 <body><main>
 <div class="mark">__MARK__</div>
 <h1>404</h1>
-<p>없는 페이지입니다.</p>
+<p>없는 페이지예요</p>
 </main></body>
 </html>
 """

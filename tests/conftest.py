@@ -52,6 +52,11 @@ def temp_books(tmp_path, monkeypatch):
     # still creates the real data/ tree.
     for mod in (pdb, quote_store, batch_job, builder):
         monkeypatch.setattr(mod, "ensure_dirs", lambda: None)
+    # The quote cache persists to data/market/quote/last.json on every write;
+    # a test's quote landed in the real file and leaked into later runs.
+    monkeypatch.setattr(quote_store, "_FILE", tmp_path / "quote_last.json")
+    monkeypatch.setattr(quote_store, "_cache", {})
+    monkeypatch.setattr(quote_store, "_loaded", False)
     monkeypatch.setattr(security, "_SECRET_FILE", tmp_path / ".session_secret")
     monkeypatch.setattr(security, "_secret_cache", None)
     return tmp_path

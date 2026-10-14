@@ -32,9 +32,14 @@ def test_a11y_skeleton():
     assert re.match(r'<body>\s*<a class="skip-link" href="#main">본문으로 건너뛰기</a>', body)
     assert re.search(r'<main\b[^>]*\bid="main"', SRC)
     assert len(re.findall(r"<h1\b", SRC)) == 1
-    assert "S.trapFocus(" in SRC, "the detail panel keeps focus inside"
-    assert "'Escape'" in SCRIPT, "Esc closes the detail panel"
-    assert 'role="dialog"' in SRC and 'aria-modal="true"' in SRC
+    # the detail panel is the shared S.panel: role=dialog, focus kept inside,
+    # Esc closes (the overlay stack in shared.js)
+    assert "S.panel(" in SCRIPT
+    js = (STATIC / "shared.js").read_text()
+    panel = js[js.index("function panel("):js.index("function menu(")]
+    assert "role: 'dialog'" in panel and "'aria-modal': 'true'" in panel and "trapFocus(" in panel
+    assert "onEscape" in panel
+    assert "'Escape'" in SCRIPT, "Esc hides the field-name bubble"
 
 
 def test_polls_every_five_minutes_while_visible():
@@ -117,3 +122,16 @@ def test_icons_in_page_sprite():
     used -= {"collect_error", "failing", "flaky", "quiet", "never", "ok"}
     missing = sorted(i for i in used if f'id="i-{i}"' not in SRC and f'id="i-{i}"' not in shared)
     assert not missing, missing
+
+
+def test_wears_the_redesign_chrome():
+    """Redesign stage 1 pilot: top bar (수집 area, 390 title + 새로고침),
+    bottom tab, big segment on phones, white cards, no page-local sprite."""
+    assert "S.chrome(" in SCRIPT and "active: 'news'" in SCRIPT and "title: '소스 현황'" in SCRIPT
+    assert "bottomTab: 'news'" in SCRIPT
+    assert 'class="seg seg-lg view-seg"' in SRC
+    assert 'class="card' in SRC and 'class="panel' not in SRC
+    assert "<symbol" not in SRC, "icons come from the shared sprite"
+    assert "JetBrains" not in SRC and "@import" not in SRC, "Pretendard from shared.css"
+    for old in ("var(--fg)", "var(--dim)", "var(--cyan)", "var(--panel)", "var(--space-1)", "var(--text-xs)"):
+        assert old not in SRC, f"legacy alias {old} — use the direction-A tokens"

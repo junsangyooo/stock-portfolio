@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from src.dashboard_web import server
 
 PORTFOLIO_HOST = "portfolio.jsyoo.dev"
-PAGES = (("/", PORTFOLIO_HOST), ("/a/x", PORTFOLIO_HOST))
+PAGES = (("/", PORTFOLIO_HOST), ("/a/x", PORTFOLIO_HOST), ("/sources", PORTFOLIO_HOST))
 _TAG = re.compile(r"<(script|style)\b[^>]*>", re.IGNORECASE)
 _NONCE = re.compile(r"script-src 'nonce-([A-Za-z0-9_-]{16,})'")
 
@@ -31,7 +31,9 @@ def test_csp_header_and_nonce_on_every_tag(client):
         nonce = _nonce(r)
         csp = r.headers["content-security-policy"]
         assert f"style-src 'nonce-{nonce}' https://fonts.googleapis.com" in csp
-        assert "font-src https://fonts.gstatic.com" in csp
+        # Pretendard from this origin; gstatic only until landing/account drop
+        # their JetBrains Mono @import (redesign stage 3)
+        assert "font-src 'self' https://fonts.gstatic.com" in csp
         assert "unsafe-inline" not in csp and "unsafe-hashes" not in csp
         tags = _TAG.findall(r.text)
         assert len(tags) >= 6, (path, len(tags))          # page 2 + injected ≥4
@@ -49,6 +51,7 @@ def test_nonce_is_fresh_per_response(client):
 def test_api_and_icons_carry_no_csp(client):
     assert "content-security-policy" not in client.get("/api/accounts").headers
     assert "content-security-policy" not in client.get("/favicon-32.png").headers
+    assert "content-security-policy" not in client.get("/fonts/PretendardVariable.woff2").headers
 
 
 def test_svg_favicon_replaced_by_png_links(client):
