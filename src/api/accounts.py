@@ -13,6 +13,8 @@ account's session.
 """
 from __future__ import annotations
 
+import logging
+
 from typing import Dict, List, Optional
 
 from fastapi import (
@@ -28,6 +30,7 @@ from ..portfolio.store import (account_store, balance_store, holding_store,
 from ..research.news.mapping import ensure_theme_mapping
 from ..universe import search as uni_search
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
 
@@ -190,14 +193,21 @@ def add_holding(account_id: str, body: HoldingUpsert,
     """Add or directly edit a holding. Never touches cash — a trade goes
     through POST /trades, the one door for anything that moves money."""
     _universe_meta(body.symbol_id)
-    backfill_bars = gap_filler.fill_one(body.symbol_id)
+    # The holding is the person's record; a price source being down must not
+    # lose it. The bars come with the next refresh or snapshot instead.
+    try:
+        backfill_bars, backfill_failed = gap_filler.fill_one(body.symbol_id), False
+    except Exception as e:  # noqa: BLE001 — SourceError and kin
+        log.warning("backfill %s on add failed: %s", body.symbol_id, e)
+        backfill_bars, backfill_failed = 0, True
     holding_store.upsert(
         account_id, body.symbol_id,
         avg_cost=body.avg_cost, qty=body.qty, note=body.note, name=body.name,
     )
     # Map the symbol into themes off the request path (may make an LLM call).
     background.add_task(ensure_theme_mapping, body.symbol_id)
-    return {"ok": True, "backfill_bars": backfill_bars}
+    return {"ok": True, "backfill_bars": backfill_bars,
+            "backfill_failed": backfill_failed}
 
 
 @router.delete("/{account_id}/holdings/{symbol_id:path}")

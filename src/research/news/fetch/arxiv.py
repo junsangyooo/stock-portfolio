@@ -12,7 +12,7 @@ import urllib.parse
 import urllib.request
 
 from .base import RawItem
-from .rss import parse_feed, _UA
+from .rss import _UA, _check_feed, parse_feed
 
 _API = "https://export.arxiv.org/api/query"
 
@@ -59,5 +59,7 @@ def fetch_arxiv(query: str, source_id: str, max_results: int = 30,
                 time.sleep(_RETRY_BACKOFF_S)
                 continue
             raise
-    return parse_feed(data.decode("utf-8", errors="replace"),
+    text = data.decode("utf-8", errors="replace")
+    _check_feed(text)        # an HTML error page is a failure, not a quiet day
+    return parse_feed(text,
                       source_id, kind="arxiv")

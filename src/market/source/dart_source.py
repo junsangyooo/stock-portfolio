@@ -34,6 +34,7 @@ API key: env DART_API_KEY (or DART_PERSONAL_API_KEY); falls back to parsing
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date
 from typing import Dict, Iterable, List, Optional
 
@@ -42,6 +43,8 @@ import requests
 from .base import FinancialRow
 from ...core import secrets
 from ...core.paths import DART_CORP_CODES, split_symbol
+
+log = logging.getLogger(__name__)
 
 # reprt_code → (period suffix, ordered list for "latest N")
 REPRT = {"11013": "Q1", "11012": "Q2", "11014": "Q3", "11011": "FY"}
@@ -127,7 +130,8 @@ def match_accounts(entries: Iterable) -> Dict[str, float]:
         for sj_set, field, subs in _ACCOUNT_RULES:
             if field in fields or sj not in sj_set:
                 continue
-            if any(sub in name for sub in subs):
+            # '자본과부채총계' holds '부채총계' — the bulk path has no account_id
+            if any(sub in name for sub in subs) and "자본과부채" not in name:
                 fields[field] = amount
     return fields
 
@@ -260,7 +264,8 @@ class DartSource:
             try:
                 df = self._client().report(code, "배당", year,
                                            reprt_code="11011")
-            except Exception:
+            except Exception as e:  # noqa: BLE001 — dividend is enrichment; say so
+                log.warning("DART dividend %s %s failed: %s", symbol_id, year, e)
                 df = None
             if df is None or len(df) == 0:
                 continue

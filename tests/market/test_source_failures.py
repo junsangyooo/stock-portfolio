@@ -72,3 +72,43 @@ def test_refresh_names_no_symbol(monkeypatch):
     monkeypatch.setattr(quotes, "warm", lambda sids, max_age_s: {s: None for s in sids})
     out = service.refresh_held()
     assert out == {"ok": True, "symbols": 1, "bars_added": 0, "failed": 1, "quotes_fresh": 0}
+
+
+def test_adding_a_holding_survives_a_dead_price_source(monkeypatch):
+    """The holding is the person's record; the bars can come later."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.api import accounts
+    from src.portfolio import security
+    from src.portfolio.store import account_store, holding_store
+    account_store.create("a", "a", "GENERAL")
+    account_store.set_pin_hash("a", security.hash_pin("a", "123456"))
+    monkeypatch.setattr(accounts, "_universe_meta", lambda sid: {"currency": "KRW"})
+    monkeypatch.setattr(accounts.gap_filler, "fill_one",
+                        lambda sid: (_ for _ in ()).throw(SourceError("KRX down")))
+    monkeypatch.setattr(accounts, "ensure_theme_mapping", lambda sid: None)
+    app = FastAPI(); app.include_router(accounts.router)
+    c = TestClient(app)
+    c.cookies.set(security.COOKIE_PREFIX + "a", security.make_session_token("a"))
+    r = c.post("/api/accounts/a/holdings", json={"symbol_id": "KR:000001", "qty": 1, "avg_cost": 1})
+    assert r.status_code == 200 and r.json()["backfill_failed"] is True
+    assert [h["symbol_id"] for h in holding_store.list_by_account("a")] == ["KR:000001"]
+
+
+def test_bulk_rows_without_account_id_do_not_take_the_combined_total():
+    from src.market.source.dart_source import match_accounts
+    rows = [{"sj_div": "BS", "account_nm": "자산총계", "thstrm_amount": "100"},
+            {"sj_div": "BS", "account_nm": "자본과부채총계", "thstrm_amount": "100"},
+            {"sj_div": "BS", "account_nm": "부채총계", "thstrm_amount": "60"}]
+    assert match_accounts(rows)["total_liabilities"] == 60
+
+
+def test_arxiv_html_error_page_is_a_failure(monkeypatch):
+    import io
+    from src.research.news.fetch import arxiv, rss
+    monkeypatch.setattr(arxiv.urllib.request, "urlopen",
+                        lambda *a, **k: type("R", (), {
+                            "__enter__": lambda self: io.BytesIO(b"<html><body>error</body></html>"),
+                            "__exit__": lambda self, *x: None})())
+    with pytest.raises(rss.NotAFeed):
+        arxiv.fetch_arxiv("cat:cs.AI", "arxiv_ai")

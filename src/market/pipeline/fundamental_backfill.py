@@ -48,7 +48,8 @@ def valuation(symbol_id: str, n: int = 760) -> int:
             return 0
         try:
             dps_rec = _dart_source().get_dps(symbol_id)
-        except Exception:  # noqa: BLE001 — dividend is enrichment, not core
+        except Exception as e:  # noqa: BLE001 — dividend is enrichment, not core
+            log.warning("dps %s failed: %s", symbol_id, e)
             dps_rec = None
         pts = kr_valuation.build(rows, closes,
                                  dps=(dps_rec or {}).get("dps"))
