@@ -30,7 +30,7 @@ class TestApiGate(unittest.TestCase):
             self.assertEqual(r.status_code, 403, f"{method} {path} not gated")
 
     def test_open_entry_points(self):
-        # needed before you own a cookie: account list, landing news, PIN post,
+        # needed before you own a cookie: account list, news page feed, PIN post,
         # and account creation (the new account's own PIN is set in the form)
         for path in ("/api/accounts", "/api/analysis/news/feed"):
             self.assertNotEqual(self.c.get(path).status_code, 403, path)

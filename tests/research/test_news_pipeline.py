@@ -463,7 +463,7 @@ def test_a_month_with_no_weekly_rows_produces_nothing():
                               backend=_Backend({"summary": "x"})) is None
 
 
-# ── read side: landing feed ─────────────────────────────────────────────────
+# ── read side: news feed ────────────────────────────────────────────────────
 
 def _enriched(monkeypatch, items, themes_by_index, *, day=None):
     """Collect `items`, then enrich them with the given theme assignment."""

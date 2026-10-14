@@ -20,6 +20,32 @@ def client():
     return TestClient(server.app)
 
 
+# Every file a screen is built from: the three pages, the pieces they
+# <!--#include--> (news/ · account/ · common/) and the injected shared floor.
+# Globbed, so a new piece is covered the day it lands.
+def _screen_files() -> tuple[str, ...]:
+    found = [p.relative_to(STATIC).as_posix() for p in STATIC.rglob("*")
+             if p.suffix in (".html", ".js", ".css")]
+    return tuple(sorted(found))
+
+
+SCREEN_FILES = _screen_files()
+CODE_FILES = tuple(f for f in SCREEN_FILES if f.endswith((".html", ".js")))
+PAGE_HTML = ("news.html", "account.html", "sources.html")
+
+
+def test_screen_file_list_is_the_redesign():
+    for f in PAGE_HTML + ("shared.js", "shared.css", "news/news.js", "account/core.js",
+                          "account/stock.css", "common/accounts-menu.js"):
+        assert f in SCREEN_FILES, f
+    assert "landing.html" not in SCREEN_FILES and "legacy.css" not in SCREEN_FILES
+
+
+def _code(line: str) -> str:
+    """The line without its // comment (a URL's '://' is kept)."""
+    return re.sub(r"(^|\s)//.*", "", line)
+
+
 def _hits(name: str, patterns: list[str]) -> list[str]:
     lines = (STATIC / name).read_text().splitlines()
     return [f"{name}:{i}: {line.strip()}"
@@ -30,8 +56,9 @@ def _hits(name: str, patterns: list[str]) -> list[str]:
 def test_no_crosslinks_to_quant():
     """Case-insensitive on purpose: with case respected a wordmark like
     '◆ QUANT-LAB' on the portfolio screen passes untouched."""
-    to_quant = [r"/q\b", r"quant", r"pdash_q"]        # 'quant' covers its API paths too
-    bad = _hits("landing.html", to_quant) + _hits("account.html", to_quant)
+    # 'quant' covers its API paths too; 'quantity' is a word, not the product
+    to_quant = [r"""['"`]/q\b""", r"quant(?!it)", r"pdash_q"]
+    bad = [h for f in SCREEN_FILES for h in _hits(f, to_quant)]
     assert not bad, "references to the quant product:\n" + "\n".join(bad)
 
 
@@ -40,16 +67,12 @@ SHARED_JS = STATIC / "shared.js"
 SHARED_CSS = STATIC / "shared.css"
 THEME = STATIC / "theme.json"
 NEWS_THEMES = Path(server.__file__).resolve().parents[1] / "research" / "news" / "themes.json"
-SCREEN_FILES = ("landing.html", "account.html", "sources.html", "shared.js", "shared.css", "legacy.css")
-
 # Every name the injected fragment exports (ui-02-architecture §4). Each must
 # be defined exactly once across the fragment and the pages.
 SHARED_NAMES = (
-    "el", "clear", "svgIco", "kstClock",
-    "designColor", "designRgba", "newsThemeColor", "newsThemeIcon",
-    "srcName", "newsCard", "newsGrid", "toast", "api",
-    # U4: the card grammar
-    "drawChart", "fmtBarDate", "drawCurve", "LABEL_KO", "freshInfo", "verdictBadge",
+    "el", "clear", "svgIco",
+    "designColor", "designRgba", "newsThemeIcon",
+    "srcName", "toast", "api", "LABEL_KO",
     # U5: the one confirm dialog (native confirm() is banned below)
     "confirmModal",
     # modal focus trap and tab-aware polling, used by every page's modals/timers
@@ -62,15 +85,54 @@ SHARED_NAMES = (
     "pinInput", "pinPrompt", "stateBlock", "banner", "skeleton", "spinner",
 )
 
-LEGACY_PAGES = ("landing.html", "account.html")   # redone in redesign stage 3
-STAGE1_NAMES = set(SHARED_NAMES[SHARED_NAMES.index("fmtPrice"):])
-
 # A colour literal in a VALUE position: after ':' / '=' / '(' / ',' or an
 # opening quote. Anchoring on the value keeps '#account-tabs' (a CSS id whose
 # first letters happen to be hex) and '#i-lock' (a sprite reference) out —
 # the negative lookahead refuses a hex run that continues into a word.
 _HEX_VALUE = re.compile(r"[:=(,'\"`]\s*#[0-9a-fA-F]{3,8}(?![\w-])")
 _RAW_RGBA = re.compile(r"\brgba?\(\s*\d")
+
+
+def _strip_css_comments(src: str) -> str:
+    """/* … */ blanked line for line, so line numbers still match."""
+    return re.sub(r"/\*.*?\*/", lambda m: re.sub(r"[^\n]", " ", m.group(0)), src, flags=re.DOTALL)
+
+
+def test_no_font_size_literals():
+    """Sizes come from the type tokens (--type-*-size) — in CSS and in
+    el() style strings alike."""
+    bad = [f"{f}:{i}: {line.strip()}"
+           for f in SCREEN_FILES
+           for i, line in enumerate((STATIC / f).read_text().splitlines(), 1)
+           if re.search(r"font-size:\s*\d", line)]
+    assert not bad, "font-size literals — use --type-*-size:\n" + "\n".join(bad)
+
+
+def test_csp_clean_markup():
+    """A nonce CSP blocks style="…" and on*= attributes — anywhere they could
+    reach the DOM: the pages and any markup string in their pieces."""
+    bad = []
+    for f in CODE_FILES:
+        for i, line in enumerate((STATIC / f).read_text().splitlines(), 1):
+            if (re.search(r"""\sstyle\s*=\s*["']""", line)
+                    or re.search(r"""\son[a-z]+\s*=\s*["']""", line)
+                    or "data:image/svg+xml" in line):
+                bad.append(f"{f}:{i}: {line.strip()}")
+    assert not bad, "style/on* attributes (blocked by CSP):\n" + "\n".join(bad)
+
+
+def test_btn_family_everywhere():
+    """.btn .btn-primary .btn-danger .btn-sm and nothing else — a special
+    button is .btn plus a local class, not a fifth variant."""
+    bad = []
+    for f in SCREEN_FILES:
+        for i, line in enumerate((STATIC / f).read_text().splitlines(), 1):
+            # a CSS selector .btn-x, or btn-x inside a class attribute / className
+            # string (an id like #btn-reload is not a variant)
+            if (re.search(r"(?<![\w-])\.btn-(?!primary\b|danger\b|sm\b)[a-z]", line)
+                    or re.search(r"""class(?:Name)?\s*[=:]\s*["'`][^"'`]*(?<![\w-])btn-(?!primary\b|danger\b|sm\b)[a-z]""", line)):
+                bad.append(f"{f}:{i}: {line.strip()}")
+    assert not bad, "a fifth .btn variant:\n" + "\n".join(bad)
 
 
 def test_no_color_literals():
@@ -86,7 +148,7 @@ def test_every_news_theme_has_a_token():
     """themes.json is the taxonomy, theme.json the design tokens — two files
     that can drift. Drift is allowed to exist but not to be silent. Fields
     show by icon only (user decision): no colour on a theme token; the old
-    colours live in legacy.theme_colors until landing/account are redone."""
+    colours are gone with the old pages."""
     import json
     ids = [t["theme_id"] for t in json.loads(NEWS_THEMES.read_text())["themes"]]
     theme = json.loads(THEME.read_text())
@@ -96,7 +158,7 @@ def test_every_news_theme_has_a_token():
     for tid in ids:
         assert set(tokens[tid]) == {"icon"}, tid
         assert re.fullmatch(r"[a-z0-9-]+", tokens[tid]["icon"]), tid
-    assert set(theme["legacy"]["theme_colors"]) <= set(ids)
+    assert "legacy" not in theme, "the old pages' aliases went with them"
 
 
 def test_every_theme_icon_in_sprite():
@@ -115,11 +177,7 @@ def test_shared_names_defined_once():
         pat = re.compile(
             rf"^(?:async\s+)?function\s+{name}\s*\(|^(?:const|let|var)\s+{name}\s*=",
             re.MULTILINE)
-        hits = {f: len(pat.findall((STATIC / f).read_text()))
-                for f in SCREEN_FILES if f.endswith((".js", ".html"))
-                # account.html keeps page-local fmtPrice/fmtQty until stage 3
-                # replaces it; it never reads the shared ones bare
-                if not (f in LEGACY_PAGES and name in STAGE1_NAMES)}
+        hits = {f: len(pat.findall((STATIC / f).read_text())) for f in CODE_FILES}
         total = sum(hits.values())
         if total > 1:
             dup.append(f"{name}: {hits}")
@@ -139,10 +197,10 @@ def test_shared_fragments_injected_in_order(client):
     """<head>: theme tokens → shared.css → shared.js → the page's own
     <style>/<script>. CSS coming later is cascade intent; JS coming later is
     the reason the fragment lives under one namespace (S.*)."""
-    for path, host in (("/", PORTFOLIO_HOST), ("/a/x", PORTFOLIO_HOST)):
+    for path, host in (("/", PORTFOLIO_HOST), ("/a/x", PORTFOLIO_HOST), ("/sources", PORTFOLIO_HOST)):
         body = client.get(path, headers={"host": host}).text
         marks = ['<meta charset', 'id="theme-vars"', "window.__THEME_TOKENS",
-                 'id="shared-css"', 'id="shared-js"', "@import url(" if "@import url(" in body else "</head>"]
+                 'id="shared-css"', 'id="shared-js"', "</head>"]
         pos = [body.find(m) for m in marks]
         assert all(p >= 0 for p in pos), (path, dict(zip(marks, pos)))
         assert pos == sorted(pos), (path, dict(zip(marks, pos)))
@@ -163,12 +221,12 @@ def test_missing_fragment_is_a_500_not_a_blank_page(client, monkeypatch, tmp_pat
 def test_shared_names_not_called_bare():
     """A page reaches a shared helper either through `S.name` or by
     destructuring it from S. A bare `name(` with neither is a ReferenceError
-    at render time (landing's 오늘의 핵심 broke this way)."""
+    at render time (the old landing's 오늘의 핵심 broke this way). Checked on
+    each page as served — its pieces share one global scope, so a destructure
+    in account/core.js serves account/stock.js too."""
     bad = []
-    for f in SCREEN_FILES:
-        if not f.endswith(".html"):
-            continue
-        src = (STATIC / f).read_text()
+    for f in PAGE_HTML:
+        src = server.expand_includes((STATIC / f).read_text())
         pulled = set()
         for m in re.finditer(r"const\s*\{([^}]*)\}\s*=\s*S\b", src):
             pulled |= {n.strip() for n in m.group(1).split(",") if n.strip()}
@@ -178,7 +236,7 @@ def test_shared_names_not_called_bare():
             if re.search(rf"(?:function\s+{name}\s*\(|(?:const|let|var)\s+{name}\s*=)", src):
                 continue  # page-local definition (e.g. a closure-scoped api())
             for i, line in enumerate(src.splitlines(), 1):
-                if re.search(rf"(?<![\w.$]){name}\s*\(", line):
+                if re.search(rf"(?<![\w.$]){name}\s*\(", _code(line)):
                     bad.append(f"{f}:{i}: {line.strip()}")
     assert not bad, "shared helpers called without S. or destructure:\n" + "\n".join(bad)
 
@@ -221,7 +279,7 @@ def test_account_page_reads_current_engine_schema():
 
 
 # ── U5: harness closure ──────────────────────────────────────────────────
-PAGES = ("landing.html", "account.html", "sources.html")
+PAGES = CODE_FILES
 
 
 def test_pages_route_403_to_their_own_pin_gate():
@@ -238,7 +296,7 @@ def test_no_native_confirm():
     bad = []
     for f in PAGES:
         for i, line in enumerate((STATIC / f).read_text().splitlines(), 1):
-            if re.search(r"(?<![\w.])(confirm|alert)\(", line):
+            if re.search(r"(?<![\w.])(confirm|alert)\(", _code(line)):
                 bad.append(f"{f}:{i}: {line.strip()}")
     assert not bad, "native dialog — use S.confirmModal / S.toast:\n" + "\n".join(bad)
     js = SHARED_JS.read_text()
@@ -333,12 +391,10 @@ INVERSE_PAIRS = (("text/inverse", "bg/inverse"), ("text/inverse", "accent/defaul
                  ("text/inverse", "accent/hover"), ("text/inverse", "status/error"),
                  ("text/inverse", "status/error-hover"), ("text/inverse", "verdict/negative-fill"),
                  ("text/inverse", "mood/positive-strong"))
-LEGACY_TEXT = ("fg", "dim", "muted", "cyan", "green", "red", "yellow", "orange", "purple")
 
 
 def test_theme_text_tokens_meet_contrast():
     values = server.theme_values(_theme())
-    legacy = _theme()["legacy"]
     bad = []
     for tok in TEXT_TOKENS:
         for surface in TEXT_SURFACES:
@@ -349,17 +405,6 @@ def test_theme_text_tokens_meet_contrast():
         r = _contrast(values[fg], values[bg])
         if r < 4.5:
             bad.append(f"{fg} on {bg}: {r:.2f}")
-    # the temporary Ink wash aliases keep the old pages readable too
-    old = {k: values[v] for k, v in legacy["colors"].items()}
-    for tok in LEGACY_TEXT:
-        for surface in ("bg", "panel"):
-            r = _contrast(old[tok], old[surface])
-            if r < 4.5:
-                bad.append(f"legacy {tok} on {surface}: {r:.2f}")
-    for tid, col in legacy["theme_colors"].items():
-        r = _contrast(col, old["panel"])
-        if r < 3.0:
-            bad.append(f"legacy theme {tid} on panel: {r:.2f}")
     assert not bad, "contrast below AA:\n" + "\n".join(bad)
 
 
@@ -386,16 +431,14 @@ def test_theme_is_the_design_file_token_set():
 
 def test_css_variable_naming_rule():
     """One deterministic rule: 'a/b/c' → --a-b-c. No two tokens (or a token
-    and a legacy alias) may land on the same variable."""
+    may land on the same variable."""
     theme = _theme()
     assert "'/'를 '-'로" in theme["description"]
     assert server.css_var("bg/default") == "--bg-default"
     assert server.css_var("type/heading-1/size") == "--type-heading-1-size"
     names = [t["name"] for t in theme["tokens"] + theme["code_tokens"]]
     vars_ = [server.css_var(n) for n in names]
-    legacy = ["--" + k for k in list(theme["legacy"]["colors"]) + list(theme["legacy"]["tokens"])]
-    legacy += [v + "-rgb" for v in legacy]
-    assert len(set(vars_ + legacy)) == len(vars_) + len(legacy)
+    assert len(set(vars_)) == len(vars_)
     tag = server._theme_style_tag()
     assert "--bg-default: var(--primitive-neutral-0);" in tag
     assert "--primitive-neutral-0: #FFFFFF;" in tag
@@ -404,9 +447,10 @@ def test_css_variable_naming_rule():
     assert "--primitive-weight-number: 600;" in tag
     assert "--type-body-line-height: 1.5;" in tag
     assert "Pretendard Variable" in tag and "--primitive-icon-set" not in tag
-    # legacy aliases point at the new tokens (3단계 끝에 지움)
-    assert "--cyan: var(--accent-default);" in tag and "--cyan-rgb: 11, 122, 107;" in tag
-    assert "3단계" in theme["legacy"]["note"]
+    # the old Ink wash aliases are gone, from the CSS and from the JS copy
+    assert "--cyan:" not in tag and "-rgb:" not in tag and "--space-1:" not in tag
+    assert '"themeColors"' not in tag and '"colors"' not in tag
+    assert "legacy" not in theme["description"]
 
 
 def test_pages_use_semantic_tokens_only():
@@ -443,11 +487,13 @@ def test_breakpoints_are_canonical():
     """var() cannot appear inside @media, so the three bp-* values in
     theme.json are repeated as literals — and only those three."""
     bad = []
-    for f in PAGES + ("shared.css",):
+    for f in SCREEN_FILES:
         for i, line in enumerate((STATIC / f).read_text().splitlines(), 1):
             for m in re.finditer(r"@media[^{]*?(\d+)px", line):
                 if m.group(1) not in BREAKPOINTS:
                     bad.append(f"{f}:{i}: {line.strip()}")
+            if re.search(r"@media[^{]*max-width", line):
+                bad.append(f"{f}:{i}: max-width (mobile-first: min-width only): {line.strip()}")
     assert not bad, "non-canonical breakpoints:\n" + "\n".join(bad)
 
 
@@ -504,8 +550,8 @@ def test_label_dictionary_used():
     in anything a user reads (button text, confirmLabel, aria-label, dialog
     body). Comments are exempt."""
     bad = []
-    for f in PAGES + ("shared.js",):
-        for i, line in enumerate((STATIC / f).read_text().splitlines(), 1):
+    for f in SCREEN_FILES:
+        for i, line in enumerate(_strip_css_comments((STATIC / f).read_text()).splitlines(), 1):
             code = line.split("//")[0]
             if any(w in code for w in BANNED_WORDS):
                 bad.append(f"{f}:{i}: {line.strip()}")
@@ -533,9 +579,10 @@ def test_sprite_has_every_design_icon():
     # every literal icon name the shared parts and the redesigned pages use
     used = set(re.findall(r"svgIco\('([a-z0-9-]+)'", js))
     used |= set(re.findall(r"icon: '([a-z0-9-]+)'", js))
-    for f in ("sources.html",):
+    for f in CODE_FILES:
         src = (STATIC / f).read_text()
         used |= set(re.findall(r"svgIco\('([a-z0-9-]+)'", src))
         used |= set(re.findall(r'href="#i-([a-z0-9-]+)"', src))
+    used.discard("name")   # the placeholder in shared.js's own comment
     assert not sorted(used - sprite), sorted(used - sprite)
     assert "Lucide 1.55.0" in js

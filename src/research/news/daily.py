@@ -5,7 +5,7 @@ The input is already compressed, so prefill is roughly a sixth of what the old
 digest fed the model and this is back inside what the on-host Qwen can do;
 `local_or_claude` falls through to Haiku when it is down.
 
-One call, four outputs: the bullets the landing page renders, a sentiment
+One call, four outputs: the bullets the news page renders, a sentiment
 score, and the open issues worth watching. Those last two used to live in a
 rolling state file with its own LLM rewrite; they are the same reading as the
 bullets, so they ride along and the second long memory goes away.

@@ -18,7 +18,7 @@ Three time layers, written by three cycles and never read backwards:
 One file, not three, because the weekly cycle joins the daily layer and a
 backup should not have to catch three files at the same instant.
 
-WAL: the collection cron writes while the dashboard reads the landing feed.
+WAL: the collection cron writes while the dashboard reads the news feed.
 """
 from __future__ import annotations
 
@@ -73,8 +73,8 @@ CREATE TABLE IF NOT EXISTS signal_themes (
 );
 CREATE INDEX IF NOT EXISTS idx_signal_themes_theme ON signal_themes(theme_id);
 
--- What happened in one field on one day. The landing page's 「오늘의 요약」
--- reads `overview` directly.
+-- What happened in one field on one day. The news page's field panel (today's
+-- bullets) reads `overview` directly.
 --
 -- sentiment and watchlist ride on the same call that writes the bullets: they
 -- are the same reading, and the analysis needs a number and a

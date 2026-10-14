@@ -51,12 +51,13 @@ def test_root_serves_the_news_page():
     nonce = re.search(r"script-src 'nonce-([^']+)'", r.headers["content-security-policy"]).group(1)
     assert body.count("<script") == body.count(f'<script nonce="{nonce}"')
     assert body.count("<style") == body.count(f'<style nonce="{nonce}"')
-    assert "landing.html" not in Path(server.__file__).read_text().split("def landing()")[1].split("\n\n")[0]
+    assert 'return _serve("news.html")' in Path(server.__file__).read_text().split("def news_page()")[1].split("\n\n")[0]
 
 
-def test_old_landing_kept_until_the_cleanup():
-    """landing.html stays on disk until the redesign's last step removes it."""
-    assert (STATIC / "landing.html").exists()
+def test_old_landing_is_gone():
+    """The redesign's last step removed the old landing page and its card CSS."""
+    assert not (STATIC / "landing.html").exists()
+    assert not (STATIC / "legacy.css").exists()
 
 
 # ── the grid ─────────────────────────────────────────────────────────────
@@ -209,7 +210,7 @@ def test_icons_in_sprite():
         used |= set(re.findall(r"svgIco\('([a-z0-9-]+)'", _src(p)))
         used |= set(re.findall(r'href="#i-([a-z0-9-]+)"', _src(p)))
     assert used and not (used - sprite), sorted(used - sprite)
-    # source names come from the shared map; it must outlive the legacy block
+    # source names come from the shared map (S.srcName)
     assert "function srcName(" in _src(STATIC / "shared.js")
 
 

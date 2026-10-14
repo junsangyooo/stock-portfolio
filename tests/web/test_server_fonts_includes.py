@@ -89,11 +89,11 @@ def test_include_failures_are_500(client, monkeypatch, tmp_path, ref, files):
     assert r.status_code == 500
 
 
-def test_old_pages_include_the_legacy_css(client):
-    # account.html was redone in stage 2 and no longer needs the old classes
-    for name in ("landing.html",):
-        assert "<!--#include legacy.css-->" in (STATIC / name).read_text(), name
-    # `/` is the redesigned news page now: no legacy card grammar there
+def test_no_page_includes_the_old_card_css(client):
+    # legacy.css went with the old landing page; nothing may point at it
+    assert not (STATIC / "legacy.css").exists()
+    for name in ("news.html", "account.html", "sources.html"):
+        assert "legacy.css" not in (STATIC / name).read_text(), name
     body = client.get("/", headers=HOST).text
     assert 'data-include="legacy.css"' not in body and 'data-include="news/news.js"' in body
     assert "<!--#include" not in (STATIC / "sources.html").read_text()

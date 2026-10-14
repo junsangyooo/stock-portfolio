@@ -6,12 +6,10 @@
 // (ops notes §4, the screen edition).
 // Colours come only from window.__THEME_TOKENS (theme.json); no literals.
 // The public surface is documented for the screen builders in FOUNDATION.md
-// (redesign stage 1); the "legacy" block near the end serves landing.html and
-// account.html until redesign stage 3 replaces them.
+// (redesign stage 1).
 (function () {
 'use strict';
-const T = Object.assign({ values: {}, themes: {}, colors: {}, tokens: {}, themeColors: {} },
-                        window.__THEME_TOKENS || {});
+const T = Object.assign({ values: {}, themes: {} }, window.__THEME_TOKENS || {});
 
 // ── DOM ──────────────────────────────────────────────────────────────
 // Canonical regime:
@@ -61,13 +59,12 @@ function spinner() { return svgIco('loader-circle', 'spin'); }
 
 // ── design tokens ────────────────────────────────────────────────────
 // designColor returns the literal itself, not 'var(--x)': canvas cannot render
-// a CSS variable. Takes a token name ('market/up', 'chart/grid') or, until
-// stage 3, an old Ink wash name ('cyan').
+// a CSS variable. Takes a token name ('market/up', 'chart/grid').
 function designColor(token) {
-  return T.values[token] || T.colors[token] || T.values['text/primary'] || '';
+  return T.values[token] || T.values['text/primary'] || '';
 }
 // Non-colour token as its raw string, e.g. designToken('bp/sm') → '600px'.
-function designToken(name) { return T.values[name] || T.tokens[name] || ''; }
+function designToken(name) { return T.values[name] || ''; }
 function hexRgb(hex) {
   const n = parseInt(hex.slice(1, 7), 16);
   return ((n >> 16) & 255) + ', ' + ((n >> 8) & 255) + ', ' + (n & 255);
@@ -84,6 +81,38 @@ function newsThemeIcon(id) {
   const t = T.themes[id];
   return (t && t.icon) || 'newspaper';
 }
+// Feed source id → display name (ids are internal slugs). Kept from the old
+// news card: news/util.js and sources.html name sources through S.srcName.
+const SRC_NAME = {
+  electrek:'Electrek', electrek_ev:'Electrek',
+  thelec_battery:'디일렉 배터리', thelec_semi:'디일렉', etnews_it:'전자신문',
+  aitimes:'AI타임스', geeknews:'GeekNews', docdocdoc:'청년의사',
+  statnews:'STAT News', biorxiv:'bioRxiv', semianalysis:'SemiAnalysis',
+  robotreport:'Robot Report', irobotnews:'로봇신문',
+  spacenews:'SpaceNews', payload:'Payload', finextra:'Finextra',
+  hk_finance:'한국경제', mk_stock:'매일경제 증권', einfomax:'연합인포맥스',
+  gcaptain:'gCaptain', splash247:'Splash 247', '3dpi':'3D Printing Industry',
+  fed_press:'Fed', bok_press:'한국은행',
+  reddit_ml:'r/MachineLearning', reddit_semi:'r/semiconductors',
+  reddit_robotics:'r/robotics', reddit:'Reddit',
+  // sources added 2026-09-02; the reddit_* and steeldaily/ferrotimes keys
+  // above stay because articles collected under them are still in the window
+  snmnews:'철강금속신문', steeldaily:'스틸데일리', ferrotimes:'페로타임즈',
+  mining_com:'Mining.com', metalminer:'MetalMiner',
+  oilprice:'OilPrice', eia_tie:'EIA', electimes:'전기신문',
+  ess_news:'Energy-Storage.news', utilitydive:'Utility Dive',
+  dcd:'Data Center Dynamics', defensenews:'Defense News',
+  breakingdefense:'Breaking Defense', sec_press:'SEC',
+  fiercebiotech:'Fierce Biotech', electrive:'electrive',
+  cleantechnica:'CleanTechnica', theelec_en:'디일렉(영문)', eetimes:'EE Times',
+  '3dprint_com':'3DPrint.com', voxelmatters:'VoxelMatters',
+  nasa:'NASA', nsf:'NASASpaceflight', bea:'BEA',
+  recyclingtoday:'Recycling Today', mk_industry:'매일경제 산업',
+  arxiv_ai:'arXiv cs.AI', arxiv_robotics:'arXiv cs.RO',
+  arxiv_hardware:'arXiv cs.AR', arxiv_qbio:'arXiv q-bio',
+  arxiv_battery:'arXiv mtrl-sci',
+};
+function srcName(id) { return SRC_NAME[id] || id || ''; }
 
 // ── label dictionary: one Korean word per shared action (인계 §3.6).
 //    Pages take the word from here instead of picking a synonym. Three words
@@ -313,6 +342,12 @@ function verdictTone(label) {
   return label === 'buy' || label === 'strong_buy' ? 'positive'
     : label === 'sell' || label === 'strong_sell' ? 'negative' : 'neutral';
 }
+// Verdict label → Korean word. Kept from the old badge: the account screen's
+// holding rows name the verdict through S.LABEL_KO.
+const LABEL_KO = {
+  strong_buy: '적극 긍정', buy: '긍정', neutral: '중립',
+  sell: '부정', strong_sell: '적극 부정',
+};
 
 // ── 분위기 구간 (인계 §3.5) ──────────────────────────────────────────
 // score −1…+1 → { band, token, arrow, label }. |s| ≥ 0.30 strong, ≥ 0.10 a
@@ -1017,504 +1052,6 @@ function chrome(o) {
   return { topBar: bar, bottomTab: tab };
 }
 
-// ══ legacy (landing.html · account.html) — 3단계 끝에 지움 ═══════════════
-// The old pages' builders, unchanged except that colours resolve through the
-// temporary Ink wash aliases in theme.json "legacy".
-function newsThemeColor(id) {
-  return T.themeColors[id] || designColor('text/muted');
-}
-// ── time ─────────────────────────────────────────────────────────────
-// ISO string or epoch seconds. Bad input → '', the future clamps to 0.
-function timeAgo(v) {
-  if (!v) return '';
-  const t = typeof v === 'number' ? v * 1000 : new Date(v).getTime();
-  if (isNaN(t)) return '';
-  const s = Math.max(0, (Date.now() - t) / 1000);
-  if (s < 3600) return Math.floor(s / 60) + '분 전';
-  if (s < 86400) return Math.floor(s / 3600) + '시간 전';
-  return Math.floor(s / 86400) + '일 전';
-}
-// article publish time preferred; fetch time is the same for every card in
-// a daily batch so it says nothing about recency
-function itemTime(x) { return timeAgo(x.published_iso || x.fetched_at); }
-// en-GB is the one locale that is always plain 'HH:MM:SS' — ko-KR gives
-// '오후 12:12:53' or '12시 12분 53초' depending on the engine.
-function kstClock() {
-  return new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul' });
-}
-
-// ── numbers ──────────────────────────────────────────────────────────
-// The chart labels' money (drawCurve). money/pct/signCls went with the old quant page.
-function ccyMoney(v, ccy) {
-  if (v == null || isNaN(v)) return '—';
-  return ccy === 'USD' ? '$' + Number(v).toLocaleString('en-US',
-           { maximumFractionDigits: 2 })
-                       : Number(v).toLocaleString('ko-KR',
-           { maximumFractionDigits: 0 }) + '원';
-}
-// ── news card ────────────────────────────────────────────────────────
-// source_id → display name (feed ids are internal slugs)
-const SRC_NAME = {
-  electrek:'Electrek', electrek_ev:'Electrek',
-  thelec_battery:'디일렉 배터리', thelec_semi:'디일렉', etnews_it:'전자신문',
-  aitimes:'AI타임스', geeknews:'GeekNews', docdocdoc:'청년의사',
-  statnews:'STAT News', biorxiv:'bioRxiv', semianalysis:'SemiAnalysis',
-  robotreport:'Robot Report', irobotnews:'로봇신문',
-  spacenews:'SpaceNews', payload:'Payload', finextra:'Finextra',
-  hk_finance:'한국경제', mk_stock:'매일경제 증권', einfomax:'연합인포맥스',
-  gcaptain:'gCaptain', splash247:'Splash 247', '3dpi':'3D Printing Industry',
-  fed_press:'Fed', bok_press:'한국은행',
-  reddit_ml:'r/MachineLearning', reddit_semi:'r/semiconductors',
-  reddit_robotics:'r/robotics', reddit:'Reddit',
-  // sources added 2026-09-02; the reddit_* and steeldaily/ferrotimes keys
-  // above stay because articles collected under them are still in the window
-  snmnews:'철강금속신문', steeldaily:'스틸데일리', ferrotimes:'페로타임즈',
-  mining_com:'Mining.com', metalminer:'MetalMiner',
-  oilprice:'OilPrice', eia_tie:'EIA', electimes:'전기신문',
-  ess_news:'Energy-Storage.news', utilitydive:'Utility Dive',
-  dcd:'Data Center Dynamics', defensenews:'Defense News',
-  breakingdefense:'Breaking Defense', sec_press:'SEC',
-  fiercebiotech:'Fierce Biotech', electrive:'electrive',
-  cleantechnica:'CleanTechnica', theelec_en:'디일렉(영문)', eetimes:'EE Times',
-  '3dprint_com':'3DPrint.com', voxelmatters:'VoxelMatters',
-  nasa:'NASA', nsf:'NASASpaceflight', bea:'BEA',
-  recyclingtoday:'Recycling Today', mk_industry:'매일경제 산업',
-  arxiv_ai:'arXiv cs.AI', arxiv_robotics:'arXiv cs.RO',
-  arxiv_hardware:'arXiv cs.AR', arxiv_qbio:'arXiv q-bio',
-  arxiv_battery:'arXiv mtrl-sci',
-};
-function srcName(id) { return SRC_NAME[id] || id || ''; }
-function hexA(hex, a) { return 'rgba(' + hexRgb(hex) + ',' + a + ')'; }
-
-// One feed item → one .news-card. The builder lives here, not in a page, so
-// every page that shows the feed renders the same DOM (SC-7).
-function newsCard(n) {
-  const c = newsThemeColor(n.theme);
-  // thumbnail: media/og image → source favicon → theme icon
-  const ico = newsThemeIcon(n.theme);
-  const fallback = el('span', { className:'placeholder-ico' },
-    n.favicon
-      ? [el('img', { className:'fav-img', src:n.favicon, alt:'',
-          onError: function () { this.replaceWith(svgIco(ico)); } })]
-      : [svgIco(ico)]);
-  const badge = (n.themes || []).map(t => t.kr).join('·') || n.theme_kr || '';
-  const thumbKids = [el('span', {
-    className:'tag', style:`color:${c}; border-color:${c};`,
-  }, [badge])];
-  if ((n.importance || 0) >= 4) {
-    thumbKids.push(el('span', { className:'imp' },
-      ['★'.repeat(Math.min(5, n.importance))]));
-  }
-  if (n.image) {
-    const img = el('img', { className:'thumb-img', src:n.image, loading:'lazy', alt:'',
-      onError: function () { this.remove(); fallback.style.setProperty('display', ''); } });
-    fallback.style.setProperty('display', 'none');
-    thumbKids.push(img, fallback);
-  } else {
-    thumbKids.push(fallback);
-  }
-  return el('div', {
-    className: 'news-card',
-    style: `--tc:${c};` + (n.url ? ' cursor:pointer;' : ''),
-    onClick: n.url ? () => window.open(n.url, '_blank', 'noopener') : null,
-  }, [
-    el('div', {
-      // no-img thumbs carry no information — mobile drops them entirely
-      className:'news-thumb' + (n.image ? '' : ' no-img'),
-      style:`background:linear-gradient(135deg, ${hexA(c, 0.16)}, ${hexA(c, 0.05)});`,
-    }, thumbKids),
-    el('div', { className:'news-body' }, [
-      el('div', { className:'news-title' }, [n.title || '']),
-      // one-liner from the nightly digest (only starred items have one)
-      n.gist ? el('div', { className:'news-sum' }, [n.gist]) : null,
-      el('div', { className:'news-meta' }, [
-        el('span', { className:'src' }, [
-          n.favicon ? el('img', { className:'src-ico', src:n.favicon, alt:'',
-            onError: function () { this.remove(); } }) : null,
-          srcName(n.source),
-        ]),
-        el('span', { className:'when' }, [itemTime(n)]),
-        // mobile drops the thumb overlay, so stars move into the meta row
-        (n.importance || 0) >= 4
-          ? el('span', { className:'imp-m' },
-              ['★'.repeat(Math.min(5, n.importance))]) : null,
-      ]),
-    ]),
-  ]);
-}
-// Fill `mount` (a .news-grid) with cards, or the empty-state line.
-function newsGrid(items, mount) {
-  clear(mount);
-  if (!items.length) {
-    mount.appendChild(el('div', {
-      style: 'color:var(--dim); font-size:11px; grid-column:1/-1; padding:18px; text-align:center;',
-    }, ['수집된 뉴스 없음 (매일 06:00 자동 수집)']));
-    return;
-  }
-  for (const n of items) mount.appendChild(newsCard(n));
-}
-
-// ── analysis badge (Level 0) ─────────────────────────────────────────
-// The engine judges the symbol only (label); "what it means for me" is the
-// account screen's business. It draws the badge from one entry of
-// GET /api/analysis/summary.
-const LABEL_KO = {
-  strong_buy: '적극 긍정', buy: '긍정', neutral: '중립',
-  sell: '부정', strong_sell: '적극 부정',
-};
-// 'YYYY-MM-DD' (or a 'YYYYMMDD' stem) → {days, cls(ok|warn|old), text}
-function freshInfo(dateStr) {
-  if (!dateStr) return null;
-  let s = String(dateStr).slice(0, 10);
-  if (/^\d{8}$/.test(s)) s = s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6);
-  const d = new Date(s + 'T00:00:00');
-  if (Number.isNaN(d.getTime())) return null;
-  const days = Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
-  return {
-    days,
-    cls: days <= 7 ? 'ok' : (days <= 30 ? 'warn' : 'old'),
-    text: days === 0 ? '오늘' : days + '일 전',
-  };
-}
-// In-place update of a .sc-verdict-badge span. No entry → hidden (never a
-// synthetic badge); facts_only → 「판단 없음」, not a neutral label.
-function verdictBadge(span, entry, etaKo) {
-  if (!span) return;
-  if (entry && entry.running) {
-    span.hidden = false;
-    span.className = 'sc-verdict-badge running';
-    span.textContent = '⏳ 분석중';
-    span.title = '종합 분석 실행 중' + (etaKo ? ' (' + etaKo + ')' : '');
-    return;
-  }
-  const factsOnly = !!(entry && entry.status === 'facts_only');
-  const ko = factsOnly ? '판단 없음' : LABEL_KO[entry && entry.label];
-  if (!ko) { span.hidden = true; return; }
-  const f = freshInfo(entry.date);
-  span.hidden = false;
-  span.className = 'sc-verdict-badge act-' + (factsOnly ? 'neutral' : entry.label) +
-    (f && f.cls === 'old' ? ' stale' : '');
-  span.textContent = ko + (f ? ' · ' + f.text : '') +
-    (f && f.cls === 'old' ? ' ⚠' : '');
-  span.title = '종합 판단 (' + (entry.date || '?') + ')' +
-    (f && f.cls === 'old' ? ' — 오래된 분석입니다. 다시 분석을 권장합니다.' : '');
-}
-
-// ── charts (canvas — colours via designColor, never var(--x)) ────────
-const KST_OFFSET_MS = 9 * 3600 * 1000;
-// bar unix-ts (KST) → x-axis label. mode: 'MD' | 'YM' | 'Y' | 'HM'
-function fmtBarDate(ts, mode) {
-  if (!ts) return '';
-  const d = new Date(ts * 1000 + KST_OFFSET_MS);
-  const y = d.getUTCFullYear(), m = d.getUTCMonth() + 1, day = d.getUTCDate();
-  if (mode === 'Y') return String(y);
-  if (mode === 'YM') return String(y).slice(2) + '.' + ('0' + m).slice(-2);
-  if (mode === 'HM') return ('0' + d.getUTCHours()).slice(-2) + ':' +
-                             ('0' + d.getUTCMinutes()).slice(-2);
-  return m + '/' + day;
-}
-
-// drawChart(canvas, candles, style, opts)
-//   opts.dates       — draw an x-axis with date labels (default false)
-//   opts.dateMode    — 'MD' | 'YM' | 'Y' (label format)
-//   opts.labelEvery  — label every Nth candle (auto if omitted)
-// candles each carry .ts (unix seconds). Window/pan slicing is done by the
-// caller; drawChart just renders whatever slice it's handed.
-function drawChart(canvas, candles, style, opts) {
-  opts = opts || {};
-  const showDates = !!opts.dates;
-  const w = canvas.clientWidth || 400;
-  const h = canvas.clientHeight || 180;
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = w * dpr;
-  canvas.height = h * dpr;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, w, h);
-
-  if (!candles.length) {
-    ctx.fillStyle = designColor('dim');
-    ctx.font = '11px JetBrains Mono';
-    ctx.fillText('데이터 없음', (w / 2) - 30, h / 2);
-    return;
-  }
-
-  const PAD_L = 44, PAD_R = 8, PAD_T = 6;
-  const PAD_B = showDates ? 28 : 16;
-  const plotW = w - PAD_L - PAD_R;
-  const plotH = h - PAD_T - PAD_B;
-
-  let lo = Infinity, hi = -Infinity;
-  candles.forEach(c => {
-    if (c.low < lo) lo = c.low;
-    if (c.high > hi) hi = c.high;
-  });
-  const pad = (hi - lo) * 0.08 || hi * 0.005 || 1;
-  lo -= pad; hi += pad;
-  const yOf = v => PAD_T + (1 - (v - lo) / (hi - lo)) * plotH;
-
-  // y gridlines + price labels
-  ctx.strokeStyle = designRgba('dim', 0.18);
-  ctx.fillStyle = designColor('dim');
-  ctx.font = '9px JetBrains Mono';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const v = lo + (hi - lo) * i / 4;
-    const y = yOf(v);
-    ctx.beginPath();
-    ctx.moveTo(PAD_L, y); ctx.lineTo(w - PAD_R, y);
-    ctx.stroke();
-    ctx.fillText(v >= 1000 ? v.toFixed(0) : v.toFixed(2), 4, y + 3);
-  }
-
-  const slot = plotW / candles.length;
-
-  // x-axis date labels (only when requested — expand chart)
-  if (showDates) {
-    const mode = opts.dateMode || 'MD';
-    const every = opts.labelEvery || Math.max(1, Math.ceil(candles.length / 8));
-    ctx.fillStyle = designColor('dim');
-    ctx.strokeStyle = designRgba('dim', 0.10);
-    ctx.font = '9px JetBrains Mono';
-    for (let i = 0; i < candles.length; i += every) {
-      const x = PAD_L + (i + 0.5) * slot;
-      // faint vertical guide
-      ctx.beginPath(); ctx.moveTo(x, PAD_T); ctx.lineTo(x, PAD_T + plotH); ctx.stroke();
-      const label = fmtBarDate(candles[i].ts, mode);
-      ctx.fillText(label, x - 14, h - 8);
-    }
-  }
-
-  if (style === 'line') {
-    ctx.strokeStyle = designColor('cyan');
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    candles.forEach((c, i) => {
-      const x = PAD_L + (i + 0.5) * slot;
-      const y = yOf(c.close);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-    const last = candles[candles.length - 1];
-    const xL = PAD_L + (candles.length - 0.5) * slot;
-    const yL = yOf(last.close);
-    ctx.fillStyle = designColor('cyan');
-    ctx.beginPath(); ctx.arc(xL, yL, 3, 0, Math.PI * 2); ctx.fill();
-  } else {
-    const bw = Math.max(1, slot * 0.6);
-    candles.forEach((c, i) => {
-      const x = PAD_L + (i + 0.5) * slot;
-      const isUp = c.close >= c.open;
-      const color = isUp ? designColor('green') : designColor('red');
-      ctx.strokeStyle = color;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(x, yOf(c.high));
-      ctx.lineTo(x, yOf(c.low));
-      ctx.stroke();
-      const yo = yOf(c.open), yc = yOf(c.close);
-      const top = Math.min(yo, yc);
-      const bh = Math.max(1, Math.abs(yc - yo));
-      if (isUp) {
-        ctx.fillStyle = designRgba('green', 0.5);
-        ctx.fillRect(x - bw / 2, top, bw, bh);
-        ctx.strokeRect(x - bw / 2, top, bw, bh);
-      } else {
-        ctx.fillRect(x - bw / 2, top, bw, bh);
-      }
-    });
-  }
-
-  // ── analysis overlay: S/R horizontal lines (visible-window) ──
-  if (opts.srLevels && opts.srLevels.length) {
-    ctx.font = '9px JetBrains Mono';
-    ctx.setLineDash([4, 3]);
-    ctx.lineWidth = 1;
-    opts.srLevels.forEach(lv => {
-      if (lv.price < lo || lv.price > hi) return;   // skip off-screen levels
-      const y = yOf(lv.price);
-      const col = lv.kind === 'r' ? designColor('red') : designColor('green');
-      ctx.strokeStyle = col;
-      ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(w - PAD_R, y); ctx.stroke();
-      ctx.fillStyle = col;
-      const px = lv.price >= 1000 ? lv.price.toFixed(0) : lv.price.toFixed(2);
-      ctx.fillText((lv.kind === 'r' ? '저항 ' : '지지 ') + px + ' ·' + lv.tests, PAD_L + 4, y - 3);
-    });
-    ctx.setLineDash([]);
-  }
-}
-
-// Asset curve — pure: knows neither a DOM id nor an API. `snapshots` are
-// {date, total_assets} rows; opts.fmt formats the y labels.
-function drawCurve(canvas, snapshots, opts) {
-  opts = opts || {};
-  const fmt = opts.fmt || (v => ccyMoney(v, opts.currency));
-  const w = canvas.clientWidth || 800, h = opts.height || 320;
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = w * dpr; canvas.height = h * dpr;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, w, h);
-  const multi = (opts.series || []).filter(s => s && (s.rows || []).length >= 2);
-  if (multi.length) return curveMulti(ctx, w, h, multi);
-  if (snapshots.length < 2) return;
-
-  const PAD_L = 70, PAD_R = 14, PAD_T = 14, PAD_B = 28;
-  const plotW = w - PAD_L - PAD_R;
-  const plotH = h - PAD_T - PAD_B;
-
-  let lo = Infinity, hi = -Infinity;
-  snapshots.forEach(s => {
-    const v = s.total_assets;
-    if (v < lo) lo = v;
-    if (v > hi) hi = v;
-  });
-  const pad = (hi - lo) * 0.08 || hi * 0.005 || 1;
-  lo -= pad; hi += pad;
-
-  const px = i => PAD_L + (i / (snapshots.length - 1)) * plotW;
-  const py = v => PAD_T + (1 - (v - lo) / (hi - lo)) * plotH;
-  const first = snapshots[0], last = snapshots[snapshots.length - 1];
-  const isUp = last.total_assets - first.total_assets >= 0;
-
-  // y grid
-  ctx.strokeStyle = designRgba('dim', 0.18);
-  ctx.fillStyle = designColor('dim');
-  ctx.font = '10px JetBrains Mono';
-  for (let i = 0; i <= 5; i++) {
-    const v = lo + (hi - lo) * i / 5;
-    const y = py(v);
-    ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(w - PAD_R, y); ctx.stroke();
-    ctx.fillText(fmt(v), 4, y + 3);
-  }
-
-  // baseline (start value)
-  const yBase = py(first.total_assets);
-  ctx.strokeStyle = designColor('dim');
-  ctx.setLineDash([3, 3]);
-  ctx.beginPath(); ctx.moveTo(PAD_L, yBase); ctx.lineTo(w - PAD_R, yBase); ctx.stroke();
-  ctx.setLineDash([]);
-
-  // X axis dates (first, mid, last)
-  ctx.fillStyle = designColor('dim');
-  ctx.fillText(first.date, PAD_L, h - 8);
-  if (snapshots.length >= 3) {
-    const m = snapshots[Math.floor(snapshots.length / 2)];
-    ctx.fillText(m.date, PAD_L + plotW / 2 - 30, h - 8);
-  }
-  ctx.fillText(last.date, w - PAD_R - 60, h - 8);
-
-  // line + fill
-  const color = isUp ? designColor('green') : designColor('red');
-  ctx.fillStyle = isUp ? designRgba('green', 0.18) : designRgba('red', 0.18);
-  ctx.beginPath();
-  ctx.moveTo(px(0), yBase);
-  snapshots.forEach((s, i) => ctx.lineTo(px(i), py(s.total_assets)));
-  ctx.lineTo(px(snapshots.length - 1), yBase);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  snapshots.forEach((s, i) => {
-    const x = px(i), y = py(s.total_assets);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(px(snapshots.length - 1), py(last.total_assets), 4, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-// Several currencies of one account on a single date axis. Each keeps its own
-// y-scale — a KRW balance and a USD balance share no unit, so one axis would
-// flatten whichever is smaller into the floor. Colour is per currency, never
-// per direction: two green lines would be indistinguishable, and the reader
-// needs to know which line is which before knowing whether it rose.
-const CURVE_TOKENS = ['cyan', 'orange', 'purple', 'yellow'];
-
-function curveMulti(ctx, w, h, series) {
-  const PAD_L = 70, PAD_R = 70, PAD_T = 30, PAD_B = 28;
-  const plotW = w - PAD_L - PAD_R;
-  const plotH = h - PAD_T - PAD_B;
-
-  // A currency the account only opened last week has fewer rows than one it
-  // has held all along; the x axis is every date any of them carries, so the
-  // short series starts partway across instead of being stretched to fit.
-  const seen = {};
-  series.forEach(s => s.rows.forEach(r => { seen[r.date] = 1; }));
-  const dates = Object.keys(seen).sort();
-  const at = {};
-  dates.forEach((d, i) => { at[d] = PAD_L + (i / Math.max(dates.length - 1, 1)) * plotW; });
-
-  const scaled = series.map((s, i) => {
-    let lo = Infinity, hi = -Infinity;
-    s.rows.forEach(r => {
-      if (r.total_assets < lo) lo = r.total_assets;
-      if (r.total_assets > hi) hi = r.total_assets;
-    });
-    const pad = (hi - lo) * 0.08 || Math.abs(hi) * 0.005 || 1;
-    // A balance that never went negative must not be labelled below zero —
-    // padding under a near-empty account would print "-41,466원" on the axis.
-    lo = lo >= 0 ? Math.max(0, lo - pad) : lo - pad;
-    hi += pad;
-    const token = CURVE_TOKENS[i % CURVE_TOKENS.length];
-    return { rows: s.rows, currency: s.currency, color: designColor(token), lo: lo, hi: hi,
-             y: v => PAD_T + (1 - (v - lo) / (hi - lo)) * plotH };
-  });
-
-  ctx.font = '10px JetBrains Mono';
-
-  // y grid — one set of lines, read against the left scale and the right one.
-  // Past two currencies the axes run out, so the rest carry the legend only.
-  for (let i = 0; i <= 4; i++) {
-    const y = PAD_T + plotH * i / 4;
-    ctx.strokeStyle = designRgba('dim', 0.18);
-    ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(w - PAD_R, y); ctx.stroke();
-    scaled.slice(0, 2).forEach((s, k) => {
-      ctx.fillStyle = s.color;
-      ctx.fillText(ccyMoney(s.lo + (s.hi - s.lo) * (1 - i / 4), s.currency),
-                   k === 0 ? 4 : w - PAD_R + 6, y + 3);
-    });
-  }
-
-  ctx.fillStyle = designColor('dim');
-  ctx.fillText(dates[0], PAD_L, h - 8);
-  if (dates.length >= 3) {
-    ctx.fillText(dates[Math.floor(dates.length / 2)], PAD_L + plotW / 2 - 30, h - 8);
-  }
-  ctx.fillText(dates[dates.length - 1], w - PAD_R - 60, h - 8);
-
-  let lx = PAD_L;
-  scaled.forEach(s => {
-    ctx.strokeStyle = s.color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    s.rows.forEach((r, i) => {
-      const x = at[r.date], y = s.y(r.total_assets);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-
-    const last = s.rows[s.rows.length - 1], first = s.rows[0].total_assets;
-    ctx.fillStyle = s.color;
-    ctx.beginPath();
-    ctx.arc(at[last.date], s.y(last.total_assets), 4, 0, Math.PI * 2);
-    ctx.fill();
-
-    // legend: the swatch says which line, the number says what it did
-    const moved = first ? (last.total_assets / first - 1) * 100 : 0;
-    const label = s.currency + ' ' + (moved >= 0 ? '+' : '') + moved.toFixed(1) + '%';
-    ctx.beginPath(); ctx.moveTo(lx, PAD_T - 14); ctx.lineTo(lx + 14, PAD_T - 14); ctx.stroke();
-    ctx.fillText(label, lx + 19, PAD_T - 10);
-    lx += 33 + ctx.measureText(label).width;
-  });
-}
-
 // ── icon sprite (Lucide 1.55.0, ISC, lucide.dev) ─────────────────────
 // Every icon the design file uses (Figma 디자인 page, Icon/*), the 23 field
 // icons included. Stroke attributes come from .lci in shared.css (inherited
@@ -1587,19 +1124,16 @@ else document.addEventListener('DOMContentLoaded', insertSprite);
 
 window.S = {
   // DOM · tokens · words
-  el, clear, svgIco, spinner, designColor, designRgba, designToken, cssVar, newsThemeIcon, LABELS,
+  el, clear, svgIco, spinner, designColor, designRgba, designToken, cssVar, newsThemeIcon, srcName, LABELS,
   // numbers · dates · rules (인계 §3.1–3.5)
   fmtPrice, fmtMoney, fmtPnl, fmtPnlPct, fmtChange, fmtChangePct, fmtQty, fmtCount, fmtAxisMan, trend,
   fmtDate, fmtDateTime, fmtTime, marketToday, marketPhase, tradingDaysBetween,
-  pnlLabel, quoteState, analysisState, depthLabel, verdictTone, moodBand,
+  pnlLabel, quoteState, analysisState, depthLabel, verdictTone, LABEL_KO, moodBand,
   // feedback · requests
   toast, api, banner, stateBlock, skeleton,
   // controls · overlays
   segmented, dialog, confirmModal, pinInput, pinPrompt, pinGate, panel, menu, trapFocus, whenVisible,
   // chrome
   topBar, bottomTab, chrome, rememberAccount, lastAccountHref, accountSub,
-  // legacy (landing · account) — 3단계 끝에 지움
-  newsThemeColor, itemTime, kstClock, srcName, newsCard, newsGrid,
-  LABEL_KO, freshInfo, verdictBadge, fmtBarDate, drawChart, drawCurve,
 };
 })();

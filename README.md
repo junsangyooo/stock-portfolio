@@ -19,7 +19,7 @@
 
 - **유료 LLM API 절대 금지** — 판단은 Claude CLI 구독(`claude -p --safe-mode`), 요약·분류는 온호스트 open-weight(Qwen)
 - **세 권의 책(DB)** — `portfolio.db`(앱 소유) / `market.db`·`news.db`(공유). 계좌 장부 스키마는 `src/portfolio/store/schema.py`
-- **화면은 인라인 페이지 둘** — `landing`·`account`. 서버가 `<head>`에 theme 토큰·`shared.css`·`shared.js`를 주입하고 응답마다 CSP nonce를 찍는다. 정적 파일 마운트는 없다
+- **화면은 인라인 페이지 셋** — `news`·`account`·`sources`. 서버가 `<head>`에 theme 토큰·`shared.css`·`shared.js`를 주입하고, 페이지가 `<!--#include …-->`로 부르는 조각(`news/`·`account/`·`common/`)을 인라인으로 넣고, 응답마다 CSP nonce를 찍는다. 정적 파일 마운트는 없다
 - **PIN 없는 계좌는 닫혀 있다** — 계좌는 생성 시 PIN 필수
 
 
@@ -44,8 +44,9 @@ portfolio-dashboard/
 │   ├── research/     news(수집) · chart · fundamental · analyze(LLM)  [공유]
 │   ├── portfolio/    사람 계좌 앱 (store · security · service · chat · supply_job)  [앱]
 │   ├── api/          라우팅만
-│   └── dashboard_web/  server.py + static/{landing,account}.html
-│                       shared.css · shared.js · icons/ · theme.json
+│   └── dashboard_web/  server.py + static/{news,account,sources}.html
+│                       news/ · account/ · common/ (페이지 조각) · shared.css · shared.js
+│                       fonts/ · icons/ · theme.json
 └── data/             운영 데이터 (gitignore) — *.db · universe/ · market/ · analysis/ · backup/ · logs/
 ```
 
@@ -55,8 +56,9 @@ portfolio-dashboard/
 
 | 페이지 | 경로 | 내용 |
 |---|---|---|
-| landing | `/` | 계좌 목록 · 뉴스 피드 (분야별 요약) |
-| account | `/a/{account_id}` | 보유 카드(판정 배지 · 좌표 한 줄) · 종합 분석 탭 · 거래 기록(매수/매도, 종목·기간 필터) · 채팅 |
+| news | `/` | 수집 — 분야별 분위기 · 뉴스 흐름 (`?theme=` 분야 패널) |
+| account | `/a/{account_id}` | 계좌 — 보유(판정 배지 · 좌표 한 줄) · 종목 화면(`?s=`, 종합 분석) · 거래 이력(`?v=trades`, 종목·기간 필터) · 채팅 |
+| sources | `/sources` | 소스·작업 현황 |
 
 ## 실행
 
@@ -81,7 +83,7 @@ pytest tests/autotrade     # 새 quant만 (자기 pytest.ini·conftest)
 
 옛 테스트 파일과 `tests/autotrade`의 파일을 한 명령에 섞어 넘기지 않는다. 그러면 `tests/autotrade/pytest.ini`가 루트가 되어 `tests/conftest.py`(라이브 호출 차단)가 실리지 않는다.
 
-구조 불변식: `test_layering.py`(공유 → 앱 import 금지) · `test_api_gate.py`(`/api` 게이트, PIN 없는 계좌는 닫힘) · `test_ui_invariants.py`와 `test_ui_{landing,account}.py`(색·글자 크기 리터럴 0건, mobile-first 브레이크포인트, `.btn` 4종, 인라인 `style`/`on*` 0건, quant로 가는 링크 0건) · `test_server_csp.py`(nonce). 실패하면 코드가 아니라 설계가 틀어진 것이다.
+구조 불변식: `test_layering.py`(공유 → 앱 import 금지) · `test_api_gate.py`(`/api` 게이트, PIN 없는 계좌는 닫힘) · `test_ui_invariants.py`(화면 파일 전부 — 색·글자 크기 리터럴 0건, mobile-first 브레이크포인트, `.btn` 4종, 인라인 `style`/`on*` 0건, 금지 낱말, quant로 가는 링크 0건)와 `test_ui_{news,account,stock,sources}.py` · `test_server_csp.py`(nonce). 실패하면 코드가 아니라 설계가 틀어진 것이다.
 
 ### 배포
 

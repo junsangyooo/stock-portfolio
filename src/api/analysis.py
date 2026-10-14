@@ -56,7 +56,7 @@ def analysis_summary(symbols: str) -> dict:
 
 @router.get("/news/feed")
 def news_feed(limit: int = 60) -> dict:
-    """Landing-page qualitative feed (research/news/read.feed)."""
+    """News-page qualitative feed (research/news/read.feed)."""
     from ..research.news import read
     return {**read.feed(limit=limit), "queried_at": _stamp()}
 

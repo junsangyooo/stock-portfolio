@@ -30,10 +30,10 @@ def test_csp_header_and_nonce_on_every_tag(client):
         assert r.status_code == 200, path
         nonce = _nonce(r)
         csp = r.headers["content-security-policy"]
-        assert f"style-src 'nonce-{nonce}' https://fonts.googleapis.com" in csp
-        # Pretendard from this origin; gstatic only until landing/account drop
-        # their JetBrains Mono @import (redesign stage 3)
-        assert "font-src 'self' https://fonts.gstatic.com" in csp
+        assert f"style-src 'nonce-{nonce}';" in csp
+        # Pretendard from this origin; no third-party style or font host
+        assert "font-src 'self';" in csp
+        assert "googleapis" not in csp and "gstatic" not in csp
         assert "unsafe-inline" not in csp and "unsafe-hashes" not in csp
         tags = _TAG.findall(r.text)
         assert len(tags) >= 6, (path, len(tags))          # page 2 + injected ≥4

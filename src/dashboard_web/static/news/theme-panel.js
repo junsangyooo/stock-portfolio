@@ -193,7 +193,7 @@ function create(ctx) {
     const svg = document.createElementNS(NS, 'svg');
     const mk = (tag, attrs, text) => {
       const n = document.createElementNS(NS, tag);
-      for (const k in attrs) n.setAttribute(k, attrs[k]);
+      for (const k in attrs) n.setAttribute(k === 'className' ? 'class' : k, attrs[k]);   // one key spelling, as in S.el
       if (text != null) n.textContent = text;
       svg.appendChild(n); return n;
     };
@@ -207,31 +207,31 @@ function create(ctx) {
     const y = v => T + (H - T - B) * (hi - v) / (hi - lo || 1);
     for (let v = hi; v >= lo - 1e-9; v -= 0.5) {
       const t = Math.round(v * 10) / 10;
-      mk('text', { x: L - 6, y: y(t) + 4, 'text-anchor': 'end', class: 'axis' }, t === 0 ? '0' : (t > 0 ? '+' : '−') + Math.abs(t));
+      mk('text', { x: L - 6, y: y(t) + 4, 'text-anchor': 'end', className: 'axis' }, t === 0 ? '0' : (t > 0 ? '+' : '−') + Math.abs(t));
     }
-    mk('line', { x1: L, x2: W - R, y1: y(0), y2: y(0), class: 'grid0' });
+    mk('line', { x1: L, x2: W - R, y1: y(0), y2: y(0), className: 'grid0' });
     let d = '', pen = false;
     series.forEach((p, i) => {
       if (p.score == null) { pen = false; return; }
       d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.score).toFixed(1) + ' ';
       pen = true;
     });
-    mk('path', { d: d.trim(), class: 'path' });
+    mk('path', { d: d.trim(), className: 'path' });
     const idx = [0, Math.floor((series.length - 1) / 2), series.length - 1];
-    idx.forEach((i, k) => mk('text', { x: x(i), y: H - 4, class: 'axis',
+    idx.forEach((i, k) => mk('text', { x: x(i), y: H - 4, className: 'axis',
       'text-anchor': k === 0 ? 'start' : k === 2 ? 'end' : 'middle' }, S.fmtDate(series[i].date)));
     if (shift) {
       const i = series.findIndex(p => p.date === shift.date);
       if (i >= 0 && series[i].score != null) {
-        mk('circle', { cx: x(i), cy: y(series[i].score), r: 4, class: 'shift' });
+        mk('circle', { cx: x(i), cy: y(series[i].score), r: 4, className: 'shift' });
         const below = y(series[i].score) < (H - B) / 2 + T;
-        mk('text', { x: x(i), y: y(series[i].score) + (below ? 18 : -9), class: 'shift-t',
+        mk('text', { x: x(i), y: y(series[i].score) + (below ? 18 : -9), className: 'shift-t',
           'text-anchor': i > series.length * 0.75 ? 'end' : 'middle' }, S.fmtDate(shift.date) + ' 전환');
       }
     }
     let last = -1;
     series.forEach((p, i) => { if (p.score != null) last = i; });
-    if (last >= 0) mk('circle', { cx: x(last), cy: y(series[last].score), r: 4, class: 'last s-' + U.scoreTone(series[last].score) });
+    if (last >= 0) mk('circle', { cx: x(last), cy: y(series[last].score), r: 4, className: 'last s-' + U.scoreTone(series[last].score) });
     svg.setAttribute('aria-label', '30일 분위기 선 · ' + S.fmtDate(series[0].date) + '부터 '
       + S.fmtDate(series[series.length - 1].date) + '까지 · 마지막 ' + U.fmtScore(last >= 0 ? series[last].score : null));
     return svg;

@@ -6,7 +6,7 @@ now, so the shape is defined once and a schema change is one file.
 
 The three views:
 
-    feed()         the landing page's news + social cards and 「오늘의 요약」
+    feed()         the news page's news + social cards and 「오늘의 요약」
     theme_state()  what a theme looks like right now — for the account page's
                    news tab and the analysis
     read_items()   raw articles for one theme, for the company-name miner
@@ -212,7 +212,7 @@ def themes_overview(days: int = MOOD_DAYS, now: Optional[datetime] = None) -> di
             "articles": [{"date": d, "items": per_day.get(d, 0)} for d in day_keys]}
 
 
-# ── landing feed ────────────────────────────────────────────────────────────
+# ── news feed ───────────────────────────────────────────────────────────────
 def _summary_rows(theme_ids: list[str], name_kr: dict,
                   now: datetime) -> list[dict]:
     """Per theme, the newest overview from today or yesterday — before the dawn
@@ -236,7 +236,7 @@ def _summary_rows(theme_ids: list[str], name_kr: dict,
 
 def feed(limit: int = 60, days: int = 3,
          now: Optional[datetime] = None) -> dict:
-    """The landing page's cards.
+    """The news page's cards.
 
     news = lagging media, social = coincident chatter. arXiv (leading) is left
     out: it feeds per-symbol evaluation, not headlines.

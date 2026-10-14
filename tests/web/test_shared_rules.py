@@ -156,6 +156,10 @@ def test_mood_band():
 
 
 def test_labels_and_tokens_reach_js():
-    out = run([("designColor", ["market/up"]), ("designColor", ["cyan"]), ("designToken", ["bp/sm"]),
-               ("cssVar", ["type/heading-1/size"]), ("newsThemeIcon", ["bio"]), ("newsThemeIcon", ["?"])])
-    assert out == ["#D42A36", "#0B7A6B", "600px", "--type-heading-1-size", "heart-pulse", "newspaper"]
+    out = run([("designColor", ["market/up"]), ("designColor", ["accent/default"]),
+               ("designColor", ["cyan"]), ("designToken", ["bp/sm"]), ("designToken", ["space-1"]),
+               ("cssVar", ["type/heading-1/size"]), ("newsThemeIcon", ["bio"]), ("newsThemeIcon", ["?"]),
+               ("srcName", ["thelec_semi"]), ("srcName", ["no_such_feed"])])
+    # the old Ink wash names ('cyan', 'space-1') no longer resolve: text/primary · ''
+    assert out == ["#D42A36", "#0B7A6B", "#191F28", "600px", "", "--type-heading-1-size",
+                   "heart-pulse", "newspaper", "디일렉", "no_such_feed"]

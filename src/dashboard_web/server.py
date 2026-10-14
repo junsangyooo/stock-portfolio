@@ -56,7 +56,7 @@ except Exception as exc:  # pragma: no cover
 _OPEN_API = {
     ("GET", "/api/accounts"),                 # account list — names only
     ("POST", "/api/accounts"),                # account creation — own PIN set in-form
-    ("GET", "/api/analysis/news/feed"),       # landing page news, no PII
+    ("GET", "/api/analysis/news/feed"),       # news page cards, no PII
     ("GET", "/api/analysis/news/themes"),     # the field grid, no PII
     ("GET", "/api/accounts/session"),         # this device's open accounts — [] when none
 }
@@ -97,16 +97,14 @@ _NO_CACHE_HEADERS = {
 # to live with: a style="…" attribute and setAttribute('style', …) are blocked
 # (CSSOM writes — el.style.cssText / el.style.x — are not); news thumbnails and
 # source favicons are external https images. Pretendard is served from this
-# origin (font-src 'self'). The Google Fonts hosts stay only for the two pages
-# not yet redesigned (landing·account @import JetBrains Mono) — remove them
-# with those imports at the end of redesign stage 3.
+# origin (font-src 'self'); no third-party style or font host is allowed.
 _TAG_RE = re.compile(r"<(script|style)\b", re.IGNORECASE)
 
 
 def _csp(nonce: str) -> str:
     return (f"default-src 'self'; script-src 'nonce-{nonce}'; "
-            f"style-src 'nonce-{nonce}' https://fonts.googleapis.com; "
-            "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; "
+            f"style-src 'nonce-{nonce}'; "
+            "font-src 'self'; img-src 'self' data: https:; "
             "connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; "
             "form-action 'self'")
 
@@ -161,17 +159,6 @@ _FONT_LINK = (f'<link rel="preload" href="{FONT_PATH}" as="font" '
 @app.get(FONT_PATH, include_in_schema=False)
 def font() -> Response:
     return Response(content=_FONT, media_type="font/woff2", headers=_ICON_HEADERS)
-
-
-def _hex_to_rgb_csv(hex_str: str) -> str:
-    """'#0e1117' → '14, 17, 23'. Used for rgba(var(--xxx-rgb), alpha)."""
-    h = hex_str.lstrip("#")
-    if len(h) == 3:
-        h = "".join(c * 2 for c in h)
-    try:
-        return f"{int(h[0:2], 16)}, {int(h[2:4], 16)}, {int(h[4:6], 16)}"
-    except Exception:
-        return "0, 0, 0"
 
 
 # ── static text cache ──────────────────────────────────────────────────────
@@ -270,14 +257,6 @@ def theme_css(theme: dict) -> list[str]:
             continue
         val = f"var({css_var(t['alias'])})" if "alias" in t else values[t["name"]]
         lines.append(f"  {css_var(t['name'])}: {val};")
-    # Temporary aliases for landing.html / account.html (old Ink wash names →
-    # new tokens). Removed at the end of redesign stage 3.
-    legacy = theme.get("legacy") or {}
-    for old, new in (legacy.get("colors") or {}).items():
-        lines.append(f"  --{old}: var({css_var(new)});")
-        lines.append(f"  --{old}-rgb: {_hex_to_rgb_csv(values[new])};")
-    for old, val in (legacy.get("tokens") or {}).items():
-        lines.append(f"  --{old}: {val};")
     return lines
 
 
@@ -293,14 +272,9 @@ def _theme_style_tag_at(mtime_ns: int) -> str:
     theme = _load_theme()
     lines = [":root {"] + theme_css(theme) + ["}"] if theme else [":root {", "}"]
     values = theme_values(theme) if theme else {}
-    legacy = theme.get("legacy") or {}
     js = {
         "values": values,
         "themes": theme.get("themes") or {},
-        # legacy (stage 3 removes): old colour names as hex, old tokens, field colours
-        "colors": {old: values[new] for old, new in (legacy.get("colors") or {}).items()},
-        "tokens": legacy.get("tokens") or {},
-        "themeColors": legacy.get("theme_colors") or {},
     }
     tokens = json.dumps(js, ensure_ascii=False)
     return ('<style id="theme-vars">\n' + "\n".join(lines) + "\n</style>\n"
@@ -401,7 +375,7 @@ def _is_portfolio_host(request: Request) -> bool:
 
 
 @app.get("/", response_class=HTMLResponse)
-def landing() -> HTMLResponse:
+def news_page() -> HTMLResponse:
     return _serve("news.html")
 
 
