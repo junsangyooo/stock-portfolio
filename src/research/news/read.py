@@ -479,103 +479,243 @@ def catalog() -> dict:
 
 
 # ── source health (the sources dashboard) ───────────────────────────────────
-# A source's state from its cursor and what it actually delivered. "Failing"
-# is the cursor's own count; "quiet" is the case the cursor cannot see — a
-# feed that answers 200 with nothing in it (or a page that is not a feed)
-# reads as a success there, so a week without a single item is flagged here.
-DEAD_AFTER = 4          # consecutive failed sweeps (two a day → two days)
-QUIET_DAYS = 7
+# Per source: every sweep's result (collect_runs), what it delivered today and
+# over the last RUNS_SHOWN sweeps, how much of it mattered, and the fields it
+# mainly covers. The cursor alone cannot judge a source: it forgets a failure
+# the moment the next fetch succeeds, and a feed that answers 200 with
+# nothing new reads as a success there.
+RUNS_SHOWN = 14         # two sweeps a day → a week
+FLAKY_FAILS = 3         # failures among the shown sweeps that make a source flaky
+QUIET_MIN_DAYS = 3      # never call a source quiet sooner than this
+GAP_DAYS = 90           # history the usual gap between new items is read from
+RARE_30D = 20           # fewer items in 30 days: too few to judge its value
+IMPORTANT = 4           # importance (1–5) from which an item counts as important
+MAIN_SHARE = 0.3        # a field is a source's main one at this share of its items
+REVIEW_SHARE = 0.07     # important share at or below this marks a removal candidate …
+REVIEW_MIN_MAIN = 3     # … only in a field with at least this many main sources
+REVIEW_MIN_DAYS = 7     # and only with items on this many of the 30 days (a source
+                        # whose address was just fixed has one busy day, not a record)
 
 
-def _source_status(cur: dict, n_quiet: int, capped: int) -> tuple[str, str]:
+def _quiet_after(days: list[str]) -> int:
+    """How many days without a new item is unusual for this source: the 90th
+    percentile of its gaps between days with items, at least QUIET_MIN_DAYS.
+    BEA publishes every week or so and must not read as broken on day four."""
+    ds = sorted({datetime.fromisoformat(d).date() for d in days})
+    gaps = sorted((b - a).days for a, b in zip(ds, ds[1:]))
+    if not gaps:
+        return QUIET_MIN_DAYS
+    return max(QUIET_MIN_DAYS, gaps[min(len(gaps) - 1, int(len(gaps) * 0.9))])
+
+
+def _source_status(cur: dict, runs: list, last_day: Optional[str],
+                   quiet_after: int, now: datetime) -> tuple[str, str]:
+    fetched = cur.get("last_fetched_at")
+    if fetched:
+        try:
+            t = datetime.fromisoformat(fetched)
+            t = t.replace(tzinfo=kst.KST) if t.tzinfo is None else t
+            if t > now:
+                return ("collect_error", f"받은 글 시각이 미래({t.astimezone(kst.KST):%m/%d})로 "
+                        "저장돼 새 글을 건너뛰고 있어요")
+        except ValueError:
+            pass
+    seen = [r for r in runs if r is not None]
+    if not cur and not seen:
+        return "never", "아직 수집 기록이 없어요"
     fails = cur.get("n_consecutive_fail") or 0
-    if not cur:
-        return "never", "아직 한 번도 읽지 않음"
-    if fails >= DEAD_AFTER:
-        return "dead", f"{fails}회 연속 실패"
     if fails:
-        return "failing", f"{fails}회 연속 실패"
-    if n_quiet == 0:
-        return "quiet", f"{QUIET_DAYS}일간 0건"
-    if capped:
-        return "capped", f"{QUIET_DAYS}일간 상한 도달 {capped}회"
+        return "failing", f"{fails}번 연속 실패"
+    n_fail = sum(not r["ok"] for r in seen)
+    if n_fail >= FLAKY_FAILS:
+        return "flaky", f"최근 {len(seen)}번 중 {n_fail}번 실패"
+    if not last_day:
+        return "quiet", "받은 글이 아직 없어요"
+    gap = (now.date() - datetime.fromisoformat(last_day).date()).days
+    if gap > quiet_after:
+        return "quiet", f"{gap}일째 새 글 없음 · 평소에는 {quiet_after}일 안에 와요"
     return "ok", ""
 
 
+def _counts(c, since: str, until: Optional[str] = None) -> dict:
+    """Per source: items collected, enriched, important and untagged."""
+    cond, args = "collected_on >= ?", [since]
+    if until:
+        cond += " AND collected_on <= ?"
+        args.append(until)
+    return {r["source_id"]: dict(r) for r in c.execute(
+        "SELECT s.source_id, count(*) collected, count(s.enriched_at) enriched, "
+        f"sum(s.importance >= {IMPORTANT}) important, "
+        "sum(s.enriched_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM signal_themes t "
+        "WHERE t.signal_id = s.signal_id)) untagged "
+        f"FROM signals s WHERE {cond} GROUP BY s.source_id", args)}
+
+
+def _flags(rows: list[dict]) -> dict:
+    """Notes beside a source — material for a decision, never a verdict.
+    `rare`: too few items to judge. `only`: the one main source of a field.
+    `review`: low important share in a field with enough main sources, one
+    per field (removing two at once would leave the field short)."""
+    main: dict = {}
+    for r in rows:
+        for t in r["themes"]["main"]:
+            main.setdefault(t, []).append(r)
+    out: dict = {r["source_id"]: [] for r in rows}
+    for r in rows:
+        if r["d30"]["n"] < RARE_30D:
+            out[r["source_id"]].append({"kind": "rare"})
+    for t, rs in main.items():
+        if len(rs) == 1:
+            out[rs[0]["source_id"]].append({"kind": "only", "theme": t})
+            continue
+        if len(rs) < REVIEW_MIN_MAIN:
+            continue
+        cands = [r for r in rs if r["group"] == "news" and r["d30"]["n"] >= RARE_30D
+                 and sum(1 for n in r["d30"]["daily"] if n) >= REVIEW_MIN_DAYS
+                 and r["d30"]["important"] / r["d30"]["n"] <= REVIEW_SHARE
+                 and not any(f["kind"] == "review" for f in out[r["source_id"]])]
+        if cands:
+            r = min(cands, key=lambda x: (x["d30"]["important"] / x["d30"]["n"], x["d30"]["n"]))
+            out[r["source_id"]].append({"kind": "review", "theme": t,
+                                        "from": len(rs), "to": len(rs) - 1})
+    return out
+
+
 def source_health(days: int = 30, now: Optional[datetime] = None) -> dict:
-    """Every configured source: cursor state, items per collected day over
-    `days`, sweeps that hit the per-sweep cap, and the untagged share."""
+    """Every configured source, field coverage and what falls outside the
+    fields — the read side of the sources dashboard. Counts and titles only;
+    nothing here knows a holding."""
     from .catalog import load_sources
     from .collect_all import MAX_PER_SOURCE
     now = now or kst.now()
+    today = now.date().isoformat()
     since = window_start(days, now)
-    quiet_since = window_start(QUIET_DAYS, now)
     day_keys = [(now.date() - timedelta(days=i)).isoformat()
                 for i in range(days - 1, -1, -1)]
+    feeds = load_sources()
     with connect() as c:
         cur = {r["source_id"]: dict(r) for r in c.execute(
             "SELECT source_id, last_fetched_at, last_ok_at, last_error, "
             "n_consecutive_fail FROM source_cursor")}
+        run_ats = [r[0] for r in c.execute(
+            "SELECT DISTINCT run_at FROM collect_runs ORDER BY run_at DESC LIMIT ?",
+            (RUNS_SHOWN,))][::-1]
+        runs: dict = {}
+        if run_ats:
+            for r in c.execute("SELECT * FROM collect_runs WHERE run_at >= ?", (run_ats[0],)):
+                runs.setdefault(r["source_id"], {})[r["run_at"]] = {
+                    "at": r["run_at"], "ok": bool(r["ok"]), "error": r["error"],
+                    "written": r["written"], "filtered": r["filtered"], "over": r["over"]}
+        failed_days: dict = {}
+        for r in c.execute("SELECT source_id, substr(run_at, 1, 10) d FROM collect_runs "
+                           "WHERE run_at >= ? GROUP BY 1, 2 HAVING max(ok) = 0", (since,)):
+            failed_days[r["source_id"]] = failed_days.get(r["source_id"], 0) + 1
         per_day: dict = {}
-        for r in c.execute(
-                "SELECT source_id, collected_on, count(*) n FROM signals "
-                "WHERE collected_on >= ? GROUP BY source_id, collected_on", (since,)):
+        for r in c.execute("SELECT source_id, collected_on, count(*) n FROM signals "
+                           "WHERE collected_on >= ? GROUP BY 1, 2",
+                           (window_start(GAP_DAYS, now),)):
             per_day.setdefault(r["source_id"], {})[r["collected_on"]] = r["n"]
-        feeds = load_sources()
-        caps = {f.source_id: f.max_items or MAX_PER_SOURCE for f in feeds}
-        capped: dict = {}
-        for r in c.execute(
-                "SELECT source_id, fetched_at, collected_on, count(*) n FROM signals "
-                "WHERE collected_on >= ? GROUP BY source_id, fetched_at "
-                "HAVING count(*) >= ?", (since, min(caps.values(), default=MAX_PER_SOURCE))):
-            if r["n"] < caps.get(r["source_id"], MAX_PER_SOURCE):
-                continue
-            d = capped.setdefault(r["source_id"], {"n": 0, "recent": 0})
-            d["n"] += 1
-            d["recent"] += r["collected_on"] >= quiet_since
-        untagged = {r["source_id"]: (r["n"], r["bare"]) for r in c.execute(
-            "SELECT s.source_id, count(*) n, sum(NOT EXISTS (SELECT 1 FROM "
-            "signal_themes t WHERE t.signal_id = s.signal_id)) bare "
-            "FROM signals s WHERE s.collected_on >= ? AND s.enriched_at IS NOT NULL "
-            "GROUP BY s.source_id", (since,))}
+        c_today = _counts(c, today)
+        week_from = run_ats[0][:10] if run_ats else today
+        c_week = _counts(c, week_from)
+        c_30 = _counts(c, since)
+        themes30: dict = {}
+        for r in c.execute("SELECT s.source_id, t.theme_id, count(*) n FROM signals s "
+                           "JOIN signal_themes t ON t.signal_id = s.signal_id "
+                           "WHERE s.collected_on >= ? GROUP BY 1, 2", (since,)):
+            themes30.setdefault(r["source_id"], {})[r["theme_id"]] = r["n"]
+        theme_n30 = {r[0]: r[1] for r in c.execute(
+            "SELECT t.theme_id, count(*) FROM signal_themes t JOIN signals s "
+            "ON s.signal_id = t.signal_id WHERE s.collected_on >= ? GROUP BY 1", (since,))}
+        examples = [dict(r) for r in c.execute(
+            "SELECT s.signal_id, s.title, s.source_id FROM signals s "
+            "WHERE s.collected_on >= ? AND s.enriched_at IS NOT NULL AND NOT EXISTS "
+            "(SELECT 1 FROM signal_themes t WHERE t.signal_id = s.signal_id) "
+            "ORDER BY s.signal_id DESC LIMIT 3", (week_from,))]
+
+    zero = {"collected": 0, "enriched": 0, "important": 0, "untagged": 0}
     out = []
     for f in feeds:
-        c_ = cur.get(f.source_id, {})
-        daily = [per_day.get(f.source_id, {}).get(d, 0) for d in day_keys]
-        n_quiet = sum(daily[-QUIET_DAYS:])
-        cap = capped.get(f.source_id, {"n": 0, "recent": 0})
-        n_en, bare = untagged.get(f.source_id, (0, 0))
-        status, reason = _source_status(c_, n_quiet, cap["recent"])
+        sid = f.source_id
+        c_ = cur.get(sid, {})
+        mine = runs.get(sid, {})
+        shown = [mine.get(at) for at in run_ats]
+        today_runs = [r for r in shown if r and r["at"][:10] == today]
+        days_with = sorted(per_day.get(sid, {}))
+        daily = [per_day.get(sid, {}).get(d, 0) for d in day_keys]
+        n30 = c_30.get(sid, zero)
+        tagged = themes30.get(sid, {})
+        dist = sorted(((t, round(n / n30["enriched"], 3)) for t, n in tagged.items()
+                       if n30["enriched"]), key=lambda x: -x[1])
+        main = [t for t, p in dist[:2] if p >= MAIN_SHARE] or [t for t, _ in dist[:1]]
+        wk = c_week.get(sid, zero)
+        written7 = sum(r["written"] for r in shown if r)
+        status, reason = _source_status(c_, shown, days_with[-1] if days_with else None,
+                                        _quiet_after(days_with), now)
+        ok_days = days - failed_days.get(sid, 0)
         out.append({
-            "source_id": f.source_id, "kind": f.kind, "group": f.group,
-            "broad": f.broad, "url": f.url, "cap": caps[f.source_id],
+            "source_id": sid, "kind": f.kind, "group": f.group, "broad": f.broad,
+            "url": f.url, "cap": f.max_items or MAX_PER_SOURCE,
             "status": status, "reason": reason,
-            "last_ok_at": c_.get("last_ok_at"),
-            "last_fetched_at": c_.get("last_fetched_at"),
-            "last_error": c_.get("last_error"),
+            "last_ok_at": c_.get("last_ok_at"), "last_error": c_.get("last_error"),
             "n_consecutive_fail": c_.get("n_consecutive_fail") or 0,
-            "daily": daily, "n_1d": daily[-1], "n_7d": n_quiet, "n_30d": sum(daily),
-            "capped_sweeps": cap["n"], "capped_sweeps_7d": cap["recent"],
-            "untagged_share": round(bare / n_en, 3) if n_en else None,
+            "last_item_on": days_with[-1] if days_with else None,
+            "runs": shown,
+            "today": {"written": sum(r["written"] for r in today_runs),
+                      "filtered": sum(r["filtered"] for r in today_runs),
+                      **{k: c_today.get(sid, zero)[k] for k in zero}},
+            "week": {"written": written7,
+                     "filtered": sum(r["filtered"] for r in shown if r),
+                     "failed": sum(not r["ok"] for r in shown if r),
+                     # items stored outside the scheduled sweeps (a manual run)
+                     "outside": max(0, wk["collected"] - written7) if run_ats else 0,
+                     **{k: wk[k] for k in zero}},
+            "d30": {"n": n30["collected"], "important": n30["important"],
+                    "enriched": n30["enriched"], "daily": daily,
+                    "usual_per_day": round(n30["collected"] / ok_days, 1) if ok_days > 0 else None},
+            "themes": {"main": main, "dist": dist[:6]},
         })
-    return {"days": day_keys, "cap": MAX_PER_SOURCE, "sources": out}
+    flags = _flags(out)
+    for r in out:
+        r["flags"] = flags[r["source_id"]]
+    main_of: dict = {}
+    for r in out:
+        for t in r["themes"]["main"]:
+            main_of.setdefault(t, []).append(r["source_id"])
+    return {
+        "days": day_keys, "runs": run_ats, "today": today, "cap": MAX_PER_SOURCE,
+        "sources": out,
+        "themes": [{"theme_id": t, "n30": theme_n30.get(t, 0),
+                    "main_sources": main_of.get(t, [])}
+                   for t in load_catalog().themes],
+        "unclassified": {
+            "filtered": sum(r["week"]["filtered"] for r in out),
+            "untagged": sum(r["week"]["untagged"] for r in out),
+            "enriched": sum(r["week"]["enriched"] for r in out),
+            "examples": examples},
+    }
 
 
 def pipeline_health(now: Optional[datetime] = None) -> dict:
-    """Where the stages after collection stand: the enrichment queue, the
-    newest daily/weekly/monthly summaries, and how many themes the newest
-    day covered."""
+    """Where the stages after collection stand: today's items and how many
+    are summarized, the enrichment queue, the newest daily/weekly/monthly
+    summaries, and how many themes the newest day covered."""
     now = now or kst.now()
     with connect() as c:
+        today = c.execute("SELECT count(*), count(enriched_at) FROM signals "
+                          "WHERE collected_on = ?", (now.date().isoformat(),)).fetchone()
         pending = c.execute("SELECT count(*) FROM signals WHERE enriched_at IS NULL "
                             "AND collected_on >= ?", (window_start(7, now),)).fetchone()[0]
         last_enriched = c.execute("SELECT max(enriched_at) FROM signals").fetchone()[0]
         day = c.execute("SELECT date, count(*) n FROM theme_daily "
                         "GROUP BY date ORDER BY date DESC LIMIT 1").fetchone()
-        week = c.execute("SELECT max(week_start) FROM theme_weekly").fetchone()[0]
+        week = c.execute("SELECT week_start, max(built_at) FROM theme_weekly "
+                         "GROUP BY week_start ORDER BY week_start DESC LIMIT 1").fetchone()
         month = c.execute("SELECT max(month) FROM theme_monthly").fetchone()[0]
-    return {"pending_enrich": pending, "last_enriched_at": last_enriched,
+    return {"collected_today": today[0], "enriched_today": today[1],
+            "pending_enrich": pending, "last_enriched_at": last_enriched,
             "daily_date": day["date"] if day else None,
             "daily_themes": day["n"] if day else 0,
             "n_themes": len(load_catalog().themes),
-            "weekly_start": week, "monthly": month}
+            "weekly_start": week[0] if week else None,
+            "weekly_built_at": week[1] if week else None, "monthly": month}

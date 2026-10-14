@@ -128,6 +128,21 @@ CREATE TABLE IF NOT EXISTS source_cursor (
   last_error          TEXT,
   n_consecutive_fail  INTEGER NOT NULL DEFAULT 0
 );
+
+-- One row per source per sweep. source_cursor forgets a failure the moment
+-- the next fetch succeeds: CleanTechnica failed 10 of 14 sweeps in a week
+-- (HTTP 403) and read as healthy. ~100 rows a day.
+CREATE TABLE IF NOT EXISTS collect_runs (
+  run_at     TEXT NOT NULL,               -- the sweep's start, KST ISO
+  source_id  TEXT NOT NULL,
+  ok         INTEGER NOT NULL,
+  error      TEXT,
+  written    INTEGER NOT NULL DEFAULT 0,  -- new items stored
+  filtered   INTEGER NOT NULL DEFAULT 0,  -- dropped by the keyword gate
+  dup        INTEGER NOT NULL DEFAULT 0,
+  over       INTEGER NOT NULL DEFAULT 0,  -- new items past the per-sweep cap
+  PRIMARY KEY (run_at, source_id)
+);
 """
 
 # Keyed by path so a test pointing NEWS_DB_PATH at a tmp file still gets a

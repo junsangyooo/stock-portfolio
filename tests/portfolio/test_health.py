@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
-from src.core import paths
+from src.core import kst, paths
 from src.portfolio import health
 from src.portfolio.store import account_store, holding_store
 
@@ -71,3 +72,17 @@ def test_the_run_time_is_the_jobs_own_start_line_not_the_rotation_time(tmp_path,
     (tmp_path / "backup.log.1").write_text('{"news": {"bytes": 1}, "market": {"bytes": 2}}\n')
     j = health.job("backup", "backup.log", 26, 1)
     assert j["written_at"] is None and j["age_h"] is None and j["status"] == "ok"
+
+
+def test_a_run_still_going_is_running_and_one_that_never_finished_is_a_problem(tmp_path, monkeypatch):
+    monkeypatch.setattr(paths, "LOGS_DIR", tmp_path)
+    started = datetime.now(kst.KST).isoformat()
+    prev = '{"date": "d", "collect": {"failed": []}, "daily": {}}\n'
+    (tmp_path / "news.log").write_text(
+        prev + f"@run {started}\n" + '[17:01:16]   {"date": "d", "written": 3, "failed": []}\n')
+    assert health.job("news", "news.log", 14, 1, "collect")["status"] == "running"
+    (tmp_path / "news.log").write_text(prev + "@run 2026-01-01T06:00:00+09:00\n")
+    j = health.job("news", "news.log", 14, 1, "collect")
+    assert j["status"] == "problem" and "끝 요약 없음" in j["problems"]
+    (tmp_path / "news.log").write_text(f"@run {started}\n" + prev)
+    assert health.job("news", "news.log", 14, 1, "collect")["status"] == "ok"

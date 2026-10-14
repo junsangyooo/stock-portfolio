@@ -109,3 +109,28 @@ def test_offsets_compare_as_one_clock(monkeypatch):
     now = datetime(2026, 10, 14, 17, 0, tzinfo=KST)
     st = _sweep(monkeypatch, ["2026-10-14T06:00:00"], "2026-10-13T20:00:00+00:00", now)
     assert st["written"] == 1
+
+
+def test_a_sweep_records_one_row_per_source(monkeypatch):
+    """The cursor forgets a failure once the next fetch succeeds; the run
+    table keeps it (CleanTechnica: 10 of 14 sweeps failed, read as healthy)."""
+    now = datetime(2026, 10, 14, 17, 0, tzinfo=KST)
+    feeds = [Feed(source_id="s1", kind="rss", group="news", url="http://x"),
+             Feed(source_id="s2", kind="rss", group="news", url="http://y")]
+    monkeypatch.setattr(collect_all, "load_sources", lambda: feeds)
+    monkeypatch.setattr(collect_all, "all_keywords", lambda cat: [])
+
+    def fetch(url, sid, **kw):
+        if sid == "s2":
+            raise urllib.error.HTTPError(url, 403, "Forbidden", {}, io.BytesIO())
+        return [RawItem(source_id="s1", kind="rss", title="a", url="http://x/a",
+                        published=now.isoformat(), summary="")]
+    monkeypatch.setattr(collect_all, "fetch_rss", fetch)
+    monkeypatch.setattr(collect_all, "enrich_images", lambda items, **kw: 0)
+    collect_all.collect_all(catalog=object(), now=now)
+    from src.research.news.db import connect
+    with connect() as c:
+        rows = {r["source_id"]: dict(r) for r in c.execute("SELECT * FROM collect_runs")}
+    assert rows["s1"]["ok"] == 1 and rows["s1"]["written"] == 1
+    assert rows["s2"]["ok"] == 0 and "403" in rows["s2"]["error"]
+    assert rows["s1"]["run_at"] == "2026-10-14T17:00:00+09:00"

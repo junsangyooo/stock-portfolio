@@ -22,18 +22,19 @@ from ..research.news import read as news
 from ..universe import search as universe
 from .store import holding_store
 
-# (job, log file, hours between runs before it counts as late, summaries kept)
-# — the schedule in deploy/portfolio.cron. Each run ends with one summary
-# (the news cycle's last one carries collect, enrich and daily together).
+# (job, log file, hours between runs before it counts as late, summaries kept,
+# a key only the run's final summary has) — the schedule in
+# deploy/portfolio.cron. The news cycle prints a summary per stage on the way;
+# only its last one carries "collect", so the run is over when that appears.
 JOBS = (
-    ("news", "news.log", 14, 1),
-    ("backup", "backup.log", 26, 1),
-    ("fundamental", "fundamental.log", 26, 1),
-    ("etf", "etf.log", 26, 1),
-    ("snapshot", "snapshot.log", 14, 1),
-    ("screener", "screener.log", 26, 1),
-    ("universe", "universe.log", 26, 1),
-    ("analysis", "analysis.log", 4 * 24, 1),   # weekdays only
+    ("news", "news.log", 14, 1, "collect"),
+    ("backup", "backup.log", 26, 1, None),
+    ("fundamental", "fundamental.log", 26, 1, None),
+    ("etf", "etf.log", 26, 1, None),
+    ("snapshot", "snapshot.log", 14, 1, None),
+    ("screener", "screener.log", 26, 1, None),
+    ("universe", "universe.log", 26, 1, None),
+    ("analysis", "analysis.log", 4 * 24, 1, None),   # weekdays only
 )
 # Keys whose non-empty value means something in the run went wrong.
 _BAD = ("failed", "accounts_failed", "quotes_stale", "ohlcv_errors",
@@ -86,21 +87,27 @@ def _problems(summary: dict) -> list:
     return found
 
 
-def _run_started(text: str) -> Optional[float]:
-    """When the last run began: the `@run <ISO>` line deploy/portfolio.cron
-    writes before each job."""
-    for line in reversed(text.splitlines()):
-        if line.startswith("@run "):
-            try:
-                return datetime.fromisoformat(line[5:].strip()).timestamp()
-            except ValueError:
-                return None
-    return None
+def _last_run(text: str) -> tuple[Optional[float], Optional[str]]:
+    """When the last run began — the `@run <ISO>` line deploy/portfolio.cron
+    writes before each job — and what the log holds after it (None: no such
+    line, a log from before the marker)."""
+    at = text.rfind("@run ")
+    while at > 0 and text[at - 1] != "\n":
+        at = text.rfind("@run ", 0, at)
+    if at < 0:
+        return None, None
+    line, _, rest = text[at:].partition("\n")
+    try:
+        return datetime.fromisoformat(line[5:].strip()).timestamp(), rest
+    except ValueError:
+        return None, rest
 
 
-def job(name: str, log: str, late_h: float, keep: int) -> dict:
+def job(name: str, log: str, late_h: float, keep: int,
+        final: Optional[str] = None) -> dict:
     """The newest summaries a job logged (today's file, else yesterday's
-    rotated copy) and whether its last run is older than its schedule.
+    rotated copy), whether its last run is still going, and whether that run
+    is older than its schedule.
 
     The run time is the job's own `@run` line. A log without one falls back
     to the live file's mtime; the rotated copy's mtime is the rotation time
@@ -110,24 +117,37 @@ def job(name: str, log: str, late_h: float, keep: int) -> dict:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
+        ran, rest = _last_run(text)
+        if not ran:
+            ran = os.path.getmtime(path) if path.name == log and text else None
         found = _summaries(text)
-        if found:
-            last = found[-keep:]
-            ran = _run_started(text) or (
-                os.path.getmtime(path) if path.name == log else None)
-            age_h = (time.time() - ran) / 3600 if ran else None
-            problems = [p for s in last for p in _problems(s)]
-            # Some jobs open with a one-key line ({"etf": 22}); a run that dies
-            # before its summary leaves only that, which must not read as ok.
-            if len(last[-1]) == 1:
-                problems.append("끝 요약 없음")
+        if not found and not ran:
+            continue
+        age_h = (time.time() - ran) / 3600 if ran else None
+        if rest is not None:
+            tail = _summaries(rest)
+            done = bool(tail) and len(tail[-1]) > 1 and (final is None or final in tail[-1])
+        else:
+            done = bool(found)
+        last = found[-keep:]
+        problems = [p for s in last for p in _problems(s)]
+        # Some jobs open with a one-key line ({"etf": 22}); a run that dies
+        # before its summary leaves only that, which must not read as ok.
+        if last and len(last[-1]) == 1:
+            problems.append("끝 요약 없음")
+        if not done and age_h is not None and age_h <= late_h:
+            status = "running"
+        elif not done and "끝 요약 없음" not in problems:
+            problems.append("끝 요약 없음")
+            status = "problem"
+        else:
             status = ("late" if age_h is not None and age_h > late_h
                       else "problem" if problems else "ok")
-            return {"job": name, "status": status, "problems": problems,
-                    "written_at": (datetime.fromtimestamp(ran, kst.KST).isoformat()
-                                   if ran else None),
-                    "age_h": round(age_h, 1) if age_h is not None else None,
-                    "summaries": [_counts_only(s) for s in last]}
+        return {"job": name, "status": status, "problems": problems,
+                "written_at": (datetime.fromtimestamp(ran, kst.KST).isoformat()
+                               if ran else None),
+                "age_h": round(age_h, 1) if age_h is not None else None,
+                "summaries": [_counts_only(s) for s in last]}
     return {"job": name, "status": "none", "problems": [], "written_at": None,
             "age_h": None, "summaries": []}
 

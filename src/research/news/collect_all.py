@@ -205,6 +205,18 @@ def collect_one(feed: Feed, keywords: list[str], cursor: Optional[str],
     return stat
 
 
+def _record_run(now: datetime, stats: list[dict]) -> None:
+    """One collect_runs row per source for this sweep (read.source_health)."""
+    run_at = (now if now.tzinfo else now.replace(tzinfo=KST)).isoformat(timespec="seconds")
+    with connect() as c:
+        c.executemany(
+            "INSERT OR REPLACE INTO collect_runs (run_at, source_id, ok, error, "
+            "written, filtered, dup, over) VALUES (?,?,?,?,?,?,?,?)",
+            [(run_at, s["source"], s["error"] is None, s["error"], s["written"],
+              s["filtered"], s["dup"], s["over"]) for s in stats])
+        c.commit()
+
+
 def collect_all(*, catalog: Optional[Catalog] = None,
                 now: Optional[datetime] = None,
                 max_per_source: int = MAX_PER_SOURCE, timeout: float = 15.0) -> dict:
@@ -217,6 +229,7 @@ def collect_all(*, catalog: Optional[Catalog] = None,
     stats = [collect_one(feed, keywords, cursors.get(feed.source_id), now=now,
                          max_per_source=max_per_source, timeout=timeout)
              for feed in load_sources()]
+    _record_run(now, stats)
     return {
         "date": now.strftime("%Y-%m-%d"),
         "sources": len(stats),
