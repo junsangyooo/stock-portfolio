@@ -47,3 +47,14 @@ def test_report_names_no_holding(tmp_path, monkeypatch):
     r = health.report()
     assert r["market"]["held"] == 1 and r["market"]["bars"]["missing"] == 1
     assert "KR:005930" not in json.dumps(r, default=str)
+
+
+def test_a_run_that_stopped_after_its_opening_line_is_a_problem(tmp_path, monkeypatch):
+    monkeypatch.setattr(paths, "LOGS_DIR", tmp_path)
+    (tmp_path / "etf.log").write_text('{"etf": 22}\nTraceback ...\n')
+    assert health.job("etf", "etf.log", 26, 1)["problems"] == ["끝 요약 없음"]
+
+
+def test_server_paths_keep_only_the_file_name():
+    out = health._counts_only({"news": {"path": "/home/ubuntu/x/data/backup/news.db.wed"}})
+    assert out == {"news": {"path": "news.db.wed"}}

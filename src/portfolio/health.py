@@ -60,10 +60,13 @@ def _summaries(text: str) -> list:
 
 
 def _counts_only(v):
+    """Lists become their length; a server path keeps only its file name."""
     if isinstance(v, list):
         return len(v)
     if isinstance(v, dict):
         return {k: _counts_only(x) for k, x in v.items()}
+    if isinstance(v, str) and v.startswith("/"):
+        return os.path.basename(v)
     return v
 
 
@@ -97,6 +100,10 @@ def job(name: str, log: str, late_h: float, keep: int) -> dict:
             written = os.path.getmtime(path)
             age_h = (time.time() - written) / 3600
             problems = [p for s in last for p in _problems(s)]
+            # Some jobs open with a one-key line ({"etf": 22}); a run that dies
+            # before its summary leaves only that, which must not read as ok.
+            if len(last[-1]) == 1:
+                problems.append("끝 요약 없음")
             status = "late" if age_h > late_h else ("problem" if problems else "ok")
             return {"job": name, "status": status, "problems": problems,
                     "written_at": datetime.fromtimestamp(written, kst.KST).isoformat(),
