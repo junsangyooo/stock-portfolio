@@ -138,6 +138,6 @@ def fetch_rss(url: str, source_id: str, kind: str = "rss",
         if e.code != 403:
             raise
         data = _get(url, _UA_BOT, timeout)
-    text = data.decode("utf-8", errors="replace")
+    text = data.decode("utf-8-sig", errors="replace")   # a BOM would fail the parse
     _check_feed(text)
     return parse_feed(text, source_id, kind)

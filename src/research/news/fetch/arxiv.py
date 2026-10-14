@@ -59,7 +59,7 @@ def fetch_arxiv(query: str, source_id: str, max_results: int = 30,
                 time.sleep(_RETRY_BACKOFF_S)
                 continue
             raise
-    text = data.decode("utf-8", errors="replace")
+    text = data.decode("utf-8-sig", errors="replace")   # a BOM would fail the parse
     _check_feed(text)        # an HTML error page is a failure, not a quiet day
     return parse_feed(text,
                       source_id, kind="arxiv")
