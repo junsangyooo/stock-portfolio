@@ -86,9 +86,25 @@ def _problems(summary: dict) -> list:
     return found
 
 
+def _run_started(text: str) -> Optional[float]:
+    """When the last run began: the `@run <ISO>` line deploy/portfolio.cron
+    writes before each job."""
+    for line in reversed(text.splitlines()):
+        if line.startswith("@run "):
+            try:
+                return datetime.fromisoformat(line[5:].strip()).timestamp()
+            except ValueError:
+                return None
+    return None
+
+
 def job(name: str, log: str, late_h: float, keep: int) -> dict:
     """The newest summaries a job logged (today's file, else yesterday's
-    rotated copy) and whether its last write is older than its schedule."""
+    rotated copy) and whether its last run is older than its schedule.
+
+    The run time is the job's own `@run` line. A log without one falls back
+    to the live file's mtime; the rotated copy's mtime is the rotation time
+    (09:00 KST for every job), so there the time is unknown."""
     for path in (paths.LOGS_DIR / log, paths.LOGS_DIR / f"{log}.1"):
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
@@ -97,17 +113,20 @@ def job(name: str, log: str, late_h: float, keep: int) -> dict:
         found = _summaries(text)
         if found:
             last = found[-keep:]
-            written = os.path.getmtime(path)
-            age_h = (time.time() - written) / 3600
+            ran = _run_started(text) or (
+                os.path.getmtime(path) if path.name == log else None)
+            age_h = (time.time() - ran) / 3600 if ran else None
             problems = [p for s in last for p in _problems(s)]
             # Some jobs open with a one-key line ({"etf": 22}); a run that dies
             # before its summary leaves only that, which must not read as ok.
             if len(last[-1]) == 1:
                 problems.append("끝 요약 없음")
-            status = "late" if age_h > late_h else ("problem" if problems else "ok")
+            status = ("late" if age_h is not None and age_h > late_h
+                      else "problem" if problems else "ok")
             return {"job": name, "status": status, "problems": problems,
-                    "written_at": datetime.fromtimestamp(written, kst.KST).isoformat(),
-                    "age_h": round(age_h, 1),
+                    "written_at": (datetime.fromtimestamp(ran, kst.KST).isoformat()
+                                   if ran else None),
+                    "age_h": round(age_h, 1) if age_h is not None else None,
                     "summaries": [_counts_only(s) for s in last]}
     return {"job": name, "status": "none", "problems": [], "written_at": None,
             "age_h": None, "summaries": []}

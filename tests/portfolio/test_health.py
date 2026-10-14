@@ -58,3 +58,16 @@ def test_a_run_that_stopped_after_its_opening_line_is_a_problem(tmp_path, monkey
 def test_server_paths_keep_only_the_file_name():
     out = health._counts_only({"news": {"path": "/home/ubuntu/x/data/backup/news.db.wed"}})
     assert out == {"news": {"path": "news.db.wed"}}
+
+
+def test_the_run_time_is_the_jobs_own_start_line_not_the_rotation_time(tmp_path, monkeypatch):
+    """Every rotated log has the rotation's mtime (09:00 KST), so every job
+    read as run at 09:00."""
+    monkeypatch.setattr(paths, "LOGS_DIR", tmp_path)
+    (tmp_path / "etf.log").write_text("")
+    (tmp_path / "etf.log.1").write_text(
+        '@run 2026-10-13T21:15:01+00:00\n{"etf": 7}\n{"total": 7, "ok": 7}\n')
+    assert health.job("etf", "etf.log", 26, 1)["written_at"] == "2026-10-14T06:15:01+09:00"
+    (tmp_path / "backup.log.1").write_text('{"news": {"bytes": 1}, "market": {"bytes": 2}}\n')
+    j = health.job("backup", "backup.log", 26, 1)
+    assert j["written_at"] is None and j["age_h"] is None and j["status"] == "ok"
