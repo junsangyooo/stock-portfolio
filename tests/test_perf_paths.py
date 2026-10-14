@@ -39,7 +39,7 @@ def read_text_calls(monkeypatch):
 # ── analyze.summary ─────────────────────────────────────────────────────────
 
 def _store(tmp_path, sid, stem, label):
-    d = tmp_path / "analysis" / aread.KIND / sid.replace(":", "_")
+    d = tmp_path / "analysis" / sid.replace(":", "_")
     d.mkdir(parents=True, exist_ok=True)
     p = d / f"{stem}.json"
     p.write_text('{"label": "%s", "score": 0.3}' % label, encoding="utf-8")

@@ -15,7 +15,6 @@ from src.core.kst import KST
 from src.market.store import ohlcv_store
 from src.market.source.base import OHLCVBar
 from src.research.analyze import score
-from src.research.analyze.store import KIND
 
 START = datetime(2026, 9, 1, tzinfo=KST)
 
@@ -24,7 +23,7 @@ def _store(sid: str, day: str, *, label="buy", confidence=0.6,
            invalidation=90.0, target=120.0, counter="이 결론이 틀린다면",
            confirm=("종가 120 돌파",), status="ok",
            effort="default") -> None:
-    d = paths.ANALYSIS_DIR / KIND / sid.replace(":", "_")
+    d = paths.analysis_dir(sid)
     d.mkdir(parents=True, exist_ok=True)
     (d / f"{day.replace('-', '')}.json").write_text(json.dumps({
         "symbol_id": sid, "date": day, "status": status, "label": label,

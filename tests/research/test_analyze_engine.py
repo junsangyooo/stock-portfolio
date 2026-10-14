@@ -229,7 +229,7 @@ def stored(tmp_path, monkeypatch):
     import src.core.paths as paths
     monkeypatch.setattr(paths, "ANALYSIS_DIR", tmp_path)
     from src.research.analyze import read as rd
-    d = tmp_path / "analysis" / "KR_005930"
+    d = tmp_path / "KR_005930"
     d.mkdir(parents=True)
     for day, label in (("20260830", "neutral"), ("20260901", "buy")):
         (d / f"{day}.json").write_text(_json.dumps(
@@ -264,7 +264,7 @@ def test_on_accepts_either_date_spelling(stored):
 
 
 def test_a_truncated_file_reads_as_missing_not_as_a_crash(stored, tmp_path):
-    (tmp_path / "analysis" / "KR_005930" / "20260902.json").write_text(
+    (tmp_path / "KR_005930" / "20260902.json").write_text(
         "{not json", encoding="utf-8")
     assert stored.latest("KR:005930") is None      # newest is unreadable
 
@@ -280,7 +280,7 @@ def test_summary_answers_for_every_symbol_asked(stored):
 def test_summary_carries_the_coordinates_a_card_reads(stored, tmp_path):
     """The human book keeps no plans: a card states the analysis's own stop,
     target and entry zone against the holding, so the batch carries them."""
-    (tmp_path / "analysis" / "KR_005930" / "20260903.json").write_text(json.dumps({
+    (tmp_path / "KR_005930" / "20260903.json").write_text(json.dumps({
         "date": "2026-09-03", "label": "sell", "status": "ok",
         "levels": {"current": 7520, "invalidation": {"price": 7930},
                    "targets": [{"price": 6563}, {"price": 6000}],

@@ -5,7 +5,7 @@ for this symbol today, and if not make one" has to know the storage layout,
 which means every caller reinvents the same glob. The news pipeline already
 works this way (research/news/read.py) and seven call sites go through it.
 
-Results live at data/analysis/analysis/{SYMBOL}/{YYYYMMDD}.json, one per
+Results live at data/analysis/{SYMBOL}/{YYYYMMDD}.json, one per
 symbol per day, written by store.persist. Nothing here knows about an
 account: the same stored result serves every account.
 """
@@ -31,7 +31,7 @@ def _dir(symbol_id: str):
     # Read the root at call time — binding it at import would make the path
     # unredirectable, which is exactly how a test ends up writing into the
     # real data tree (src/market/store/db.py hit the same thing).
-    return paths.ANALYSIS_DIR / KIND / symbol_id.replace(":", "_")
+    return paths.analysis_dir(symbol_id)
 
 
 def _as_date(stem: str) -> str:

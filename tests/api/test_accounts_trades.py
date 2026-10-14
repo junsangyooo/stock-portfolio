@@ -192,7 +192,7 @@ def test_buy_onto_a_watch_row_opens_it(client):
 def test_a_trade_answers_without_plan_fields_and_ignores_a_plan_id(client):
     d = _trade(client, plan_id=7).json()
     assert "plan" not in d and "plan_candidates" not in d
-    assert d["trade"]["plan_id"] is None
+    assert "plan_id" not in d["trade"]          # the column is gone (2026-10-14)
 
 
 def _seed_history(client):

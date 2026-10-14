@@ -14,7 +14,6 @@ import pytest
 from src.core import paths
 from src.core.kst import KST
 from src.research.analyze import due
-from src.research.analyze.store import KIND
 
 NOW = datetime(2026, 9, 15, 9, 0, tzinfo=KST)        # Tuesday
 YESTERDAY = "2026-09-14"
@@ -23,7 +22,7 @@ TWO_WEEKS = "2026-09-02"                             # 9 weekdays back
 
 def _store(sid: str, date: str, *, current=10_000.0, invalidation=9_000.0,
            target=12_000.0, low=9_400.0, high=9_600.0) -> None:
-    d = paths.ANALYSIS_DIR / KIND / sid.replace(":", "_")
+    d = paths.analysis_dir(sid)
     d.mkdir(parents=True, exist_ok=True)
     (d / f"{date.replace('-', '')}.json").write_text(json.dumps({
         "symbol_id": sid, "date": date, "status": "ok",
@@ -66,7 +65,7 @@ def test_a_result_with_no_judgment_is_always_due(sources):
     until it ages out — 49 of 81 symbols were in that state after the weekly
     limit ran out."""
     _store("KR:AAA", YESTERDAY)
-    path = (paths.ANALYSIS_DIR / KIND / "KR_AAA" /
+    path = (paths.ANALYSIS_DIR / "KR_AAA" /
             f"{YESTERDAY.replace('-', '')}.json")
     body = json.loads(path.read_text(encoding="utf-8"))
     body["status"] = "facts_only"

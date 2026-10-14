@@ -1,9 +1,7 @@
 """SQLite for the human accounts — data/portfolio.db.
 
-The ledger itself (accounts, holdings, trades, cash, snapshots, plans, watch)
-is defined in schema.py and applied here; this file only adds what is
-specific to this book. The human book keeps no plans — the `plans` table is
-part of the ledger definition and stays empty here.
+The ledger itself (accounts, holdings, trades, cash, snapshots) is defined in
+schema.py and applied here; this file only adds what is specific to this book.
 
   chat_sessions   per-account chat threads + their transcript
 

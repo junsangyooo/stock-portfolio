@@ -2,7 +2,7 @@
 
 The analysis scores a symbol on [-1, 1] and maps that to a 5-level label
 (strong_sell … strong_buy); the clamps normalise what the model returned, and
-`persist` writes the result to data/analysis/analysis/{symbol}/{date}.json.
+`persist` writes the result to data/analysis/{symbol}/{date}.json.
 """
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import json
 
 from ...core.paths import analysis_path
 
-KIND = "analysis"   # the one stored verdict; analyze/read.py globs the same folder
+KIND = "analysis"   # the `kind` field of a stored result
 
 
 def clamp_score(score: float) -> float:
@@ -40,8 +40,8 @@ def clamp_confidence(value, default: float = 0.5) -> float:
 
 
 def persist(symbol_id: str, date: str, result: dict) -> dict:
-    """Write the analysis to data/analysis/analysis/{symbol}/{YYYYMMDD}.json."""
-    path = analysis_path(KIND, symbol_id, date.replace("-", ""))
+    """Write the analysis to data/analysis/{symbol}/{YYYYMMDD}.json."""
+    path = analysis_path(symbol_id, date.replace("-", ""))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(result, ensure_ascii=False, indent=1, default=str),

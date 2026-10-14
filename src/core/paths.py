@@ -1,12 +1,12 @@
 """Filesystem layout for the new portfolio-dashboard.
 
-  data/portfolio.db                                 — SQLite (ledger: accounts, holdings, trades, cash, snapshots, plans + chat_sessions)
+  data/portfolio.db                                 — SQLite (ledger: accounts, holdings, trades, cash, snapshots + chat_sessions)
   data/market.db                                    — SQLite (ohlcv, valuation, financials, sector, etf, symbol_themes)
   data/news.db                                      — SQLite (signals, signal_themes, theme_daily/weekly/monthly)
   data/universe/{kr,us}.json                        — symbol master (daily refresh)
   data/market/quote/last.json                       — last-known quote snapshot
   data/universe/dart_corp_codes.json                — KR code → DART corp_code map
-  data/analysis/analysis/{MARKET}_{CODE}/{YYYYMMDD}.json — comprehensive analysis results
+  data/analysis/{MARKET}_{CODE}/{YYYYMMDD}.json          — comprehensive analysis results
 """
 from __future__ import annotations
 
@@ -52,9 +52,13 @@ def ensure_dirs() -> None:
         d.mkdir(parents=True, exist_ok=True)
 
 
-def analysis_path(kind: str, symbol_id: str, yyyymmdd: str) -> Path:
-    safe = symbol_id.replace(":", "_")
-    return ANALYSIS_DIR / kind / safe / f"{yyyymmdd}.json"
+def analysis_dir(symbol_id: str) -> Path:
+    """One symbol's stored analyses: data/analysis/{MARKET}_{CODE}/."""
+    return ANALYSIS_DIR / symbol_id.replace(":", "_")
+
+
+def analysis_path(symbol_id: str, yyyymmdd: str) -> Path:
+    return analysis_dir(symbol_id) / f"{yyyymmdd}.json"
 
 
 def split_symbol(symbol_id: str) -> tuple[str, str]:

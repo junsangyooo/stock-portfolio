@@ -29,7 +29,6 @@ from typing import Iterable, Optional
 
 from ...core import paths
 from ...core.kst import KST
-from .store import KIND
 
 HORIZONS = (5, 10, 20)          # trading days
 FLAT_PCT = 3.0                  # a neutral call is right while price stays here
@@ -61,7 +60,7 @@ def _bars(symbol_id: str, n: int = 240) -> list[tuple]:
 
 def _stored(symbol_ids: Optional[Iterable[str]] = None) -> list[tuple]:
     """(symbol_id, body) for every stored analysis, oldest first."""
-    root = paths.ANALYSIS_DIR / KIND
+    root = paths.ANALYSIS_DIR
     wanted = set(symbol_ids) if symbol_ids else None
     out = []
     for d in sorted(root.glob("*")) if root.exists() else []:
