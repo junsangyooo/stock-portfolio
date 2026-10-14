@@ -63,7 +63,7 @@ _OPEN_API = {
 # Prefix-open: a field's panel (no PII) and this device's own lock (clears
 # its own cookie only).
 _OPEN_PREFIX = (("GET", "/api/analysis/news/themes/"),)
-_OPEN_SUFFIX = (("POST", "/lock"),)
+_LOCK_RE = re.compile(r"/api/accounts/[^/]+/lock")
 
 
 @app.middleware("http")
@@ -71,8 +71,7 @@ async def api_session_gate(request: Request, call_next):
     path = request.url.path
     open_ = ((request.method, path) in _OPEN_API
              or any(request.method == m and path.startswith(pre) for m, pre in _OPEN_PREFIX)
-             or any(request.method == m and path.startswith("/api/accounts/") and path.endswith(suf)
-                    for m, suf in _OPEN_SUFFIX))
+             or (request.method == "POST" and _LOCK_RE.fullmatch(path) is not None))
     if path.startswith("/api/") and not open_:
         is_pin_post = request.method == "POST" and path.endswith("/auth")
         # Any account's session opens the shared data. The ledger stays behind

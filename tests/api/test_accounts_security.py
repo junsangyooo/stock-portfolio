@@ -83,3 +83,28 @@ def test_the_add_dialog_cannot_overwrite_a_held_row(client):
                     json={"symbol_id": "KR:005930", "create_only": True}, cookies=_cookie())
     assert r.status_code == 409
     assert holding_store.list_by_account("alice")[0]["qty"] == 7
+
+
+def test_concurrent_wrong_pins_stop_at_the_limit(client):
+    """Sixty at once let 25 through when the check and the count were apart."""
+    from concurrent.futures import ThreadPoolExecutor
+    def wrong(_):
+        return client.post("/api/accounts/alice/pin", json={"current": "000000", "pin": "654321"},
+                           cookies=_cookie()).status_code
+    with ThreadPoolExecutor(16) as ex:
+        codes = list(ex.map(wrong, range(40)))
+    assert codes.count(403) == security.MAX_TRIES and codes.count(429) == 40 - security.MAX_TRIES
+
+
+def test_an_id_that_is_a_route_cannot_be_created(client):
+    for bad in ("session", "Session", "a/b", ""):
+        r = client.post("/api/accounts", json={"account_id": bad, "name": "x", "pin": "123456"})
+        assert r.status_code in (400, 422), bad
+
+
+def test_an_optional_field_can_be_cleared(client):
+    account_store.update("alice", note="메모", broker="KB")
+    r = client.patch("/api/accounts/alice", json={"note": "", "broker": ""}, cookies=_cookie())
+    assert r.status_code == 200
+    a = account_store.get("alice")
+    assert a["note"] is None and a["broker"] is None

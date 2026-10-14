@@ -35,7 +35,8 @@ def update(account_id: str, *, name: Optional[str] = None,
                  ("note", note)):
         if v is not None:
             fields.append(f"{k} = ?")
-            vals.append(v)
+            # '' clears an optional field (broker, note); NULL means 'unset'
+            vals.append(None if v == "" and k in ("broker", "note") else v)
     if not fields:
         return 0
     vals.append(account_id)

@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import os
 import secrets
+import threading
 import time
 
 from ..core.paths import DATA
@@ -126,6 +127,18 @@ def is_valid_pin_format(pin: str) -> bool:
 MAX_TRIES = 5
 LOCK_S = 15 * 60
 _fails: dict[str, list[float]] = {}
+_fails_lock = threading.Lock()
+
+
+def attempt_pin(account_id: str, pin: str, stored_hash: str | None,
+                now: float | None = None) -> tuple[bool, int]:
+    """(matched, seconds locked). The check and the count happen under one
+    lock: sixty concurrent wrong PINs let 25 through when they were apart."""
+    with _fails_lock:
+        wait = pin_locked_for(account_id, now)
+        if wait:
+            return False, wait
+        return check_pin(account_id, pin, stored_hash, now), 0
 
 
 def pin_locked_for(account_id: str, now: float | None = None) -> int:
@@ -151,8 +164,9 @@ def check_pin(account_id: str, pin: str, stored_hash: str | None,
 def _reset_pin_cli(account_id: str) -> int:
     """`python -m src.portfolio.security reset-pin ACCOUNT` on the server —
     the procedure '계좌 주인에게 재설정을 부탁해요' points to. Every session of
-    that account keeps working (tokens are not PIN-bound); lock the devices
-    from the page if that matters."""
+    that account keeps working (tokens are not PIN-bound); each device can
+    lock itself from the page, and rotating data/.session_secret closes every
+    session of every account."""
     import getpass
     from .store import account_store
     if not account_store.get(account_id):

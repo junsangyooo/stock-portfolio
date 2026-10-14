@@ -11,7 +11,8 @@ def upsert(account_id: str, symbol_id: str, *,
            avg_cost: Optional[float] = None, qty: Optional[float] = None,
            note: Optional[str] = None, name: Optional[str] = None) -> None:
     """`name` overrides the universe display name; omitting it keeps whatever
-    override is already stored (the edit form only sends it when changed)."""
+    override is already stored, and '' drops the override (back to the
+    universe name)."""
     now = int(time.time())
     # The column is nullable (it predates this guard and SQLite cannot add
     # NOT NULL to an existing one), so this is the only thing keeping NULL
@@ -27,7 +28,8 @@ def upsert(account_id: str, symbol_id: str, *,
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(account_id, symbol_id) DO UPDATE SET
               avg_cost=excluded.avg_cost, qty=excluded.qty, note=excluded.note,
-              name=COALESCE(excluded.name, holdings.name),
+              name=CASE WHEN excluded.name = '' THEN NULL
+                        ELSE COALESCE(excluded.name, holdings.name) END,
               updated_at=excluded.updated_at
             """,
             (account_id, symbol_id, avg_cost, qty, note, name, now, now, now),

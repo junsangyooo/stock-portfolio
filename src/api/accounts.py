@@ -14,6 +14,7 @@ account's session.
 from __future__ import annotations
 
 import logging
+import re
 
 from typing import Dict, List, Optional
 
@@ -83,14 +84,16 @@ class PinChange(BaseModel):
 def _check_current_pin(account_id: str, pin: str) -> None:
     """The PIN again, for changes an open but unattended device must not make
     (PIN change, account deletion). Counted against the attempt limit."""
-    wait = security.pin_locked_for(account_id)
+    ok, wait = security.attempt_pin(account_id, pin, account_store.get_pin_hash(account_id))
     if wait:
         raise HTTPException(429, f"PIN을 너무 많이 틀렸어요 · {wait // 60 + 1}분 뒤에 다시 해 주세요")
-    if not security.check_pin(account_id, pin, account_store.get_pin_hash(account_id)):
+    if not ok:
         raise HTTPException(403, PIN_WRONG)
 
 
 PIN_WRONG = "PIN이 맞지 않아요"
+RESERVED_IDS = {"session", "new", "lock", "auth"}
+ACCOUNT_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,40}")
 
 
 @router.get("")
@@ -126,6 +129,9 @@ def opened_accounts(request: Request) -> dict:
 
 @router.post("")
 def create_account(body: AccountCreate) -> dict:
+    # an id that is also a path under /api/accounts would never open
+    if body.account_id.lower() in RESERVED_IDS or not ACCOUNT_ID_RE.fullmatch(body.account_id):
+        raise HTTPException(400, "쓸 수 없는 ID예요 · 영문·숫자·_·-만, 예약어 제외")
     if account_store.get(body.account_id):
         raise HTTPException(409, f"account exists: {body.account_id}")
     if not security.is_valid_pin_format(body.pin):
@@ -146,10 +152,10 @@ def auth_account(account_id: str, body: PinBody, response: Response) -> dict:
     stored = account_store.get_pin_hash(account_id)
     if not stored:
         raise HTTPException(403, security.NO_PIN)  # nothing to prove → nothing issued
-    wait = security.pin_locked_for(account_id)
+    ok, wait = security.attempt_pin(account_id, body.pin, stored)
     if wait:
         raise HTTPException(429, f"PIN을 너무 많이 틀렸어요 · {wait // 60 + 1}분 뒤에 다시 해 주세요")
-    if not security.check_pin(account_id, body.pin, stored):
+    if not ok:
         raise HTTPException(403, PIN_WRONG)
     security.set_session_cookie(response, security.COOKIE_PREFIX + account_id,
                                 account_id)

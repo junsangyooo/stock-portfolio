@@ -20,6 +20,15 @@ _INTRADAY = {"1m": ("5d", "1m"), "5m": ("60d", "5m"),
              "60m": ("60d", "60m")}
 
 
+@router.get("/session")
+def market_session() -> dict:
+    """Where KR and US stand now (pre · open · post · closed) and the newest
+    session date — the pages' P&L labels and quote polling read this rather
+    than guessing from the weekday (a weekday holiday read as '장중')."""
+    from ..market import calendar
+    return {m: calendar.state(m) for m in ("KR", "US")}
+
+
 @router.post("/refresh")
 def refresh_all() -> dict:
     """The ↻ button: every held symbol's bars and quotes (portfolio.service).
