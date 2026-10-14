@@ -70,13 +70,15 @@ def main() -> int:
     filled = gap_filler.fill_many(sorted(held))  # keep charts/sparklines current
     quoted, quote_stale = refresh_quotes(held)
 
-    ok, failed = [], []
+    ok, failed, partial = [], [], []
     for acc in accounts:
         aid = acc["account_id"]
         try:
             res = service.aggregate(aid)  # writes today's snapshot internally
             if not res.get("totals"):
                 ok.append(aid)  # empty account — nothing to snapshot
+            elif any(t.get("n_missing") for t in res["totals"].values()):
+                partial.append(aid)  # a priceless holding: today's row is not overwritten
             # aggregate() swallows snapshot errors — verify the row landed
             elif snapshot_store.has_for(kst.today(), aid):
                 ok.append(aid)
@@ -87,6 +89,7 @@ def main() -> int:
 
     print(json.dumps({
         "accounts_ok": ok, "accounts_failed": failed,
+        "accounts_without_snapshot": partial,
         "symbols": len(held), "quotes_fresh": quoted,
         "quotes_stale": quote_stale,
         "ohlcv_bars_added": sum(n for n in filled.values() if n > 0),

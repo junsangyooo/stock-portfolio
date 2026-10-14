@@ -58,6 +58,12 @@ def list_by_account(account_id: str) -> List[dict]:
         return [dict(r) for r in rows]
 
 
+def exists(account_id: str, symbol_id: str) -> bool:
+    with connect() as c:
+        return c.execute("SELECT 1 FROM holdings WHERE account_id = ? AND symbol_id = ?",
+                         (account_id, symbol_id)).fetchone() is not None
+
+
 def all_symbol_ids() -> List[str]:
     """Distinct symbol_ids across all accounts — the symbols this book needs
     market data for (jobs, snapshot_job, the ↻ refresh)."""

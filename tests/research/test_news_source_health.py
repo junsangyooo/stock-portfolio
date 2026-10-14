@@ -139,3 +139,17 @@ def test_the_week_starts_at_the_first_shown_sweep_not_its_day():
     a = _by_id()["aitimes"]
     assert a["week"]["collected"] == 2 and a["week"]["outside"] == 0
     assert a["week"]["important"] == 0                       # all importance NULL: 0, not None
+
+
+def test_themes_overview_has_every_field_with_a_daily_series():
+    with connect() as c:
+        c.execute("INSERT INTO theme_daily (theme_id, date, overview, sentiment_score, "
+                  "sentiment_trend, n_items, built_at) VALUES ('steel', ?, '[\"a\"]', 0.4, 'up', 3, 'x')",
+                  (_day(0),))
+        _signals(c, "steeldaily", _day(0), 2, theme="steel")
+        c.commit()
+    r = read.themes_overview(days=7, now=NOW)
+    t = {x["theme_id"]: x for x in r["themes"]}
+    assert len(t) >= 23 and len(t["steel"]["series"]) == 7
+    assert t["steel"]["today"] == {"date": _day(0), "score": 0.4, "trend": "up", "bullets": ["a"]}
+    assert t["steel"]["items_today"] == 2 and t["battery"]["today"]["score"] is None

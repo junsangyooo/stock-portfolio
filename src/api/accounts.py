@@ -75,6 +75,24 @@ class PinBody(BaseModel):
     pin: str
 
 
+class PinChange(BaseModel):
+    current: str
+    pin: str
+
+
+def _check_current_pin(account_id: str, pin: str) -> None:
+    """The PIN again, for changes an open but unattended device must not make
+    (PIN change, account deletion). Counted against the attempt limit."""
+    wait = security.pin_locked_for(account_id)
+    if wait:
+        raise HTTPException(429, f"PIN을 너무 많이 틀렸어요 · {wait // 60 + 1}분 뒤에 다시 해 주세요")
+    if not security.check_pin(account_id, pin, account_store.get_pin_hash(account_id)):
+        raise HTTPException(403, PIN_WRONG)
+
+
+PIN_WRONG = "PIN이 맞지 않아요"
+
+
 @router.get("")
 def list_accounts() -> dict:
     """Public list — identity only (name/type/broker), NO balances or holdings
@@ -85,6 +103,25 @@ def list_accounts() -> dict:
          "base_currency": a["base_currency"], "sort_order": a["sort_order"],
          "has_pin": bool(a.get("pin_hash"))}
         for a in account_store.list_all()]}
+
+
+@router.get("/session")
+def opened_accounts(request: Request) -> dict:
+    """The accounts this device has open, with totals per currency — the
+    account menu. Never a 403: a device with nothing open gets an empty list,
+    and a locked account is simply absent (the menu shows its lock)."""
+    out = []
+    for a in account_store.list_all():
+        aid = a["account_id"]
+        if not account_store.get_pin_hash(aid):
+            continue
+        if not security.verify_session_token(aid, request.cookies.get(security.COOKIE_PREFIX + aid)):
+            continue
+        summary = service.aggregate(aid)
+        out.append({"account_id": aid,
+                    "totals": [{"currency": ccy, "total": t.get("total_assets")}
+                               for ccy, t in summary.get("totals", {}).items()]})
+    return {"open": out}
 
 
 @router.post("")
@@ -109,8 +146,11 @@ def auth_account(account_id: str, body: PinBody, response: Response) -> dict:
     stored = account_store.get_pin_hash(account_id)
     if not stored:
         raise HTTPException(403, security.NO_PIN)  # nothing to prove → nothing issued
-    if not security.verify_pin(account_id, body.pin, stored):
-        raise HTTPException(403, "PIN이 일치하지 않습니다")
+    wait = security.pin_locked_for(account_id)
+    if wait:
+        raise HTTPException(429, f"PIN을 너무 많이 틀렸어요 · {wait // 60 + 1}분 뒤에 다시 해 주세요")
+    if not security.check_pin(account_id, body.pin, stored):
+        raise HTTPException(403, PIN_WRONG)
     security.set_session_cookie(response, security.COOKIE_PREFIX + account_id,
                                 account_id)
     return {"ok": True}
@@ -139,26 +179,45 @@ def update_account(account_id: str, body: AccountUpdate,
 
 
 @router.post("/{account_id}/pin")
-def set_pin(account_id: str, body: PinBody,
+def set_pin(account_id: str, body: PinChange,
             _: str = Depends(require_account)) -> dict:
-    """Change/set the PIN of an already-authenticated account."""
+    """Change the PIN — the current one again first: a device left open must
+    not be enough to take the book over. Other devices stay open."""
     if not security.is_valid_pin_format(body.pin):
         raise HTTPException(400, "PIN must be exactly 6 digits")
+    _check_current_pin(account_id, body.current)
     account_store.set_pin_hash(
         account_id, security.hash_pin(account_id, body.pin))
     return {"ok": True}
 
 
 @router.delete("/{account_id}")
-def delete_account(account_id: str, _: str = Depends(require_account)) -> dict:
+def delete_account(account_id: str, body: PinBody, response: Response,
+                   _: str = Depends(require_account)) -> dict:
+    """Deletes the account; its holdings, trades, cash and chats go with it
+    (ON DELETE CASCADE), snapshots stay. Unchanged by the redesign — only the
+    PIN is asked again first. The daily backup keeps seven days."""
+    _check_current_pin(account_id, body.pin)
     n = account_store.delete(account_id)
+    response.delete_cookie(security.COOKIE_PREFIX + account_id, path="/")
     return {"ok": n > 0, "deleted": n}
+
+
+@router.post("/{account_id}/lock")
+def lock_account(account_id: str, response: Response) -> dict:
+    """이 기기에서 잠그기 — drop this device's session for the account. No
+    session needed: clearing one's own cookie gives nothing away."""
+    response.delete_cookie(security.COOKIE_PREFIX + account_id, path="/",
+                           secure=True, httponly=True, samesite="lax")
+    return {"ok": True}
+
 
 
 # ── holdings ─────────────────────────────────────────────────────────
 
 class HoldingUpsert(BaseModel):
     symbol_id: str
+    create_only: bool = False               # the add dialog: an existing row is a 409
     avg_cost: Optional[float] = None
     qty: Optional[float] = None
     note: Optional[str] = None
@@ -193,6 +252,10 @@ def add_holding(account_id: str, body: HoldingUpsert,
     """Add or directly edit a holding. Never touches cash — a trade goes
     through POST /trades, the one door for anything that moves money."""
     _universe_meta(body.symbol_id)
+    if body.create_only and holding_store.exists(account_id, body.symbol_id):
+        # POST /holdings writes what it is sent; the add dialog would overwrite
+        # a held row's quantity with an empty one. Editing goes through 보유 정정.
+        raise HTTPException(409, "이미 목록에 있는 종목이에요")
     # The holding is the person's record; a price source being down must not
     # lose it. The bars come with the next refresh or snapshot instead.
     try:

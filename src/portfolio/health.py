@@ -39,7 +39,7 @@ JOBS = (
     ("analysis", "analysis.log", 4 * 24, 1, None, 3),   # weekdays only
 )
 # Keys whose non-empty value means something in the run went wrong.
-_BAD = ("failed", "accounts_failed", "quotes_stale", "ohlcv_errors",
+_BAD = ("failed", "accounts_failed", "accounts_without_snapshot", "quotes_stale", "ohlcv_errors",
         "kept_previous", "errors", "error")
 
 

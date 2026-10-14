@@ -11,7 +11,8 @@ from .store import account_store, balance_store, holding_store, snapshot_store
 
 
 def _blank_totals() -> dict:
-    return {"eval": 0.0, "cost": 0.0, "pnl": 0.0, "n_held": 0, "n_tracked": 0}
+    return {"eval": 0.0, "cost": 0.0, "pnl": 0.0, "n_held": 0, "n_tracked": 0,
+            "n_missing": 0}
 
 
 def aggregate(account_id: str, *, spark_n: int = 30) -> dict:
@@ -44,6 +45,8 @@ def aggregate(account_id: str, *, spark_n: int = 30) -> dict:
 
         t = totals.setdefault(ccy, _blank_totals())
         t["n_tracked"] += 1
+        if price is None and qty:
+            t["n_missing"] += 1
         if price is not None and qty is not None and qty > 0:
             t["eval"] += price * qty
             if avg is not None:
@@ -82,9 +85,13 @@ def aggregate(account_id: str, *, spark_n: int = 30) -> dict:
         t["total_assets"] = t["eval"] + t["cash"]
         t["pnl_pct"] = (t["pnl"] / t["cost"] * 100) if t["cost"] > 0 else 0.0
 
-    # lazy daily snapshot
+    # Lazy daily snapshot — only for a currency whose every position has a
+    # price. A sum missing a holding is not that day's assets: written down,
+    # it draws a fall that never happened on the asset curve.
     try:
-        snapshot_store.maybe_snapshot_today(account_id, totals)
+        whole = {c: t for c, t in totals.items() if not t["n_missing"]}
+        if whole:
+            snapshot_store.maybe_snapshot_today(account_id, whole)
     except Exception:
         pass
 

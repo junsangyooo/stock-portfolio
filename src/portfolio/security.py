@@ -115,3 +115,62 @@ def has_any_session(cookies) -> bool:
 
 def is_valid_pin_format(pin: str) -> bool:
     return isinstance(pin, str) and len(pin) == 6 and pin.isdigit()
+
+
+# ── PIN attempts ─────────────────────────────────────────────────────────────
+# A 6-digit PIN is a million guesses; without a limit a script walks it in an
+# afternoon. Per account, in memory: MAX_TRIES wrong PINs lock that account's
+# PIN checks for LOCK_S. One web process serves the site, so memory is the
+# whole state; a restart forgets the count, which costs an attacker a restart
+# they cannot trigger.
+MAX_TRIES = 5
+LOCK_S = 15 * 60
+_fails: dict[str, list[float]] = {}
+
+
+def pin_locked_for(account_id: str, now: float | None = None) -> int:
+    """Seconds until this account's PIN may be tried again (0 = now)."""
+    now = time.time() if now is None else now
+    recent = [t for t in _fails.get(account_id, []) if now - t < LOCK_S]
+    _fails[account_id] = recent
+    return int(LOCK_S - (now - recent[-MAX_TRIES])) + 1 if len(recent) >= MAX_TRIES else 0
+
+
+def check_pin(account_id: str, pin: str, stored_hash: str | None,
+              now: float | None = None) -> bool:
+    """verify_pin that counts failures; a success clears them. The caller
+    checks pin_locked_for first."""
+    now = time.time() if now is None else now
+    if verify_pin(account_id, pin, stored_hash):
+        _fails.pop(account_id, None)
+        return True
+    _fails.setdefault(account_id, []).append(now)
+    return False
+
+
+def _reset_pin_cli(account_id: str) -> int:
+    """`python -m src.portfolio.security reset-pin ACCOUNT` on the server —
+    the procedure '계좌 주인에게 재설정을 부탁해요' points to. Every session of
+    that account keeps working (tokens are not PIN-bound); lock the devices
+    from the page if that matters."""
+    import getpass
+    from .store import account_store
+    if not account_store.get(account_id):
+        print(f"no such account: {account_id}")
+        return 1
+    pin = getpass.getpass("새 PIN 6자리: ")
+    if not is_valid_pin_format(pin) or getpass.getpass("한 번 더: ") != pin:
+        print("PIN이 6자리 숫자가 아니거나 두 번이 달라요")
+        return 1
+    account_store.set_pin_hash(account_id, hash_pin(account_id, pin))
+    _fails.pop(account_id, None)
+    print(f"{account_id}: PIN을 바꿨어요")
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) == 3 and sys.argv[1] == "reset-pin":
+        sys.exit(_reset_pin_cli(sys.argv[2]))
+    print("usage: python -m src.portfolio.security reset-pin ACCOUNT")
+    sys.exit(2)

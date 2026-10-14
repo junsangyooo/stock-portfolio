@@ -154,12 +154,13 @@ def test_list_trades_newest_first(client):
 
 
 def test_every_account_route_requires_account():
-    """Every /{account_id}/... route except the PIN login carries
-    require_account — the server-wide gate only checks for *some* session."""
+    """Every /{account_id}/... route except the PIN login and the lock carries
+    require_account — the server-wide gate only checks for *some* session.
+    The lock only clears this device's own cookie."""
     from src.api.accounts import require_account
     missing = []
     for route in accounts.router.routes:
-        if "{account_id}" not in route.path or route.path.endswith("/auth"):
+        if "{account_id}" not in route.path or route.path.endswith(("/auth", "/lock")):
             continue
         deps = [d.call for d in route.dependant.dependencies]
         if require_account not in deps:

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from ..core import jobs
 from ..core.kst import now as kst_now
@@ -59,6 +59,36 @@ def news_feed(limit: int = 60) -> dict:
     """Landing-page qualitative feed (research/news/read.feed)."""
     from ..research.news import read
     return {**read.feed(limit=limit), "queried_at": _stamp()}
+
+
+@router.get("/news/themes")
+def news_themes(days: int = 30) -> dict:
+    """The news page's field grid: every field's mood per day, counts, the
+    newest roll-up dates and its last shift (research/news/read)."""
+    from ..research.news import read
+    return {**read.themes_overview(days=max(1, min(days, 90))), "queried_at": _stamp()}
+
+
+@router.get("/news/themes/{theme_id}")
+def news_theme(theme_id: str) -> dict:
+    """One field's panel: its state now plus the weekly and monthly memory."""
+    from ..research.news import read
+    from ..research.news.catalog import load_catalog
+    if theme_id not in load_catalog().themes:
+        raise HTTPException(404, f"unknown theme: {theme_id}")
+    return {**read.theme_state(theme_id),
+            "weekly": read.theme_history(theme_id, "weekly", limit=4)["items"],
+            "monthly": read.theme_history(theme_id, "monthly", limit=3)["items"],
+            "queried_at": _stamp()}
+
+
+@router.get("/news/symbol-themes")
+def news_symbol_themes(symbols: str) -> dict:
+    """Fields each of these symbols belongs to — the caller names the symbols
+    (ops notes §4: shared data never reads a book)."""
+    from ..market.store import theme_store
+    ids = [s.strip().upper() for s in symbols.split(",") if s.strip()][:100]
+    return {"symbols": {sid: [t["theme_id"] for t in theme_store.get(sid)] for sid in ids}}
 
 
 @router.get("/news/{market}/{code}/signals")

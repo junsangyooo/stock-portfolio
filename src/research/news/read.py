@@ -152,6 +152,60 @@ def theme_state(theme_id: str, now: Optional[datetime] = None) -> dict:
     }
 
 
+# ── field grid (the news page) ──────────────────────────────────────────────
+MOOD_DAYS = 30
+
+
+def themes_overview(days: int = MOOD_DAYS, now: Optional[datetime] = None) -> dict:
+    """Every field's mood per day over `days` (theme_daily: score, trend,
+    items), its newest weekly/monthly summary date and its last shift — the
+    news page's grid and its rows, in one read."""
+    now = now or kst.now()
+    cat = load_catalog()
+    since = window_start(days, now)
+    day_keys = [(now.date() - timedelta(days=i)).isoformat()
+                for i in range(days - 1, -1, -1)]
+    with connect() as c:
+        rows: dict = {}
+        for r in c.execute(
+                "SELECT theme_id, date, sentiment_score, sentiment_trend, n_items, "
+                "overview FROM theme_daily WHERE date >= ?", (since,)):
+            rows.setdefault(r["theme_id"], {})[r["date"]] = r
+        counts: dict = {}
+        for r in c.execute(
+                "SELECT t.theme_id, s.collected_on d, count(*) n FROM signal_themes t "
+                "JOIN signals s ON s.signal_id = t.signal_id WHERE s.collected_on >= ? "
+                "GROUP BY 1, 2", (since,)):
+            counts.setdefault(r["theme_id"], {})[r["d"]] = r["n"]
+        week = {r[0]: r[1] for r in c.execute(
+            "SELECT theme_id, max(week_start) FROM theme_weekly GROUP BY 1")}
+        month = {r[0]: r[1] for r in c.execute(
+            "SELECT theme_id, max(month) FROM theme_monthly GROUP BY 1")}
+        shifts = {t: _last_shift(c, t) for t in cat.themes}
+    out = []
+    for t in cat.themes.values():
+        mine = rows.get(t.theme_id, {})
+        n = counts.get(t.theme_id, {})
+        series = [{"date": d,
+                   "score": mine[d]["sentiment_score"] if d in mine else None,
+                   "trend": mine[d]["sentiment_trend"] if d in mine else None,
+                   "items": n.get(d, 0)} for d in day_keys]
+        newest = mine[max(mine)] if mine else None
+        out.append({
+            "theme_id": t.theme_id, "name_kr": t.name_kr,
+            "series": series,
+            "today": {"date": newest["date"] if newest else None,
+                      "score": newest["sentiment_score"] if newest else None,
+                      "trend": newest["sentiment_trend"] if newest else None,
+                      "bullets": _loads(newest["overview"], []) if newest else []},
+            "items_today": n.get(day_keys[-1], 0),
+            "items_7d": sum(n.get(d, 0) for d in day_keys[-7:]),
+            "weekly_start": week.get(t.theme_id), "monthly": month.get(t.theme_id),
+            "last_shift": shifts[t.theme_id],
+        })
+    return {"days": day_keys, "themes": out}
+
+
 # ── landing feed ────────────────────────────────────────────────────────────
 def _summary_rows(theme_ids: list[str], name_kr: dict,
                   now: datetime) -> list[dict]:
