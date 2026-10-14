@@ -54,13 +54,14 @@ def symbols(symbol_ids: Iterable[str]) -> dict:
     def valuation_present(sid):
         return 0 if valuation_store.latest(sid) else None
 
-    filed = financials_store.latest_filed_at(ids)
     etfs = [s for s in ids if etf_store.read(s) is not None]
+    stocks = [s for s in ids if s not in etfs]   # ETFs have no statements
+    filed = financials_store.latest_filed_at(stocks)
     return {
         "bars": _count([bar_age(s) for s in ids], BAR_LATE_DAYS),
         "quotes": _count([quote_age(s) for s in ids], QUOTE_LATE_S),
-        "valuation": _count([valuation_present(s) for s in ids], 0),
-        "filings": {"n": len(ids), "with_filed_at": len(filed),
+        "valuation": _count([valuation_present(s) for s in stocks], 0),
+        "filings": {"n": len(stocks), "with_filed_at": len(filed),
                     "newest": max(filed.values()) if filed else None},
         "sector": _count([0 if sector_store.read(s) else None for s in ids], 0),
         "etf": _count([_days_since((etf_store.read(s) or {}).get("updated_at"), today)

@@ -1,6 +1,7 @@
 """Bridge last stored ts → today for all held symbols."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Iterable
 
@@ -8,6 +9,8 @@ from ...core import kst
 from ...core.kst import KST
 from ..source.registry import for_symbol
 from ..store import ohlcv_store
+
+log = logging.getLogger(__name__)
 
 
 def _ymd(d: datetime) -> str:
@@ -35,6 +38,7 @@ def fill_many(symbol_ids: Iterable[str]) -> dict[str, int]:
     for sid in symbol_ids:
         try:
             out[sid] = fill_one(sid)
-        except Exception:
-            out[sid] = -1
+        except Exception as e:  # noqa: BLE001 — one symbol is not the batch
+            log.warning("gap fill %s failed: %s", sid, e)
+            out[sid] = -1                     # callers name these (ohlcv_errors)
     return out

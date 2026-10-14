@@ -13,6 +13,13 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 
+class SourceError(RuntimeError):
+    """A source failed to answer — network, scrape, rate limit. Raised
+    instead of returning [] or None: an empty answer reads as "nothing new"
+    and a dead feed then looks like a quiet market (ops notes §11 소스 실패).
+    Batch callers catch it per symbol and name the symbol in their summary."""
+
+
 @dataclass
 class OHLCVBar:
     ts: int               # unix seconds at bar OPEN

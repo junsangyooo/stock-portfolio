@@ -5,17 +5,16 @@ For 'US:AAPL' we just pass code directly.
 """
 from __future__ import annotations
 
-import logging
 import time
 from typing import List, Optional
 
 import yfinance as yf  # type: ignore
 
-from .base import Source, OHLCVBar, Quote, ValuationPoint, FinancialRow
+from .base import (FinancialRow, OHLCVBar, Quote, Source, SourceError,
+                   ValuationPoint)
 from ...core.paths import split_symbol
 from ...universe import search as uni_search
 
-log = logging.getLogger(__name__)
 
 # yfinance statement line-item label → standardized field. First hit wins.
 _FIN_ALIASES = {
@@ -50,13 +49,13 @@ def _yf_ticker(symbol_id: str) -> str:
 
 
 def _history(symbol_id: str, **kw) -> List[OHLCVBar]:
-    """Ticker.history → bars. Empty on any failure (yfinance is scrape-flaky)."""
+    """Ticker.history → bars; [] when the range has none. A failed call
+    raises SourceError (yfinance is scrape-flaky — and that has to show)."""
     ticker = _yf_ticker(symbol_id)
     try:
         df = yf.Ticker(ticker).history(auto_adjust=False, **kw)
-    except Exception as e:  # noqa: BLE001 — yfinance is scrape-flaky
-        log.warning("yfinance %s failed: %s", symbol_id, e)
-        return []
+    except Exception as e:  # noqa: BLE001
+        raise SourceError(f"yfinance history {symbol_id}: {e}") from e
     if df is None or df.empty:
         return []
     return [OHLCVBar(ts=int(ts_pd.to_pydatetime().timestamp()),
@@ -84,9 +83,8 @@ class YFinanceSource(Source):
         ticker = _yf_ticker(symbol_id)
         try:
             info = yf.Ticker(ticker).info or {}
-        except Exception as e:  # noqa: BLE001 — yfinance is scrape-flaky
-            log.warning("yfinance %s failed: %s", symbol_id, e)
-            return []
+        except Exception as e:  # noqa: BLE001
+            raise SourceError(f"yfinance info {symbol_id}: {e}") from e
         if not info:
             return []
 
@@ -121,9 +119,8 @@ class YFinanceSource(Source):
             inc = t.quarterly_financials
             bs = t.quarterly_balance_sheet
             cf = t.quarterly_cashflow
-        except Exception as e:  # noqa: BLE001 — yfinance is scrape-flaky
-            log.warning("yfinance %s failed: %s", symbol_id, e)
-            return []
+        except Exception as e:  # noqa: BLE001
+            raise SourceError(f"yfinance statements {symbol_id}: {e}") from e
 
         def _val(df, field, col):
             if df is None or df.empty or col not in df.columns:
@@ -173,11 +170,12 @@ class YFinanceSource(Source):
             if price <= 0 or prev <= 0:
                 df = t.history(period="5d", interval="1d", auto_adjust=False)
                 if df is None or df.empty:
-                    return None
+                    raise SourceError(f"yfinance quote {symbol_id}: no price and no recent bars")
                 price = float(df["Close"].iloc[-1])
                 prev = float(df["Close"].iloc[-2]) if len(df) >= 2 else price
             return Quote(symbol_id=symbol_id, price=price, prev_close=prev,
                          ts=int(time.time()))
-        except Exception as e:  # noqa: BLE001 — yfinance is scrape-flaky
-            log.warning("yfinance %s failed: %s", symbol_id, e)
-            return None
+        except SourceError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            raise SourceError(f"yfinance quote {symbol_id}: {e}") from e

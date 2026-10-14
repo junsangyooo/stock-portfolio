@@ -107,4 +107,9 @@ def refresh_held() -> dict:
     sids = sorted(holding_store.all_symbol_ids())
     filled = gap_filler.fill_many(sids)
     fresh = sum(1 for q in quotes.warm(sids, max_age_s=10).values() if q is not None)
-    return {"ok": True, "symbols": len(sids), "filled": filled, "quotes_fresh": fresh}
+    # Counts, not the per-symbol map: any account's session can press ↻, and
+    # the map named every account's holdings.
+    return {"ok": True, "symbols": len(sids),
+            "bars_added": sum(n for n in filled.values() if n > 0),
+            "failed": sum(1 for n in filled.values() if n < 0),
+            "quotes_fresh": fresh}

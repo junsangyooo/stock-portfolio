@@ -6,19 +6,17 @@ returning usable data, so PER/PBR/EPS are derived from DART filings instead
 """
 from __future__ import annotations
 
-import logging
 import time
 from datetime import timedelta
 from typing import List, Optional
 
 from pykrx import stock as pkx  # type: ignore
 
-from .base import Source, OHLCVBar, Quote
+from .base import OHLCVBar, Quote, Source, SourceError
 from ...core import kst
 from ...core.kst import KST
 from ...core.paths import split_symbol
 
-log = logging.getLogger(__name__)
 
 
 def _ymd(s: str) -> str:
@@ -34,9 +32,8 @@ class PykrxSource(Source):
             return []
         try:
             df = pkx.get_market_ohlcv_by_date(_ymd(start), _ymd(end), code)
-        except Exception as e:  # noqa: BLE001 — pykrx scrapes KRX; stay soft
-            log.warning("pykrx get_daily %s failed: %s", symbol_id, e)
-            return []
+        except Exception as e:  # noqa: BLE001 — any scrape fault is a failure
+            raise SourceError(f"pykrx get_daily {symbol_id}: {e}") from e
         return [OHLCVBar(
                     ts=int(ts_pd.to_pydatetime().replace(tzinfo=KST).timestamp()),
                     open=float(row["시가"]), high=float(row["고가"]),
@@ -55,11 +52,10 @@ class PykrxSource(Source):
         start = (now - timedelta(days=10)).strftime("%Y%m%d")
         try:
             df = pkx.get_market_ohlcv_by_date(start, end, code)
-        except Exception as e:  # noqa: BLE001 — pykrx scrapes KRX; stay soft
-            log.warning("pykrx get_quote %s failed: %s", symbol_id, e)
-            return None
-        if df.empty:
-            return None
+        except Exception as e:  # noqa: BLE001 — any scrape fault is a failure
+            raise SourceError(f"pykrx get_quote {symbol_id}: {e}") from e
+        if df.empty:      # ten calendar days without a single bar
+            raise SourceError(f"pykrx get_quote {symbol_id}: no bars in 10 days")
         last = df.iloc[-1]
         prev = df.iloc[-2] if len(df) >= 2 else last
         return Quote(symbol_id=symbol_id, price=float(last["종가"]),

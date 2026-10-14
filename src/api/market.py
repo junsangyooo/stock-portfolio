@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from ..market import quotes, resample
 from ..market.pipeline import gap_filler
+from ..market.source.base import SourceError
 from ..market.source.registry import yfinance_for
 from ..market.store import ohlcv_store
 
@@ -37,7 +38,10 @@ def get_ohlcv(market: str, code: str, period: str = "day", n: int = 240,
         period_back, interval = _INTRADAY[period]
         # KR pykrx has no intraday → force yfinance for both
         src = yfinance_for(symbol_id)
-        bars = src.get_intraday(symbol_id, interval=interval, period=period_back)
+        try:
+            bars = src.get_intraday(symbol_id, interval=interval, period=period_back)
+        except SourceError as e:
+            raise HTTPException(502, f"시세 소스 실패: {e}") from e
         bars = bars[-n:] if n > 0 else bars
         return {
             "symbol_id": symbol_id, "period": period, "n": len(bars),
