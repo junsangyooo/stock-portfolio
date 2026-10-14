@@ -685,9 +685,10 @@ def source_health(days: int = 30, now: Optional[datetime] = None) -> dict:
     return {
         "days": day_keys, "runs": run_ats, "today": today, "cap": MAX_PER_SOURCE,
         "sources": out,
-        "themes": [{"theme_id": t, "n30": theme_n30.get(t, 0),
-                    "main_sources": main_of.get(t, [])}
-                   for t in load_catalog().themes],
+        "themes": [{"theme_id": t.theme_id, "name_kr": t.name_kr,
+                    "n30": theme_n30.get(t.theme_id, 0),
+                    "main_sources": main_of.get(t.theme_id, [])}
+                   for t in load_catalog().themes.values()],
         "unclassified": {
             "filtered": sum(r["week"]["filtered"] for r in out),
             "untagged": sum(r["week"]["untagged"] for r in out),

@@ -89,6 +89,8 @@ def test_runs_today_and_the_week():
     assert [x["written"] for x in a["runs"]] == [5, 3]
     assert s["geeknews"]["runs"][0] is None                                 # no record that sweep
     assert r["unclassified"]["untagged"] == 3
+    names = {x["theme_id"]: x["name_kr"] for x in r["themes"]}
+    assert len(names) >= 23 and names["macro"]                          # the page names fields from here
 
 
 def test_flags_one_removal_candidate_per_field():

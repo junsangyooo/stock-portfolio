@@ -7,365 +7,1069 @@
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
 /* Tokens come from theme.json (server-injected); shared.css sets the base font
-   and the .btn family. Mobile-first: rows stack on phones, 600px lays a news
-   source out on one line, 900px puts the market and job cards in columns. */
+   and the .btn family. Mobile-first: everything stacks on phones; 600px opens
+   the detail as a side panel instead of a full sheet; 900px puts the right
+   column beside the source list; 1100px lays the sources out as a table. */
 * { box-sizing:border-box; margin:0; padding:0; }
 [hidden] { display:none !important; }
 body { font-family:'JetBrains Mono', monospace; min-height:100vh; }
-a { color:inherit; text-decoration:none; }
-.wrap { max-width:1400px; margin:0 auto; padding:var(--space-2) var(--space-1); }
+a { color:inherit; }
+.wrap { max-width:1400px; margin:0 auto; padding:var(--space-2) var(--space-4) var(--space-6); }
+.num { font-variant-numeric:tabular-nums; }
 
+/* ── site header (same bar as the other pages) ── */
 .header {
   display:flex; justify-content:space-between; align-items:center; gap:var(--space-2);
   padding:var(--space-2); background:var(--panel);
   border:var(--border-w) solid var(--line); border-radius:var(--radius-md);
-  box-shadow:var(--shadow-sm); flex-wrap:wrap;
+  box-shadow:var(--shadow-sm);
 }
-.header .left { display:flex; gap:var(--space-2); align-items:center; }
-.header .title { font-size:var(--text-xs); letter-spacing:1px; }
-.header .asof { color:var(--dim); font-size:var(--text-xs); }
+.header .title { font-size:var(--text-xs); letter-spacing:1px; text-decoration:none; }
 
+/* ── page head: title, meta, view switch, pipeline line ── */
+.page-head { margin:var(--space-4) 0 var(--space-3); display:flex; flex-direction:column; gap:var(--space-2); }
+.ph-top { display:flex; flex-direction:column; gap:var(--space-2); }
+.ph-title { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--space-1) var(--space-3); }
+.page-head h1 { font-size:var(--h1); letter-spacing:1px; }
+.ph-meta { color:var(--dim); font-size:var(--text-sm); display:flex; flex-wrap:wrap; gap:var(--space-1) var(--space-2); align-items:center; }
+.run-chip {
+  display:inline-flex; align-items:center; gap:var(--space-1); color:var(--cyan);
+  border:1px solid var(--cyan); border-radius:var(--radius-lg); padding:0 var(--space-2);
+}
+.pipe { color:var(--dim); font-size:var(--text-xs); display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-1); }
+.pipe b { color:var(--fg); font-weight:500; }
+.pipe .lci { color:var(--muted); }
+.view-seg { display:flex; width:100%; }
+.view-seg button { flex:1; font-size:var(--text-sm); padding:var(--space-1) var(--space-3); white-space:nowrap; }
+.ph-meta .sk { width:280px; max-width:100%; }
+
+/* ── panels ── */
 .panel {
   background:var(--panel); border:var(--border-w) solid var(--line);
   border-radius:var(--radius-md); box-shadow:var(--shadow-sm);
-  padding:var(--space-3); margin-top:var(--space-2);
+  padding:var(--space-4); margin-bottom:var(--space-3);
 }
-.panel h2 { display:flex; align-items:baseline; gap:var(--space-2); margin-bottom:var(--space-2); }
-.panel h2 .n { color:var(--dim); font-size:var(--text-xs); font-weight:400; }
+.panel h2 { font-size:var(--h2); letter-spacing:0; display:flex; align-items:baseline; gap:var(--space-2); flex-wrap:wrap; }
+.panel h2 small { color:var(--dim); font-size:var(--text-xs); font-weight:400; }
+.sub { color:var(--dim); font-size:var(--text-xs); margin-top:var(--space-1); }
+.foot { color:var(--dim); font-size:var(--text-xs); margin-top:var(--space-3); line-height:var(--lh-body); }
 
-/* status colours: one class per state, shared by chips, dots and counts */
+/* status colour: one class per state, read through --st */
 .st-ok { --st:var(--green); }
-.st-capped, .st-late { --st:var(--yellow); }
-.st-quiet { --st:var(--orange); }
-.st-failing, .st-dead, .st-problem { --st:var(--red); }
+.st-collect_error, .st-flaky { --st:var(--orange); }
+.st-failing, .st-problem { --st:var(--red); }
+.st-quiet, .st-late { --st:var(--yellow); }
 .st-never, .st-none { --st:var(--muted); }
+.st-running { --st:var(--cyan); }
+.st-ico { color:var(--st); }
+.stat { display:inline-flex; align-items:center; gap:var(--space-1); white-space:nowrap; }
+.stat .lci { color:var(--st); }
 .chip {
-  display:inline-flex; align-items:center; gap:6px;
-  font-size:var(--text-xs); padding:2px var(--space-1);
-  border:1px solid var(--st); color:var(--st); border-radius:var(--radius-sm);
-  background:transparent; cursor:pointer; min-height:24px;
+  display:inline-flex; align-items:center; gap:var(--space-1); white-space:nowrap;
+  font-size:var(--text-xs); padding:2px var(--space-2); min-height:24px;
+  border:1px solid var(--line-strong); border-radius:var(--radius-lg); color:var(--fg);
 }
-.chip .dot, .dot { width:8px; height:8px; border-radius:50%; background:var(--st); flex:none; }
-.chip.on { background:var(--st); color:var(--panel); }
-.chip.on .dot { background:var(--panel); }
+.chip .lci { color:var(--st); }
 
-/* gauge strip: one tile per status */
-.gauges { display:grid; grid-template-columns:repeat(3, 1fr); gap:var(--space-1); }
-.gauge {
-  border:1px solid var(--line); border-radius:var(--radius-sm); padding:var(--space-1) var(--space-2);
-  display:flex; flex-direction:column; gap:2px; border-left:4px solid var(--st);
+/* ── 확인할 것 ── */
+.check-empty { display:flex; align-items:center; gap:var(--space-2); flex-wrap:wrap; }
+.check-empty h2 .lci { color:var(--green); }
+.ck-table { width:100%; border-collapse:collapse; margin-top:var(--space-2); font-size:var(--text-sm); }
+.ck-table thead { display:none; }
+.ck-table tbody { display:block; }
+.ck-table tr { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-1) var(--space-2);
+               padding:var(--space-3) 0; border-top:1px solid var(--line); }
+.ck-table td { display:block; }
+.ck-table td.k-name { flex:1 1 0; min-width:0; font-size:var(--text-md); }
+.ck-table td.k-sit, .ck-table td.k-why, .ck-table td.k-do { flex-basis:100%; }
+.ck-table td.k-why { color:var(--dim); font-size:var(--text-xs); overflow-wrap:anywhere; }
+.ck-table td.k-do .lbl { color:var(--dim); margin-right:var(--space-1); }
+.ck-table td:empty { display:none; }
+
+/* ── layout: check list on top, then the list and the right column ── */
+.side details > summary { list-style:none; cursor:pointer; display:grid;
+  grid-template-columns:auto 1fr auto; gap:0 var(--space-2); align-items:center; }
+.side details > summary::-webkit-details-marker { display:none; }
+.side summary h2 { font-size:var(--text-md); }
+.side summary .sub { grid-column:2; margin-top:0; }
+.side summary .chev { grid-row:1 / span 2; grid-column:3; color:var(--dim); transition:transform 0.12s; }
+.side summary > .st-ico { grid-row:1 / span 2; }
+.side details[open] summary .chev { transform:rotate(180deg); }
+.side details { padding:var(--space-3) var(--space-4); }
+.acc-body { margin-top:var(--space-3); }
+.ops-line { display:flex; align-items:center; gap:var(--space-2); font-size:var(--text-sm); padding:var(--space-1) 0; }
+.ops-line .lci { color:var(--st); }
+.ops-line small { color:var(--dim); font-size:var(--text-xs); }
+
+.th-table { width:100%; border-collapse:collapse; font-size:var(--text-sm); margin-top:var(--space-2); }
+.th-table th { color:var(--dim); font-weight:400; font-size:var(--text-xs); text-align:left; padding:2px 0; }
+.th-table th.r, .th-table td.r { text-align:right; }
+.th-table td { padding:3px 0; }
+.th-table td.nm { display:flex; align-items:center; gap:var(--space-1); }
+.th-table td.nm .lci { color:var(--dim); }
+.th-table .short { color:var(--orange); font-weight:700; }
+.th-table .chip { margin-left:auto; padding:0 var(--space-1); min-height:0; --st:var(--orange); }
+.uncl-stats { display:flex; gap:var(--space-5); flex-wrap:wrap; }
+.uncl-stats .k { color:var(--dim); font-size:var(--text-xs); }
+.uncl-stats .v { font-size:var(--text-lg); font-weight:700; }
+.uncl-ex { margin-top:var(--space-3); font-size:var(--text-xs); color:var(--dim); }
+.uncl-ex li { list-style:none; padding:2px 0; color:var(--fg); overflow-wrap:anywhere; }
+.uncl-ex li small { color:var(--muted); margin-left:var(--space-1); }
+.uncl-do { margin-top:var(--space-3); font-size:var(--text-sm); }
+.uncl-do .lbl { color:var(--dim); margin-right:var(--space-2); }
+
+/* ── source list: cards on phones, a table from 1100px ── */
+.src-table { width:100%; border-collapse:collapse; margin-top:var(--space-2); font-size:var(--text-sm); }
+.src-table thead { display:none; }
+.src-table tbody { display:block; }
+.src-table tr.grp { display:block; }
+.src-table tr.grp th { display:block; text-align:left; font-weight:400; color:var(--fg);
+                       font-size:var(--text-xs); padding:var(--space-3) 0 var(--space-1); }
+.src-table tr.grp th small { color:var(--dim); font-size:var(--text-xs); margin-left:var(--space-2); }
+.src-table tr.src { display:flex; flex-wrap:wrap; align-items:center; gap:2px var(--space-2);
+                    padding:var(--space-2) 0; border-top:1px solid var(--line); cursor:pointer; }
+.src-table tr.src:hover { background:var(--elevated); }
+.src-table td { display:block; }
+.src-table td.c-name { flex:1 1 0; min-width:0; }
+.src-table td.c-brk { flex-basis:100%; height:0; }
+.src-table td.c-runs, .src-table td.c-new, .src-table td.c-filt,
+.src-table td.c-imp, .src-table td.c-unt, .src-table td.c-note { font-size:var(--text-xs); color:var(--dim); }
+.src-table.v-today td.c-runs, .src-table.v-today td.c-imp, .src-table.v-today td.c-unt,
+.src-table.v-week td.c-filt, .src-table.v-week td.c-unt { display:none; }
+.src-table td.c-note:empty { display:none; }
+.src-table.v-today td.c-filt::before, .src-table.v-week td.c-imp::before,
+.src-table td.c-note::before { content:'· '; }
+.src-table .t-d { display:none; }
+.src-table td.c-imp.dimmed { color:var(--muted); }
+.only-wide { display:none; }
+#src-legend-top .legend { margin-top:var(--space-2); }
+.src-btn {
+  border:none; padding:0; min-height:24px; color:var(--fg); letter-spacing:0;
+  font-size:var(--text-md); justify-content:flex-start; max-width:100%;
 }
-.gauge .v { font-size:var(--text-xl); font-weight:700; color:var(--st); }
-.gauge .k { font-size:var(--text-xs); color:var(--dim); }
-.pipe { display:flex; flex-wrap:wrap; gap:var(--space-3); margin-top:var(--space-2);
-        font-size:var(--text-xs); color:var(--dim); }
-.pipe b { color:var(--fg); font-weight:500; }
+.src-btn span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.th-btn { border:none; padding:0 2px; color:var(--dim); letter-spacing:0; gap:2px; }
+.th-none { color:var(--muted); }
+.fail-n { color:var(--red); margin-left:var(--space-1); }
+.notes { display:inline-flex; flex-wrap:wrap; gap:2px var(--space-2); align-items:center; }
+.note { display:inline-flex; align-items:center; gap:var(--space-1); color:var(--fg); }
+.note.dim { color:var(--dim); }
+.note .lci { color:var(--dim); }
+.note.review .lci { color:var(--cyan); }
 
-.filters { display:flex; flex-wrap:wrap; gap:var(--space-1); margin-bottom:var(--space-2); }
-
-.src-row {
-  display:grid; grid-template-columns:auto 1fr; gap:2px var(--space-2);
-  padding:var(--space-2) 0; border-top:1px solid var(--line); align-items:center;
+/* collection strip: one cell per sweep */
+.strip { display:inline-flex; gap:2px; vertical-align:middle; }
+.strip i { display:inline-block; width:7px; height:12px; border-radius:2px; border:1px solid var(--fg); }
+.strip i.has { background:var(--fg); }
+.strip i.zero { border-color:var(--line-strong); }
+.strip i.nil { border:1px dashed var(--line-strong); }
+.strip i.fail, .dot.fail {
+  border-color:var(--red);
+  background:
+    linear-gradient(45deg, transparent 42%, var(--red) 42% 58%, transparent 58%),
+    linear-gradient(-45deg, transparent 42%, var(--red) 42% 58%, transparent 58%);
 }
-.src-row .name { font-size:var(--text-sm); color:var(--fg); }
-.src-row .name small { color:var(--muted); font-size:var(--text-xs); margin-left:6px; }
-.src-row canvas { grid-column:1 / -1; width:100%; height:28px; }
-.src-row .nums { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:var(--space-3);
-                 font-size:var(--text-xs); color:var(--dim); }
-.src-row .nums b { color:var(--fg); font-weight:500; }
-.src-row .why { grid-column:1 / -1; font-size:var(--text-xs); color:var(--st);
-                overflow-wrap:anywhere; }
+.legend { display:flex; flex-wrap:wrap; gap:var(--space-1) var(--space-3); align-items:center; color:var(--dim); font-size:var(--text-xs); }
+.legend span { display:inline-flex; align-items:center; gap:var(--space-1); }
+.today-runs { display:inline-flex; gap:var(--space-2); align-items:center; white-space:nowrap; }
+.today-runs span { display:inline-flex; align-items:center; gap:3px; }
+.dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--line-strong); border:1px solid var(--line-strong); }
+.dot.plan { background:transparent; border:1px dashed var(--muted); }
+.today-runs .plan-t { color:var(--muted); }
 
-.cards { display:grid; grid-template-columns:1fr; gap:var(--space-2); }
-.card {
-  border:1px solid var(--line); border-left:4px solid var(--st); border-radius:var(--radius-sm);
-  padding:var(--space-2); display:flex; flex-direction:column; gap:4px;
-}
-.card .h { display:flex; justify-content:space-between; gap:var(--space-2); align-items:center; }
-.card .h strong { font-size:var(--text-sm); }
-.card .kv { font-size:var(--text-xs); color:var(--dim); display:flex; flex-wrap:wrap; gap:4px var(--space-3); }
-.card .kv b { color:var(--fg); font-weight:500; }
-.card .bad { font-size:var(--text-xs); color:var(--red); overflow-wrap:anywhere; }
-.bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; }
-.bar > i { display:block; height:100%; background:var(--st); }
-
+/* ── states ── */
+.sk { display:block; height:12px; border-radius:var(--radius-sm); background:var(--line); margin:var(--space-2) 0; }
+.sk.w30 { width:30%; } .sk.w45 { width:45%; } .sk.w60 { width:60%; } .sk.w100 { width:100%; }
+.sk.h { height:18px; }
+.state-err { text-align:center; padding:var(--space-6) var(--space-4); }
+.state-err .big { color:var(--red); width:24px; height:24px; }
+.state-err h2 { justify-content:center; margin:var(--space-2) 0; }
+.state-err p { color:var(--dim); font-size:var(--text-sm); margin-bottom:var(--space-1); }
+.state-err .btn { margin-top:var(--space-3); }
 .gate { text-align:center; padding:var(--space-6) var(--space-3); color:var(--dim); }
 .gate a { color:var(--cyan); text-decoration:underline; }
 
+/* ── theme name bubble ── */
+.tip {
+  position:absolute; z-index:120; background:var(--fg); color:var(--panel);
+  border-radius:var(--radius-sm); padding:var(--space-1) var(--space-2);
+  font-size:var(--text-xs); box-shadow:var(--shadow-md);
+}
+.tip div { display:flex; align-items:center; gap:var(--space-1); padding:1px 0; }
+
+/* ── detail: full sheet on phones, a right panel from 600px ── */
+.dpanel {
+  position:fixed; inset:0; z-index:100; background:var(--panel); overflow-y:auto;
+  padding:var(--space-4);
+}
+.dp-head { display:flex; align-items:center; gap:var(--space-2); flex-wrap:wrap; }
+.dp-head h2 { font-size:var(--text-xl); letter-spacing:0; }
+.dp-head .th-ico { color:var(--dim); }
+.dp-close { border:none; padding:var(--space-1); color:var(--fg); }
+.dp-close .x { display:none; }
+.dp-todo { background:var(--elevated); border:1px solid var(--line); border-radius:var(--radius-md);
+           padding:var(--space-3); margin-top:var(--space-4); font-size:var(--text-sm); }
+.dp-todo .lbl { color:var(--dim); margin-right:var(--space-2); }
+.dp-sec { margin-top:var(--space-5); }
+.dp-sec h3 { font-size:var(--text-lg); letter-spacing:0; margin-bottom:var(--space-2); }
+.dp-sec p { font-size:var(--text-sm); line-height:var(--lh-body); }
+.dp-sec .sub { margin-bottom:var(--space-2); }
+.big-strip { display:grid; grid-template-columns:repeat(14, 1fr); gap:3px; }
+.big-strip i { display:block; height:22px; border-radius:var(--radius-sm); border:1px solid var(--fg); }
+.big-strip i.has { background:var(--fg); }
+.big-strip i.zero { border-color:var(--line-strong); }
+.big-strip i.nil { border:1px dashed var(--line-strong); }
+.big-strip i.fail {
+  border-color:var(--red);
+  background:
+    linear-gradient(45deg, transparent 46%, var(--red) 46% 54%, transparent 54%),
+    linear-gradient(-45deg, transparent 46%, var(--red) 46% 54%, transparent 54%);
+}
+.ends { display:flex; justify-content:space-between; color:var(--dim); font-size:var(--text-xs); margin-top:var(--space-1); }
+.dp-nums { display:grid; grid-template-columns:repeat(4, 1fr); gap:var(--space-2); }
+.dp-nums .k { color:var(--dim); font-size:var(--text-xs); }
+.dp-nums .v { font-size:var(--text-lg); font-weight:700; }
+.bars { display:flex; align-items:flex-end; gap:2px; height:48px; border-bottom:1px solid var(--line-strong); }
+.bars i { flex:1; background:var(--fg); min-height:1px; }
+.bars i.zero { background:var(--line); }
+.dist { width:100%; border-collapse:collapse; font-size:var(--text-sm); }
+.dist td { padding:3px 0; }
+.dist td.nm { white-space:nowrap; padding-right:var(--space-3); }
+.dist td.nm .lci { color:var(--dim); margin-right:var(--space-1); }
+.dist td.bar { width:50%; }
+.dist .track { height:8px; border-radius:4px; background:var(--line); overflow:hidden; }
+.dist .track i { display:block; height:100%; background:var(--cyan); }
+.dist td.r { text-align:right; font-weight:700; padding-left:var(--space-3); }
+.err-list li { list-style:none; font-size:var(--text-xs); padding:2px 0; overflow-wrap:anywhere; }
+.err-list li small { color:var(--dim); margin-right:var(--space-2); }
+.dp-url { font-size:var(--text-xs); overflow-wrap:anywhere; color:var(--cyan); }
+
 @media (min-width: 600px) {
-  .wrap { padding:var(--space-3) var(--space-2); }
   .header .title { font-size:var(--text-md); letter-spacing:2px; }
-  .gauges { grid-template-columns:repeat(6, 1fr); }
-  .src-row { grid-template-columns:110px minmax(160px, 1.2fr) 2fr minmax(260px, 1.4fr); }
-  .src-row canvas, .src-row .nums { grid-column:auto; }
-  .src-row .why { grid-column:2 / -1; }
-  .cards { grid-template-columns:repeat(2, 1fr); }
+  .ph-top { flex-direction:row; justify-content:space-between; align-items:center; }
+  .view-seg { width:auto; }
+  .dpanel { left:auto; width:480px; max-width:100%; border-left:1px solid var(--line);
+            box-shadow:var(--shadow-lg); padding:var(--space-5); }
+  .dp-close .x { display:inline; }
+  .dp-close .back { display:none; }
+  .dp-head .dp-close { order:9; margin-left:auto; }
 }
 @media (min-width: 900px) {
-  .cards { grid-template-columns:repeat(3, 1fr); }
+  .layout { display:grid; grid-template-columns:minmax(0, 1fr) 340px; gap:0 var(--space-3);
+            grid-template-areas:"check check" "srcs side"; align-items:start; }
+  .layout > .check { grid-area:check; }
+  .layout > .side { grid-area:side; }
+  .layout > .srcs { grid-area:srcs; }
+  .ck-table thead { display:table-header-group; }
+  .ck-table tbody { display:table-row-group; }
+  .ck-table tr { display:table-row; }
+  .ck-table td, .ck-table td:empty { display:table-cell; padding:var(--space-2) var(--space-2) var(--space-2) 0;
+                                     border-top:1px solid var(--line); vertical-align:middle; }
+  .ck-table th { text-align:left; font-weight:400; color:var(--dim); font-size:var(--text-xs);
+                 padding:var(--space-1) var(--space-2) var(--space-1) 0; }
+  .ck-table td.k-do .lbl { display:none; }
+  .side details > summary { cursor:default; display:block; }
+  .side summary .sub, .side summary .chev, .side summary > .st-ico { display:none; }
+  .side summary h2 { font-size:var(--h2); }
+  .side .acc-ops > summary { display:none; }
+  .side .acc-ops .acc-body { margin-top:0; }
 }
 @media (min-width: 1100px) {
-  .cards { grid-template-columns:repeat(4, 1fr); }
+  .src-table thead { display:table-header-group; }
+  .src-table tbody { display:table-row-group; }
+  .src-table tr.src, .src-table tr.grp { display:table-row; }
+  .src-table tr.grp th { display:table-cell; }
+  .src-table th { text-align:left; font-weight:400; color:var(--dim); font-size:var(--text-xs);
+                  padding:var(--space-1); vertical-align:bottom; line-height:var(--lh-tight); }
+  .src-table th.r { text-align:right; }
+  .src-table td, .src-table td.c-note:empty,
+  .src-table.v-today td.c-runs, .src-table.v-today td.c-imp, .src-table.v-today td.c-unt,
+  .src-table.v-week td.c-filt, .src-table.v-week td.c-unt { display:table-cell; padding:3px var(--space-1); vertical-align:middle; }
+  .src-table td.c-brk { display:none; }
+  .src-table tr.src { border-top:none; }
+  .src-table td.c-name { max-width:140px; }
+  .src-btn { font-size:var(--text-sm); }
+  .src-table td.c-new, .src-table td.c-filt, .src-table td.c-imp, .src-table td.c-unt { text-align:right; color:var(--fg); white-space:nowrap; }
+  .src-table td.c-new { font-weight:700; }
+  .src-table td.c-imp.dimmed { color:var(--muted); }
+  .src-table.v-today td.c-filt::before, .src-table.v-week td.c-imp::before,
+  .src-table td.c-note::before { content:none; }
+  .src-table .t-m { display:none; }
+  .src-table .t-d { display:inline; }
+  .only-wide { display:block; }
+  .only-narrow { display:none; }
 }
 </style>
 </head>
 <body>
 <a class="skip-link" href="#main">본문으로 건너뛰기</a>
-<h1 class="sr-only">소스 현황</h1>
+<!-- Lucide icons (ISC, lucide.dev) used only here — page-local sprite -->
+<svg xmlns="http://www.w3.org/2000/svg" hidden aria-hidden="true">
+  <symbol id="i-circle-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-triangle-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></symbol>
+  <symbol id="i-circle-dashed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.1 2.182a10 10 0 0 1 3.8 0"/><path d="M13.9 21.818a10 10 0 0 1-3.8 0"/><path d="M17.609 3.721a10 10 0 0 1 2.69 2.7"/><path d="M2.182 13.9a10 10 0 0 1 0-3.8"/><path d="M20.279 17.609a10 10 0 0 1-2.7 2.69"/><path d="M21.818 10.1a10 10 0 0 1 0 3.8"/><path d="M3.721 6.391a10 10 0 0 1 2.7-2.69"/><path d="M6.391 20.279a10 10 0 0 1-2.69-2.7"/></symbol>
+  <symbol id="i-circle-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+  <symbol id="i-refresh-cw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-arrow-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-loader-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></symbol>
+</svg>
 <div class="wrap">
   <div class="header">
-    <div class="left">
-      <a class="title" href="/">◆ PORTFOLIO</a>
-      <span class="title">소스 현황</span>
-    </div>
-    <div class="left">
-      <span class="asof" id="asof"></span>
-      <button id="btn-reload" type="button" class="btn btn-sm" aria-label="다시 불러오기">↻</button>
-    </div>
+    <a class="title" href="/">◆ PORTFOLIO</a>
+    <button id="btn-reload" type="button" class="btn btn-sm"><svg class="lci"><use href="#i-refresh-cw"/></svg> 새로고침</button>
   </div>
 
-  <main id="main">
-    <div class="panel gate" id="gate" hidden>
-      <p>계좌에 들어간 뒤 볼 수 있습니다. <a href="/">홈</a>에서 계좌를 열어 주세요.</p>
+  <main id="main" aria-busy="true">
+    <div class="page-head">
+      <div class="ph-top">
+        <div class="ph-title">
+          <h1>소스 현황</h1>
+          <p class="ph-meta" id="ph-meta"><span class="sk w100"></span></p>
+        </div>
+        <div class="seg view-seg" id="view-seg" role="group" aria-label="보기 기간">
+          <button type="button" data-view="today" class="active" aria-pressed="true">오늘</button>
+          <button type="button" data-view="week" aria-pressed="false">최근 7일</button>
+        </div>
+      </div>
+      <p class="pipe" id="pipe"></p>
     </div>
 
-    <section class="panel" aria-labelledby="sum-h" id="sec-sum" hidden>
-      <h2 id="sum-h">뉴스 소스 <span class="n" id="sum-n"></span></h2>
-      <div class="gauges" id="gauges"></div>
-      <div class="pipe" id="pipe"></div>
+    <div class="panel gate" id="gate" hidden>
+      <p>계좌에 들어간 뒤 볼 수 있어요. <a href="/">홈</a>에서 계좌를 열어 주세요.</p>
+    </div>
+
+    <section class="panel state-err" id="err" aria-labelledby="err-h" hidden>
+      <svg class="lci big"><use href="#i-circle-x"/></svg>
+      <h2 id="err-h">소스 현황을 불러오지 못했어요</h2>
+      <p>잠시 뒤 다시 시도해 주세요</p>
+      <p id="err-meta"></p>
+      <button type="button" class="btn" id="btn-retry">다시 시도</button>
     </section>
 
-    <section class="panel" aria-labelledby="src-h" id="sec-src" hidden>
-      <h2 id="src-h">소스별 <span class="n" id="src-n"></span></h2>
-      <div class="filters" id="filters" role="group" aria-label="상태 필터"></div>
-      <div id="src-list"></div>
-    </section>
+    <div id="skeleton" aria-hidden="true">
+      <div class="panel"><span class="sk h w30"></span><span class="sk w100"></span><span class="sk w100"></span><span class="sk w100"></span></div>
+      <div class="panel"><span class="sk h w45"></span><span class="sk w60"></span><span class="sk w100"></span><span class="sk w100"></span><span class="sk w60"></span><span class="sk w100"></span><span class="sk w100"></span><span class="sk w60"></span></div>
+    </div>
 
-    <section class="panel" aria-labelledby="mkt-h" id="sec-mkt" hidden>
-      <h2 id="mkt-h">시세·재무 <span class="n" id="mkt-n"></span></h2>
-      <div class="cards" id="mkt-cards"></div>
-    </section>
+    <div class="layout" id="content" hidden>
+      <section class="panel check" id="sec-check" aria-labelledby="check-h"></section>
 
-    <section class="panel" aria-labelledby="job-h" id="sec-job" hidden>
-      <h2 id="job-h">정기 작업 <span class="n">deploy/portfolio.cron</span></h2>
-      <div class="cards" id="job-cards"></div>
-    </section>
+      <aside class="side" aria-label="정기 작업과 분야">
+        <details class="panel acc-ops" id="acc-ops">
+          <summary>
+            <svg class="lci st-ico" id="ops-ico"><use href="#i-circle-check"/></svg>
+            <h2>정기 작업 · 시세·재무</h2>
+            <svg class="lci chev"><use href="#i-chevron-down"/></svg>
+            <p class="sub" id="ops-sub"></p>
+          </summary>
+          <div class="acc-body" id="ops-body"></div>
+        </details>
+        <details class="panel" id="acc-themes">
+          <summary>
+            <svg class="lci st-ico" id="themes-ico"><use href="#i-circle-check"/></svg>
+            <h2>분야별 수집 <small>최근 30일</small></h2>
+            <svg class="lci chev"><use href="#i-chevron-down"/></svg>
+            <p class="sub" id="themes-sub"></p>
+          </summary>
+          <div class="acc-body" id="themes-body"></div>
+        </details>
+        <details class="panel" id="acc-uncl">
+          <summary>
+            <svg class="lci st-ico st-never"><use href="#i-info"/></svg>
+            <h2>분야에 들어가지 않은 글</h2>
+            <svg class="lci chev"><use href="#i-chevron-down"/></svg>
+            <p class="sub" id="uncl-sub"></p>
+          </summary>
+          <div class="acc-body" id="uncl-body"></div>
+        </details>
+      </aside>
+
+      <section class="panel srcs" aria-labelledby="src-h">
+        <h2 id="src-h">소스 <span id="src-n"></span> <small id="src-sub"></small></h2>
+        <div id="src-legend-top"></div>
+        <table class="src-table v-today" id="src-table">
+          <thead>
+            <tr>
+              <th scope="col">소스</th>
+              <th scope="col">주로 다루는<br>분야</th>
+              <th scope="col">상태</th>
+              <th scope="col">수집 결과</th>
+              <th scope="col" class="r">새 글</th>
+              <th scope="col" class="r">키워드로<br>거른 글</th>
+              <th scope="col" class="r">중요한 글</th>
+              <th scope="col" class="r">분야<br>없음</th>
+              <th scope="col">참고</th>
+            </tr>
+          </thead>
+          <tbody id="src-body"></tbody>
+        </table>
+        <div class="foot" id="src-foot"></div>
+      </section>
+    </div>
   </main>
 </div>
 
+<div class="dpanel" id="dpanel" role="dialog" aria-modal="true" aria-labelledby="dp-name" hidden></div>
+<div class="tip" id="tip" role="tooltip" hidden></div>
+
 <script>
-const { el, clear } = S;
+const { el, clear, svgIco } = S;
+const TOKENS = window.__THEME_TOKENS || { themes: {} };
 
 // ── vocabulary ──────────────────────────────────────────────────────
-const SRC_STATUS = {   // severity order: worst first
-  dead: '죽음', failing: '실패 중', quiet: '조용함', capped: '상한 도달', never: '읽은 적 없음', ok: '정상',
+const SRC_STATUS = {
+  collect_error: '수집 오류', failing: '실패 중', flaky: '자주 실패',
+  quiet: '새 글 없음', never: '다음 수집 때 확인', ok: '정상',
 };
-const JOB_STATUS = { problem: '문제', late: '늦음', none: '기록 없음', ok: '정상' };
-const GROUP_KO = { news: '뉴스', research: '논문', social: '커뮤니티' };
+const SRC_ACTION = {
+  collect_error: '수정 배포 뒤 다음 수집 때 확인',
+  failing: '오류가 이어지면 주소 점검',
+  flaky: '다른 주소를 찾거나 소스에서 빼기',
+  quiet: '피드 주소가 맞는지 확인',
+  never: '다음 수집 결과 확인',
+};
+const SRC_ICON = {
+  collect_error: 'triangle-alert', failing: 'circle-x', flaky: 'activity',
+  quiet: 'info', never: 'circle-dashed', ok: 'circle-check',
+};
+const CHECK_ORDER = ['collect_error', 'failing', 'quiet', 'flaky', 'never'];
+const GROUPS = [['news', '뉴스'], ['research', '논문'], ['social', '커뮤니티']];
+const RESEARCH_NOTE = '논문은 뉴스보다 앞서 나오는 자료라 중요한 글로 견주지 않아요';
+const REVIEW_NOTE = '빼도 될지 검토: 최근 30일 글이 20건 이상인데 중요한 글이 7% 이하이고, '
+  + '같은 분야를 주로 다루는 소스가 3곳 이상일 때 한 곳에 붙어요. 자동으로 빠지지는 않아요.';
 const JOB_KO = {
   news: '뉴스 수집·정리', backup: 'DB 백업', fundamental: '재무', etf: 'ETF',
-  snapshot: '종가 스냅샷', screener: 'KRX 스크리너', universe: '종목 마스터', analysis: '종합 분석',
+  snapshot: '종가 기록', screener: 'KRX 스크리너', universe: '종목 목록', analysis: '종합 분석',
 };
-const ORDER = Object.keys(SRC_STATUS);
+const JOB_STATUS = { problem: '오류', late: '늦음', none: '기록 없음' };
+const FACTS = [['bars', '일봉'], ['quotes', '시세'], ['valuation', '밸류에이션'],
+               ['sector', '업종'], ['etf', 'ETF']];
+const SLOTS = [6, 17];          // KST hours of the two scheduled collections
+const POLL_MS = 5 * 60 * 1000;
+const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
 
 let DATA = null;
-let FILTER = 'issues';   // 'issues' | 'all' | a status
+let VIEW = 'today';
+let LAST_OK = null;            // when the page last loaded the report
+let OPEN = null;               // source_id shown in the detail panel
+let releaseFocus = null;
 
-function n(v) { return v == null ? '-' : Number(v).toLocaleString('ko-KR'); }
-function pct(v) { return v == null ? '-' : Math.round(v * 100) + '%'; }
-function hoursKo(h) {
-  if (h == null) return '-';
-  return h < 1 ? Math.round(h * 60) + '분 전' : h < 48 ? Math.round(h) + '시간 전'
-    : Math.round(h / 24) + '일 전';
+// ── format ──────────────────────────────────────────────────────────
+function n(v) { return v == null ? '—' : Number(v).toLocaleString('ko-KR'); }
+function pct(a, b) { return b ? Math.round(a / b * 100) + '%' : '—'; }
+// ISO with any offset → its wall clock in KST, as a Date read through getUTC*
+function kst(iso) { const t = new Date(iso).getTime(); return isNaN(t) ? null : new Date(t + 9 * 3600e3); }
+function pad(v) { return String(v).padStart(2, '0'); }
+function md(iso) {
+  if (!iso) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso.slice(5, 7) + '/' + iso.slice(8, 10);
+  const d = kst(iso); return d ? pad(d.getUTCMonth() + 1) + '/' + pad(d.getUTCDate()) : '';
 }
+function hm(iso) { const d = kst(iso); return d ? pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) : ''; }
+function mdhm(iso) { return iso ? md(iso) + ' ' + hm(iso) : ''; }
+function kstDay(iso) { const d = kst(iso); return d ? d.toISOString().slice(0, 10) : ''; }
+function weekday(iso) { const d = kst(iso); return d ? WEEKDAY[d.getUTCDay()] + '요일' : ''; }
+function short(s, max) { s = String(s || ''); return s.length > max ? s.slice(0, max - 1) + '…' : s; }
 
-// ── 30-day bars: one per collected day, today on the right ─────────
-function sparkline(canvas, values, status) {
-  const dpr = window.devicePixelRatio || 1;
-  const w = canvas.clientWidth || 300, h = canvas.clientHeight || 28;
-  canvas.width = w * dpr; canvas.height = h * dpr;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  const max = Math.max(1, ...values);
-  const bw = w / values.length;
-  const tok = { ok: 'green', capped: 'yellow', quiet: 'orange', failing: 'red', dead: 'red' }[status] || 'muted';
-  values.forEach((v, i) => {
-    const bh = v ? Math.max(2, (v / max) * (h - 2)) : 1;
-    ctx.fillStyle = v ? S.designColor(tok) : S.designColor('line');
-    ctx.fillRect(i * bw + 1, h - bh, Math.max(1, bw - 2), bh);
-  });
-}
-
-// ── summary ─────────────────────────────────────────────────────────
-function renderSummary(d) {
-  const srcs = d.news.sources, counts = {};
-  srcs.forEach(s => { counts[s.status] = (counts[s.status] || 0) + 1; });
-  document.getElementById('sum-n').textContent = srcs.length + '곳 · 최근 ' + d.news.days.length + '일';
-  const g = document.getElementById('gauges');
-  clear(g);
-  ORDER.forEach(k => g.appendChild(el('div', { className: 'gauge st-' + k }, [
-    el('span', { className: 'v' }, [String(counts[k] || 0)]),
-    el('span', { className: 'k' }, [SRC_STATUS[k]]),
-  ])));
-  const p = d.pipeline, pipe = document.getElementById('pipe');
-  clear(pipe);
-  [['정리 대기', n(p.pending_enrich) + '건'],
-   ['마지막 정리', S.itemTime({ fetched_at: p.last_enriched_at }) || '-'],
-   ['하루 요약', (p.daily_date || '-') + ' · ' + p.daily_themes + '/' + p.n_themes + '분야'],
-   ['주간', p.weekly_start || '-'], ['월간', p.monthly || '-'],
-   ['수집 상한', d.news.cap + '건/회']].forEach(([k, v]) =>
-    pipe.appendChild(el('span', {}, [k + ' ', el('b', {}, [v])])));
-}
-
-// ── per source ─────────────────────────────────────────────────────
-function renderFilters(srcs) {
-  const f = document.getElementById('filters');
-  clear(f);
-  const issues = srcs.filter(s => s.status !== 'ok').length;
-  const opts = [['issues', '문제만 (' + issues + ')', 'st-failing'], ['all', '전체 (' + srcs.length + ')', 'st-never']]
-    .concat(ORDER.filter(k => srcs.some(s => s.status === k))
-      .map(k => [k, SRC_STATUS[k], 'st-' + k]));
-  opts.forEach(([key, label, cls]) => {
-    const b = el('button', {
-      type: 'button', className: 'chip ' + cls + (FILTER === key ? ' on' : ''),
-      'aria-pressed': FILTER === key ? 'true' : 'false',
-      onClick: () => { FILTER = key; renderSources(DATA); },
-    }, [el('span', { className: 'dot' }), label]);
-    f.appendChild(b);
-  });
-}
-
-function renderSources(d) {
-  const all = d.news.sources.slice().sort((a, b) =>
-    ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || b.n_30d - a.n_30d);
-  renderFilters(all);
-  const shown = all.filter(s => FILTER === 'all' ? true
-    : FILTER === 'issues' ? s.status !== 'ok' : s.status === FILTER);
-  document.getElementById('src-n').textContent = shown.length + '곳';
-  const list = document.getElementById('src-list');
-  clear(list);
-  if (!shown.length) {
-    list.appendChild(el('p', { className: 'pipe' }, ['해당하는 소스가 없습니다.']));
-    return;
+// scheduled collection times around `iso`: the last one passed and the next
+function slots(iso) {
+  const d = kst(iso), now = new Date(iso).getTime(), out = [];
+  for (let off = -1; off <= 1; off++) {
+    for (const h of SLOTS) {
+      out.push(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + off, h) - 9 * 3600e3);
+    }
   }
-  const pending = [];
-  shown.forEach(s => {
-    const canvas = el('canvas', { role: 'img',
-      'aria-label': '최근 ' + s.daily.length + '일 날짜별 수집 건수, 합계 ' + s.n_30d + '건' });
-    const why = [s.reason, s.last_error].filter(Boolean).join(' · ');
-    list.appendChild(el('div', { className: 'src-row st-' + s.status }, [
-      el('span', { className: 'chip st-' + s.status, role: 'note' },
-        [el('span', { className: 'dot' }), SRC_STATUS[s.status]]),
-      el('span', { className: 'name', title: s.url || '' }, [S.srcName(s.source_id),
-        el('small', {}, [s.source_id + ' · ' + (GROUP_KO[s.group] || s.group) + (s.broad ? ' · 관문' : '')])]),
-      canvas,
-      el('div', { className: 'nums' }, [
-        el('span', {}, ['7일 ', el('b', {}, [n(s.n_7d)])]),
-        el('span', {}, ['30일 ', el('b', {}, [n(s.n_30d)])]),
-        el('span', {}, ['상한 ', el('b', {}, [n(s.capped_sweeps) + '회'])]),
-        el('span', {}, ['무분야 ', el('b', {}, [pct(s.untagged_share)])]),
-        el('span', {}, ['성공 ', el('b', {}, [S.itemTime({ fetched_at: s.last_ok_at }) || '-'])]),
-      ]),
-      why ? el('div', { className: 'why' }, [why]) : null,
-    ]));
-    pending.push([canvas, s.daily, s.status]);
+  const prev = out.filter(t => t <= now).pop(), next = out.find(t => t > now);
+  return { prev: new Date(prev).toISOString(), next: new Date(next).toISOString() };
+}
+
+// ── themes: icon from theme.json, name from the report or theme.json ──
+let THEME_NAME = {};
+function themeName(id) {
+  return THEME_NAME[id] || id;
+}
+function themeIco(id) {
+  const i = svgIco(S.newsThemeIcon(id));
+  i.setAttribute('aria-hidden', 'true');
+  return i;
+}
+function themeButton(ids) {
+  if (!ids.length) return el('span', { className: 'th-none', 'aria-label': '주로 다루는 분야 없음' }, ['—']);
+  const names = ids.map(themeName).join(', ');
+  return el('button', {
+    type: 'button', className: 'btn th-btn', title: names, 'aria-label': '주로 다루는 분야: ' + names,
+    onClick: e => { e.stopPropagation(); showTip(e.currentTarget, ids); },
+  }, ids.map(themeIco));
+}
+const tip = document.getElementById('tip');
+function showTip(anchor, ids) {
+  if (!tip.hidden && tip.dataset.for === ids.join()) { hideTip(); return; }
+  clear(tip);
+  ids.forEach(id => tip.appendChild(el('div', {}, [themeIco(id), themeName(id)])));
+  tip.dataset.for = ids.join();
+  tip.hidden = false;
+  const r = anchor.getBoundingClientRect();
+  const left = Math.min(window.scrollX + r.left, window.scrollX + document.documentElement.clientWidth - tip.offsetWidth - 8);
+  tip.style.left = Math.max(8, left) + 'px';
+  tip.style.top = (window.scrollY + r.bottom + 4) + 'px';
+}
+function hideTip() { tip.hidden = true; tip.dataset.for = ''; }
+document.addEventListener('click', e => { if (!tip.hidden && !e.target.closest('.th-btn')) hideTip(); });
+
+// ── small builders ──────────────────────────────────────────────────
+function stat(status, text) {
+  return el('span', { className: 'stat st-' + status }, [svgIco(SRC_ICON[status] || 'info'), text]);
+}
+function chip(status, icon, text) {
+  return el('span', { className: 'chip st-' + status }, [svgIco(icon), text]);
+}
+function strip(runs, big) {
+  const counts = { has: 0, zero: 0, fail: 0, nil: 0 };
+  const cells = runs.map(r => {
+    const k = !r ? 'nil' : !r.ok ? 'fail' : r.written ? 'has' : 'zero';
+    counts[k]++;
+    const t = !r ? '기록 없음' : mdhm(r.at) + (r.ok ? ' · 새 글 ' + r.written + '건' : ' · 실패 · ' + short(r.error, 80));
+    return el('i', { className: k, title: t });
   });
-  requestAnimationFrame(() => pending.forEach(([c, v, st]) => sparkline(c, v, st)));
+  return el('span', {
+    className: big ? 'big-strip' : 'strip', role: 'img',
+    'aria-label': '최근 ' + runs.length + '번 수집: 새 글 있음 ' + counts.has + '번, 새 글 0건 '
+      + counts.zero + '번, 실패 ' + counts.fail + '번, 기록 없음 ' + counts.nil + '번',
+  }, cells);
 }
-
-// ── market facts ───────────────────────────────────────────────────
-function factCard(title, f, unit, lateLabel) {
-  const bad = (f.missing || 0) + (f.late || 0);
-  const st = f.n === 0 ? 'none' : bad ? (f.missing ? 'problem' : 'late') : 'ok';
-  const okShare = f.n ? (f.n - bad) / f.n : 0;
-  return el('div', { className: 'card st-' + st }, [
-    el('div', { className: 'h' }, [el('strong', {}, [title]),
-      el('span', { className: 'chip st-' + st }, [el('span', { className: 'dot' }),
-        f.n ? (f.n - bad) + '/' + f.n : '대상 없음'])]),
-    el('div', { className: 'bar', role: 'img', 'aria-label': '정상 비율 ' + pct(okShare) },
-      [el('i', { style: 'width:' + Math.round(okShare * 100) + '%' })]),
-    el('div', { className: 'kv' }, [
-      el('span', {}, ['없음 ', el('b', {}, [n(f.missing)])]),
-      el('span', {}, [lateLabel + ' ', el('b', {}, [n(f.late)])]),
-      f.oldest != null ? el('span', {}, ['가장 오래됨 ', el('b', {}, [unit(f.oldest)])]) : null,
-    ]),
+function legend() {
+  return el('div', { className: 'legend' }, [
+    el('span', {}, [el('span', { className: 'strip' }, [el('i', { className: 'has' })]), '새 글 있음']),
+    el('span', {}, [el('span', { className: 'strip' }, [el('i', { className: 'zero' })]), '새 글 0건']),
+    el('span', {}, [el('span', { className: 'strip' }, [el('i', { className: 'fail' })]), '실패']),
+    el('span', {}, [el('span', { className: 'strip' }, [el('i', { className: 'nil' })]), '기록 없음']),
   ]);
 }
 
-function simpleCard(title, st, chip, kv) {
-  return el('div', { className: 'card st-' + st }, [
-    el('div', { className: 'h' }, [el('strong', {}, [title]),
-      el('span', { className: 'chip st-' + st }, [el('span', { className: 'dot' }), chip])]),
-    el('div', { className: 'kv' }, kv.map(([k, v]) => el('span', {}, [k + ' ', el('b', {}, [v])]))),
-  ]);
+// today's collections for one source: done ones as dots, the rest as planned
+function todayRuns(s) {
+  const d = DATA, out = [], seen = new Set();
+  d.news.runs.forEach((at, i) => {
+    if (kstDay(at) !== d.news.today) return;
+    const r = s.runs[i], h = kst(at).getUTCHours();
+    seen.add(h < 12 ? 6 : 17);
+    const cls = !r ? 'dot plan' : r.ok ? 'dot' : 'dot fail';
+    const t = !r ? '기록 없음' : r.ok ? '새 글 ' + r.written + '건' : '실패 · ' + short(r.error, 80);
+    out.push(el('span', { title: t }, [el('i', { className: cls }), hm(at)]));
+  });
+  const now = new Date(d.asof).getTime();
+  SLOTS.forEach(h => {
+    if (seen.has(h)) return;
+    const at = Date.UTC(+d.news.today.slice(0, 4), +d.news.today.slice(5, 7) - 1, +d.news.today.slice(8, 10), h) - 9 * 3600e3;
+    out.push(el('span', { className: 'plan-t' }, [el('i', { className: 'dot plan' }),
+      pad(h) + ':00' + (at > now ? ' 예정' : '')]));
+  });
+  return el('span', { className: 'today-runs' }, out);
 }
 
-function renderMarket(d) {
-  const m = d.market, u = d.universe, box = document.getElementById('mkt-cards');
-  document.getElementById('mkt-n').textContent = '보유 ' + m.held + '종목 기준';
-  clear(box);
-  const days = v => v + '일';
-  const secs = v => hoursKo(v / 3600);
-  box.appendChild(factCard('일봉 (pykrx·yfinance)', m.bars, days, '4일 넘음'));
-  box.appendChild(factCard('현재가 캐시', m.quotes, secs, '4일 넘음'));
-  box.appendChild(factCard('밸류에이션', m.valuation, days, '-'));
-  box.appendChild(factCard('업종', m.sector, days, '-'));
-  box.appendChild(factCard('ETF (네이버)', m.etf, days, '2일 넘음'));
-  const fl = m.filings;
-  box.appendChild(simpleCard('재무 공시 (DART·EDGAR)', fl.n ? 'ok' : 'none',
-    fl.with_filed_at + '/' + fl.n, [['공시일 있음', fl.with_filed_at + '종목'], ['최신 공시', fl.newest || '-']]));
-  const sc = m.screener;
-  box.appendChild(simpleCard('KRX 스크리너', sc.date == null ? 'problem' : sc.age_days > 4 ? 'late' : 'ok',
-    sc.date || '없음', [['캐시 날짜', sc.date || '-'], ['나이', sc.age_days == null ? '-' : sc.age_days + '일']]));
-  const uAge = Math.max(u.kr_age_h || 0, u.us_age_h || 0);
-  box.appendChild(simpleCard('종목 마스터', !u.total ? 'problem' : uAge > 26 ? 'late' : 'ok',
-    n(u.total) + '종목', [['한국', n(u.by_region.KR)], ['미국', n(u.by_region.US)], ['갱신', hoursKo(uAge)]]));
+function notes(s) {
+  const out = [];
+  s.flags.filter(f => f.kind === 'only').forEach(f =>
+    out.push(el('span', { className: 'note', title: themeName(f.theme) }, [themeIco(f.theme), '이 분야 하나뿐'])));
+  s.flags.filter(f => f.kind === 'review').forEach(f =>
+    out.push(el('span', { className: 'note review', title: themeName(f.theme) },
+      [svgIco('info'), '빼도 될지 검토 · 빼면 ' + f.from + '곳 → ' + f.to + '곳'])));
+  if (s.week.outside > 0) out.push(el('span', { className: 'note dim' }, ['정기 수집 밖 ' + n(s.week.outside) + '건']));
+  if (s.flags.some(f => f.kind === 'rare')) out.push(el('span', { className: 'note dim' }, ['글이 적어 판단 보류']));
+  return out;
 }
 
-// ── jobs ───────────────────────────────────────────────────────────
-function flat(obj, prefix, out) {
-  for (const k in obj) {
-    const v = obj[k];
-    if (v && typeof v === 'object') flat(v, prefix + k + '.', out);
-    else if (out.length < 8) out.push([prefix + k, v == null ? '-' : String(v)]);
+// ── runs analysis ───────────────────────────────────────────────────
+// Consecutive failures among the shown collections, with the collection that
+// ended each (null while it is still going).
+function streaks(runs) {
+  const out = [];
+  let cur = null;
+  runs.forEach(r => {
+    if (r && !r.ok) {
+      if (!cur) { cur = { from: r.at, to: r.at, k: 0, next: null }; out.push(cur); }
+      cur.to = r.at; cur.k++;
+    } else if (cur) {
+      if (r) cur.next = r;
+      cur = null;
+    }
+  });
+  return out;
+}
+function situation(s) {
+  const seen = s.runs.filter(Boolean), fails = seen.filter(r => !r.ok).length;
+  if (s.status === 'collect_error' || s.status === 'quiet') {
+    return s.last_item_on ? md(s.last_item_on) + '부터 새 글 0건' : '받은 글 없음';
+  }
+  if (s.status === 'never') return '수집 기록 없음';
+  const parts = ['최근 ' + seen.length + '번 중 ' + fails + '번 실패'];
+  const st = streaks(s.runs), last = st[st.length - 1];
+  if (last && last.next) parts.push(mdhm(last.next.at) + '부터 다시 받음');
+  else if (last) parts.push(mdhm(last.from) + '부터 실패 중');
+  return parts.join(' · ');
+}
+function lastError(s) {
+  if (s.last_error) return s.last_error;
+  const f = s.runs.filter(r => r && !r.ok && r.error).pop();
+  return f ? f.error : '';
+}
+
+// ── 확인할 것 ───────────────────────────────────────────────────────
+function checkItems(d) {
+  const items = [];
+  const news = d.jobs.find(j => j.job === 'news');
+  if (news && news.status === 'late') {
+    items.push({ kind: 'job', name: '정기 수집', st: 'late', icon: 'triangle-alert', label: '수집 늦음',
+      sit: '수집이 예정(' + hm(slots(d.asof).prev) + ')보다 늦어요'
+        + (d.news.runs.length ? ' · 마지막 수집 ' + mdhm(d.news.runs[d.news.runs.length - 1]) : ''),
+      why: news.problems.join(' · '), todo: '' });
+  }
+  d.news.sources.filter(s => s.status !== 'ok')
+    .sort((a, b) => CHECK_ORDER.indexOf(a.status) - CHECK_ORDER.indexOf(b.status))
+    .forEach(s => {
+      const why = [s.status === 'flaky' || s.status === 'failing' ? '' : s.reason, short(lastError(s), 90)]
+        .filter(Boolean).join(' · ');
+      items.push({ kind: 'source', sid: s.source_id, name: S.srcName(s.source_id), st: s.status,
+        icon: SRC_ICON[s.status], label: SRC_STATUS[s.status], sit: situation(s), why,
+        todo: SRC_ACTION[s.status] || '' });
+    });
+  d.jobs.filter(j => ['problem', 'late', 'none'].includes(j.status) && !(j.job === 'news' && j.status === 'late'))
+    .forEach(j => items.push({ kind: 'job', name: JOB_KO[j.job] || j.job, st: j.status,
+      icon: j.status === 'none' ? 'circle-dashed' : j.status === 'late' ? 'triangle-alert' : 'circle-x',
+      label: JOB_STATUS[j.status],
+      sit: j.status === 'none' ? '실행 기록이 없어요'
+        : (j.status === 'late' ? '예정보다 늦어요 · ' : '') + (j.written_at ? '마지막 실행 ' + mdhm(j.written_at) : '실행 시각 모름'),
+      why: j.problems.join(' · '), todo: '작업 기록 확인' }));
+  marketIssues(d).forEach(m => items.push(Object.assign({ kind: 'market' }, m)));
+  return items;
+}
+function marketIssues(d) {
+  const m = d.market, out = [], sit = [];
+  FACTS.forEach(([k, label]) => {
+    const f = m[k] || {};
+    if (f.missing) sit.push(f.missing + '종목 ' + label + ' 없음');
+    if (f.late) sit.push(f.late + '종목 ' + label + ' 늦음');
+  });
+  if (sit.length) {
+    out.push({ name: '시세·재무', st: sit.some(t => t.endsWith('없음')) ? 'problem' : 'late',
+      icon: 'triangle-alert', label: sit.some(t => t.endsWith('없음')) ? '없음' : '늦음',
+      sit: sit.join(' · '), why: '', todo: '계좌 화면에서 확인' });
+  }
+  const sc = m.screener || {};
+  if (sc.date == null || sc.age_days > 4) {
+    out.push({ name: 'KRX 스크리너', st: sc.date == null ? 'problem' : 'late', icon: 'triangle-alert',
+      label: sc.date == null ? '없음' : '늦음',
+      sit: sc.date == null ? '자료가 없어요' : sc.age_days + '일 전 자료예요', why: '', todo: '작업 기록 확인' });
+  }
+  const u = d.universe, age = Math.max(u.kr_age_h || 0, u.us_age_h || 0);
+  if (!u.total || age > 26) {
+    out.push({ name: '종목 목록', st: !u.total ? 'problem' : 'late', icon: 'triangle-alert',
+      label: !u.total ? '없음' : '늦음',
+      sit: !u.total ? '목록이 비어 있어요' : Math.round(age) + '시간 전 목록이에요', why: '', todo: '작업 기록 확인' });
   }
   return out;
 }
 
-function renderJobs(d) {
-  const box = document.getElementById('job-cards');
-  clear(box);
-  d.jobs.forEach(j => {
-    const last = j.summaries[j.summaries.length - 1] || {};
-    box.appendChild(el('div', { className: 'card st-' + j.status }, [
-      el('div', { className: 'h' }, [el('strong', {}, [JOB_KO[j.job] || j.job]),
-        el('span', { className: 'chip st-' + j.status }, [el('span', { className: 'dot' }), JOB_STATUS[j.status]])]),
-      el('div', { className: 'kv' }, [el('span', {}, ['마지막 기록 ', el('b', {}, [hoursKo(j.age_h)])])]),
-      j.problems.length ? el('div', { className: 'bad' }, [j.problems.join(' · ')]) : null,
-      el('div', { className: 'kv' }, flat(last, '', []).map(([k, v]) =>
-        el('span', {}, [k + ' ', el('b', {}, [v])]))),
+function renderCheck(d, items) {
+  const sec = document.getElementById('sec-check');
+  clear(sec);
+  const nSrc = items.filter(i => i.kind === 'source').length;
+  const sum = d.news.sources.length;
+  if (!items.length) {
+    sec.appendChild(el('div', { className: 'check-empty' }, [
+      el('h2', { id: 'check-h' }, [svgIco('circle-check'), '지금 확인할 것이 없어요']),
+      el('span', { className: 'sub' }, ['최근 수집 ' + (mdhm(d.news.runs[d.news.runs.length - 1]) || '—')
+        + ' · ' + sum + '곳 정상']),
+    ]));
+    return;
+  }
+  const parts = [];
+  const nJob = items.filter(i => i.kind === 'job').length, nMkt = items.filter(i => i.kind === 'market').length;
+  if (nJob) parts.push('정기 작업 ' + nJob);
+  if (nMkt) parts.push('시세·재무 ' + nMkt);
+  if (nSrc) parts.push('소스 ' + nSrc + '곳');
+  sec.appendChild(el('h2', { id: 'check-h' }, ['확인할 것', el('small', {}, [parts.join(' · ')])]));
+  const body = el('tbody');
+  items.forEach(it => {
+    const name = it.kind === 'source'
+      ? el('button', { type: 'button', className: 'btn src-btn', onClick: () => openPanel(it.sid) },
+          [el('span', {}, [it.name])])
+      : it.name;
+    body.appendChild(el('tr', {}, [
+      el('td', { className: 'k-name' }, [name]),
+      el('td', { className: 'k-st' }, [chip(it.st, it.icon, it.label)]),
+      el('td', { className: 'k-sit' }, [it.sit]),
+      el('td', { className: 'k-why' }, it.why ? [it.why] : []),
+      el('td', { className: 'k-do' }, it.todo ? [el('span', { className: 'lbl' }, ['할 일']), it.todo] : []),
     ]));
   });
+  sec.appendChild(el('table', { className: 'ck-table' }, [
+    el('thead', {}, [el('tr', {}, ['소스', '상태', '상황', '이유', '할 일']
+      .map(h => el('th', { scope: 'col' }, [h])))]),
+    body,
+  ]));
 }
 
-// ── load ───────────────────────────────────────────────────────────
-S.onForbidden = () => {
-  document.getElementById('gate').hidden = false;
-  ['sec-sum', 'sec-src', 'sec-mkt', 'sec-job'].forEach(id => { document.getElementById(id).hidden = true; });
-};
+// ── page head ───────────────────────────────────────────────────────
+function renderHead(d, items) {
+  const meta = document.getElementById('ph-meta');
+  clear(meta);
+  const runs = d.news.runs, sl = slots(d.asof);
+  const nSrc = items.filter(i => i.kind === 'source').length;
+  const unit = items.length === nSrc ? '곳' : '건';
+  meta.appendChild(el('span', {}, [
+    '최근 수집 ' + (runs.length ? mdhm(runs[runs.length - 1]) : '—')
+    + ' · 다음 수집 ' + mdhm(sl.next) + ' · 확인할 것 ' + items.length + unit]));
+  const news = d.jobs.find(j => j.job === 'news');
+  const p = d.pipeline;
+  if (news && news.status === 'running') {
+    meta.appendChild(el('span', { className: 'run-chip' }, [svgIco('loader-circle'),
+      '수집 중 · 요약 ' + n(p.enriched_today) + '/' + n(p.collected_today) + '건']));
+  }
+  const pipe = document.getElementById('pipe');
+  clear(pipe);
+  const arrow = () => svgIco('chevron-right');
+  const summed = p.enriched_today < p.collected_today
+    ? n(p.enriched_today) + '/' + n(p.collected_today) + '건' : n(p.enriched_today) + '건';
+  const daily = p.daily_date !== d.news.today ? '분야별 정리 전'
+    : p.daily_themes >= p.n_themes ? '분야별 정리 ' + p.n_themes + '분야 모두'
+    : '분야별 정리 ' + p.daily_themes + '/' + p.n_themes + '분야';
+  [el('span', {}, ['오늘 수집 ', el('b', {}, [n(p.collected_today) + '건'])]), arrow(),
+   el('span', {}, ['요약 ', el('b', {}, [summed])]), arrow(),
+   el('span', {}, [el('b', {}, [daily])]),
+   p.weekly_start ? el('span', {}, ['· 주간 정리 · ' + md(p.weekly_start) + ' 주'
+     + (p.weekly_built_at ? '(' + md(p.weekly_built_at) + ' ' + weekday(p.weekly_built_at) + ' 실행)' : '')]) : null,
+  ].forEach(x => { if (x) pipe.appendChild(x); });
+}
+
+// ── right column ────────────────────────────────────────────────────
+function renderSide(d) {
+  // jobs and market facts
+  const jobs = d.jobs, bad = jobs.filter(j => !['ok', 'running'].includes(j.status)).length;
+  const running = jobs.filter(j => j.status === 'running').length;
+  const mkt = marketIssues(d).length;
+  const jobsText = bad ? '정기 작업 ' + jobs.length + '개 중 ' + bad + '개 확인'
+    : '정기 작업 ' + jobs.length + '개 모두 정상' + (running ? ' · ' + running + '개 실행 중' : '');
+  const mktText = mkt ? '시세·재무 ' + mkt + '건 확인' : '시세·재무 정상';
+  const ok = !bad && !mkt;
+  const ico = document.getElementById('ops-ico');
+  ico.setAttribute('class', 'lci st-ico st-' + (ok ? 'ok' : 'late'));
+  ico.firstElementChild.setAttribute('href', '#i-' + (ok ? 'circle-check' : 'triangle-alert'));
+  document.getElementById('ops-sub').textContent = jobsText + ' · ' + mktText;
+  const ob = document.getElementById('ops-body');
+  clear(ob);
+  ob.appendChild(el('div', { className: 'ops-line st-' + (bad ? 'late' : 'ok') },
+    [svgIco(bad ? 'triangle-alert' : 'circle-check'), jobsText]));
+  ob.appendChild(el('div', { className: 'ops-line st-' + (mkt ? 'late' : 'ok') },
+    [svgIco(mkt ? 'triangle-alert' : 'circle-check'), mktText,
+     el('small', {}, ['· 보유 ' + n(d.market.held) + '종목 기준'])]));
+
+  // themes
+  const themes = d.news.themes.slice().sort((a, b) => b.n30 - a.n30);
+  const short1 = themes.filter(t => t.main_sources.length <= 1).length;
+  const tIco = document.getElementById('themes-ico');
+  tIco.setAttribute('class', 'lci st-ico st-' + (short1 ? 'flaky' : 'ok'));
+  tIco.firstElementChild.setAttribute('href', '#i-' + (short1 ? 'triangle-alert' : 'circle-check'));
+  document.getElementById('themes-sub').textContent = themes.length + '분야'
+    + (short1 ? ' · 소스 부족 ' + short1 + '분야' : '');
+  const tb = document.getElementById('themes-body');
+  clear(tb);
+  tb.appendChild(el('p', { className: 'sub' }, ['글 하나에 분야가 여럿 붙을 수 있어요']));
+  tb.appendChild(el('table', { className: 'th-table' }, [
+    el('thead', {}, [el('tr', {}, [el('th', { scope: 'col' }, ['분야']),
+      el('th', { scope: 'col', className: 'r' }, ['30일 글']),
+      el('th', { scope: 'col', className: 'r' }, ['주로 다루는 소스'])])]),
+    el('tbody', {}, themes.map(t => {
+      const few = t.main_sources.length <= 1;
+      return el('tr', {}, [
+        el('td', { className: 'nm' }, [themeIco(t.theme_id), themeName(t.theme_id),
+          few ? chip('flaky', 'triangle-alert', '소스 부족') : null]),
+        el('td', { className: 'r num' }, [n(t.n30)]),
+        el('td', { className: 'r num' + (few ? ' short' : ''),
+                   title: t.main_sources.map(S.srcName).join(', ') }, [t.main_sources.length + '곳']),
+      ]);
+    })),
+  ]));
+  if (short1) tb.appendChild(el('p', { className: 'foot' }, ['소스 부족: 주로 다루는 소스가 0~1곳이에요']));
+
+  // what fell outside the fields
+  const u = d.news.unclassified;
+  document.getElementById('uncl-sub').textContent = '키워드로 거른 글 ' + n(u.filtered) + '건 · 분야 없는 글 '
+    + n(u.untagged) + '건';
+  const ub = document.getElementById('uncl-body');
+  clear(ub);
+  ub.appendChild(el('div', { className: 'uncl-stats' }, [
+    el('div', {}, [el('div', { className: 'k' }, ['키워드로 거른 글']),
+      el('div', { className: 'v num' }, [n(u.filtered) + '건']),
+      el('div', { className: 'k' }, ['최근 ' + d.news.runs.length + '번 수집'])]),
+    el('div', {}, [el('div', { className: 'k' }, ['분야 없는 글']),
+      el('div', { className: 'v num' }, [n(u.untagged) + '건 · ' + pct(u.untagged, u.enriched)]),
+      el('div', { className: 'k' }, ['최근 7일'])]),
+  ]));
+  if (u.examples.length) {
+    ub.appendChild(el('div', { className: 'uncl-ex' }, ['예시 제목',
+      el('ul', {}, u.examples.map(x => el('li', {}, [x.title, el('small', {}, [S.srcName(x.source_id)])])))]));
+  }
+  ub.appendChild(el('p', { className: 'uncl-do' }, [el('span', { className: 'lbl' }, ['할 일']), '분야 목록 고치기']));
+}
+
+// the right column folds on phones and stays open from 900px
+const WIDE = window.matchMedia('(min-width: 900px)');
+function syncSide() {
+  document.querySelectorAll('.side details').forEach(dt => { dt.open = WIDE.matches; });
+}
+document.querySelectorAll('.side summary').forEach(sm =>
+  sm.addEventListener('click', e => { if (WIDE.matches) e.preventDefault(); }));
+WIDE.addEventListener('change', syncSide);
+
+// ── source list ─────────────────────────────────────────────────────
+function rank(s) {
+  if (s.status !== 'ok') return CHECK_ORDER.indexOf(s.status);
+  return s.flags.some(f => f.kind === 'review') ? 10 : 20;
+}
+function srcRow(s) {
+  const today = VIEW === 'today', c = today ? s.today : s.week;
+  const research = s.group === 'research';
+  const unsorted = today && !s.today.enriched;
+  const filt = s.broad && (c.written + c.filtered)
+    ? [n(c.filtered), el('span', { className: 't-d' }, [' (' + pct(c.filtered, c.written + c.filtered) + ')'])]
+    : [n(c.filtered)];
+  const imp = unsorted ? ['—'] : [el('span', { className: 't-m' }, ['중요한 글 ']), n(c.important),
+    el('span', { className: 't-m' }, ['건']),
+    c.enriched ? el('span', { className: 't-d' }, [' (' + pct(c.important, c.enriched) + ')']) : null];
+  const runs = today ? todayRuns(s) : el('span', {}, [strip(s.runs),
+    s.week.failed ? el('span', { className: 'fail-n t-m' }, ['실패 ' + s.week.failed + '번']) : null]);
+  const tr = el('tr', { className: 'src', dataset: { sid: s.source_id } }, [
+    el('td', { className: 'c-name' }, [el('button', {
+      type: 'button', className: 'btn src-btn', title: S.srcName(s.source_id),
+      'aria-haspopup': 'dialog' }, [el('span', {}, [S.srcName(s.source_id)])])]),
+    el('td', { className: 'c-th' }, [themeButton(s.themes.main)]),
+    el('td', { className: 'c-st' }, [stat(s.status, SRC_STATUS[s.status])]),
+    el('td', { className: 'c-brk', 'aria-hidden': 'true' }),
+    el('td', { className: 'c-runs' }, [runs]),
+    el('td', { className: 'c-new num' }, [el('span', { className: 't-m' }, [today ? '새 글 ' : '7일 글 ']),
+      n(c.written), el('span', { className: 't-m' }, ['건'])]),
+    el('td', { className: 'c-filt num' }, [el('span', { className: 't-m' }, ['거른 글 '])].concat(filt,
+      [el('span', { className: 't-m' }, ['건'])])),
+    el('td', { className: 'c-imp num' + (research ? ' dimmed' : '') }, imp),
+    el('td', { className: 'c-unt num' }, [unsorted ? '—' : n(c.untagged)]),
+    el('td', { className: 'c-note' }, notes(s).length ? [el('span', { className: 'notes' }, notes(s))] : []),
+  ]);
+  tr.addEventListener('click', e => { if (!e.target.closest('.th-btn')) openPanel(s.source_id); });
+  return tr;
+}
+
+function renderSources(d) {
+  const today = VIEW === 'today';
+  const table = document.getElementById('src-table');
+  table.className = 'src-table v-' + VIEW;
+  const srcs = d.news.sources;
+  document.getElementById('src-n').textContent = srcs.length + '곳';
+  const runs = d.news.runs, todays = runs.filter(at => kstDay(at) === d.news.today);
+  const sumW = srcs.reduce((a, s) => a + (today ? s.today : s.week).written, 0);
+  const sumF = srcs.reduce((a, s) => a + (today ? s.today : s.week).filtered, 0);
+  document.getElementById('src-sub').textContent = today
+    ? '오늘 ' + md(d.news.today) + ' ' + (todays.length ? todays.map(hm).join('·') + ' 수집' : '수집 전')
+      + ' · 새 글 ' + n(sumW) + '건 · 키워드로 거른 글 ' + n(sumF) + '건 · 중요한 글 = 중요도 5점 중 4점 이상'
+    : '최근 ' + runs.length + '번 수집' + (runs.length ? '(' + mdhm(runs[0]) + '~' + mdhm(runs[runs.length - 1]) + ')' : '')
+      + ' · 새 글 ' + n(sumW) + '건 · 중요한 글 = 중요도 5점 중 4점 이상';
+  const top = document.getElementById('src-legend-top');
+  clear(top);
+  top.className = 'only-narrow';
+  if (!today) top.appendChild(legend());
+  const body = document.getElementById('src-body');
+  clear(body);
+  GROUPS.forEach(([g, label]) => {
+    const rows = srcs.filter(s => s.group === g)
+      .sort((a, b) => rank(a) - rank(b) || b.week.written - a.week.written);
+    if (!rows.length) return;
+    body.appendChild(el('tr', { className: 'grp' }, [el('th', { colspan: '9', scope: 'colgroup' }, [
+      label + ' ' + rows.length + '곳', g === 'research' ? el('small', {}, [RESEARCH_NOTE]) : null])]));
+    rows.forEach(s => body.appendChild(srcRow(s)));
+  });
+  const foot = document.getElementById('src-foot');
+  clear(foot);
+  if (today) foot.appendChild(el('p', {}, ['중요한 글·분야 없음은 오늘 들어온 글의 정리가 끝나면 채워져요']));
+  else foot.appendChild(el('div', { className: 'only-wide' }, [legend()]));
+  if (srcs.some(s => s.flags.some(f => f.kind === 'review'))) foot.appendChild(el('p', {}, [REVIEW_NOTE]));
+}
+
+// ── detail panel ────────────────────────────────────────────────────
+const dp = document.getElementById('dpanel');
+function openPanel(sid) {
+  OPEN = sid;
+  hideTip();
+  renderPanel();
+  dp.hidden = false;
+  if (!releaseFocus) releaseFocus = S.trapFocus(dp);
+  else { const c = dp.querySelector('.dp-close'); if (c) c.focus(); }
+}
+function closePanel() {
+  if (dp.hidden) return;
+  OPEN = null;
+  dp.hidden = true;
+  const r = releaseFocus; releaseFocus = null;
+  if (r) r();
+}
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (!tip.hidden) { hideTip(); return; }
+  closePanel();
+});
+document.addEventListener('mousedown', e => {
+  if (dp.hidden || dp.contains(e.target) || e.target.closest('tr.src, .ck-table .src-btn')) return;
+  closePanel();
+});
+
+function section(title, kids) { return el('section', { className: 'dp-sec' }, [el('h3', {}, [title])].concat(kids)); }
+
+function renderPanel() {
+  clear(dp);
+  const s = DATA && DATA.news.sources.find(x => x.source_id === OPEN);
+  if (!s) { closePanel(); return; }
+  const name = S.srcName(s.source_id);
+  dp.appendChild(el('div', { className: 'dp-head' }, [
+    el('button', { type: 'button', className: 'btn dp-close', 'aria-label': S.LABELS.close, onClick: closePanel },
+      [el('span', { className: 'back' }, [svgIco('arrow-left')]), el('span', { className: 'x' }, [svgIco('x')])]),
+    el('h2', { id: 'dp-name' }, [name]),
+    el('span', { className: 'th-ico', title: s.themes.main.map(themeName).join(', ') }, s.themes.main.map(themeIco)),
+    chip(s.status, SRC_ICON[s.status], SRC_STATUS[s.status]),
+  ]));
+  if (SRC_ACTION[s.status]) {
+    dp.appendChild(el('div', { className: 'dp-todo' }, [el('span', { className: 'lbl' }, ['할 일']), SRC_ACTION[s.status]]));
+  }
+  // flaky/failing reasons repeat the strip's own count below
+  if (s.reason && !['flaky', 'failing'].includes(s.status)) dp.appendChild(el('p', { className: 'sub' }, [s.reason]));
+
+  // the last collections
+  const seen = s.runs.filter(Boolean), fails = seen.filter(r => !r.ok).length;
+  const runAts = DATA.news.runs;
+  dp.appendChild(section('최근 ' + s.runs.length + '번 수집', [
+    strip(s.runs, true),
+    el('div', { className: 'ends' }, [el('span', {}, [mdhm(runAts[0])]), el('span', {}, [mdhm(runAts[runAts.length - 1])])]),
+    el('p', {}, [fails ? seen.length + '번 중 ' + fails + '번 실패' : seen.length + '번 모두 받음']),
+  ]));
+
+  // four numbers
+  const usual = s.d30.usual_per_day;
+  dp.appendChild(section('글 수', [el('div', { className: 'dp-nums' }, [
+    ['오늘', n(s.today.collected) + '건'], ['7일', n(s.week.collected) + '건'],
+    ['30일', n(s.d30.n) + '건'], ['평소 하루', usual == null ? '—' : '약 ' + usual + '건'],
+  ].map(([k, v]) => el('div', {}, [el('div', { className: 'k' }, [k]), el('div', { className: 'v num' }, [v])])))]));
+
+  // 30 days
+  const daily = s.d30.daily, max = Math.max(1, ...daily), days = DATA.news.days;
+  dp.appendChild(section('30일 하루 글 수', [
+    el('div', { className: 'bars', role: 'img',
+      'aria-label': '최근 ' + daily.length + '일 하루 글 수, 합계 ' + n(s.d30.n) + '건' },
+      daily.map((v, i) => el('i', { className: v ? '' : 'zero', title: md(days[i]) + ' · ' + v + '건',
+        style: v ? 'height:' + Math.max(4, Math.round(v / max * 100)) + '%' : '' }))),
+    el('div', { className: 'ends' }, [el('span', {}, [md(days[0])]), el('span', {}, [md(days[days.length - 1])])]),
+  ]));
+
+  // gaps
+  const st = streaks(s.runs);
+  if (st.length) {
+    const lines = [];
+    st.forEach(g => {
+      lines.push(el('p', {}, [g.next
+        ? mdhm(g.from) + (g.k > 1 ? ' ~ ' + mdhm(g.to) : '') + ' · ' + g.k + '번 실패'
+        : mdhm(g.from) + '부터 ' + g.k + '번 연속 실패 중이에요']));
+      if (g.next && usual != null && g.next.written > usual) {
+        lines.push(el('p', {}, [mdhm(g.next.at) + '에 다시 받을 때 ' + n(g.next.written) + '건이 들어왔어요. 평소 하루 약 '
+          + usual + '건이라 그 사이 글을 놓쳤을 수 있어요.']));
+      }
+    });
+    dp.appendChild(section('끊긴 기간', lines));
+  }
+
+  // raw errors
+  const errs = new Map();
+  s.runs.forEach(r => { if (r && !r.ok && r.error) errs.set(r.error, { at: r.at, k: ((errs.get(r.error) || {}).k || 0) + 1 }); });
+  if (s.last_error && !errs.has(s.last_error)) errs.set(s.last_error, { at: null, k: 0 });
+  if (errs.size) {
+    dp.appendChild(section('오류 원문', [el('ul', { className: 'err-list' }, [...errs].map(([e, v]) =>
+      el('li', {}, [el('small', {}, [(v.at ? '마지막 ' + mdhm(v.at) : '최근 기록') + (v.k ? ' · ' + v.k + '번' : '')]), e])))]));
+  }
+
+  // field distribution
+  if (s.themes.dist.length) {
+    dp.appendChild(section('분야 분포 상위 ' + s.themes.dist.length + '개', [
+      el('p', { className: 'sub' }, ['최근 30일 · 글 하나에 분야가 여럿 붙을 수 있어 합이 100%를 넘어요']),
+      el('table', { className: 'dist' }, [el('tbody', {}, s.themes.dist.map(([t, share]) => el('tr', {}, [
+        el('td', { className: 'nm' }, [themeIco(t), themeName(t)]),
+        el('td', { className: 'bar' }, [el('div', { className: 'track' },
+          [el('i', { style: 'width:' + Math.min(100, Math.round(share * 1000) / 10) + '%' })])]),
+        el('td', { className: 'r num' }, [(share * 100).toFixed(1) + '%']),
+      ])))]),
+    ]));
+  }
+
+  if (s.url) {
+    dp.appendChild(section('피드 주소', [el('a', { className: 'dp-url', href: s.url, target: '_blank',
+      rel: 'noopener noreferrer' }, [s.url])]));
+  }
+}
+
+// ── view switch ─────────────────────────────────────────────────────
+document.querySelectorAll('#view-seg button').forEach(b => b.addEventListener('click', () => {
+  VIEW = b.dataset.view;
+  document.querySelectorAll('#view-seg button').forEach(x => {
+    x.classList.toggle('active', x === b);
+    x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+  });
+  if (DATA) renderSources(DATA);
+}));
+
+// ── load ────────────────────────────────────────────────────────────
+const main = document.getElementById('main');
+function show(which) {
+  document.getElementById('skeleton').hidden = which !== 'loading';
+  document.getElementById('content').hidden = which !== 'data';
+  document.getElementById('err').hidden = which !== 'error';
+  document.getElementById('gate').hidden = which !== 'gate';
+  ['ph-meta', 'view-seg', 'pipe'].forEach(id => {
+    document.getElementById(id).hidden = which === 'error' || which === 'gate';
+  });
+  main.setAttribute('aria-busy', which === 'loading' ? 'true' : 'false');
+}
+S.onForbidden = () => show('gate');
 
 async function load() {
   let d;
   try { d = await S.api('/api/health/sources'); }
-  catch (_) { return; }   // S.api already toasted, or opened the gate
+  catch (e) {
+    if (e && e.message === 'PIN required') return;   // the gate is already open
+    const code = /HTTP (\d+)/.exec(e && e.message || '');
+    document.getElementById('err-meta').textContent =
+      (LAST_OK ? '마지막으로 불러온 시각 ' + mdhm(LAST_OK) + ' · ' : '')
+      + '오류 ' + (code ? code[1] : (e && e.message) || '알 수 없음');
+    show('error');
+    return;
+  }
   DATA = d;
-  document.getElementById('asof').textContent = (d.asof || '').slice(0, 16).replace('T', ' ') + ' KST';
-  ['sec-sum', 'sec-src', 'sec-mkt', 'sec-job'].forEach(id => { document.getElementById(id).hidden = false; });
-  renderSummary(d); renderSources(d); renderMarket(d); renderJobs(d);
+  LAST_OK = new Date().toISOString();
+  THEME_NAME = {};
+  d.news.themes.forEach(t => { if (t.name_kr) THEME_NAME[t.theme_id] = t.name_kr; });
+  const items = checkItems(d);
+  renderHead(d, items);
+  renderCheck(d, items);
+  renderSide(d);
+  renderSources(d);
+  show('data');
+  syncSide();
+  if (OPEN) renderPanel();
 }
 document.getElementById('btn-reload').addEventListener('click', load);
-window.addEventListener('resize', () => { if (DATA) renderSources(DATA); });
+document.getElementById('btn-retry').addEventListener('click', () => { show('loading'); load(); });
+show('loading');
 load();
+S.whenVisible(load, POLL_MS);
 </script>
 </body>
 </html>
