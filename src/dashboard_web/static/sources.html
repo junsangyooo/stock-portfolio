@@ -39,6 +39,7 @@ a { color:inherit; }
 .pipe { color:var(--dim); font-size:var(--text-xs); display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-1); }
 .pipe b { color:var(--fg); font-weight:500; }
 .pipe .lci { color:var(--muted); }
+.poll-err { color:var(--red); }
 .view-seg { display:flex; width:100%; }
 .view-seg button { flex:1; font-size:var(--text-sm); padding:var(--space-1) var(--space-3); white-space:nowrap; }
 .ph-meta .sk { width:280px; max-width:100%; }
@@ -337,6 +338,7 @@ a { color:inherit; }
         </div>
       </div>
       <p class="pipe" id="pipe"></p>
+      <p class="pipe poll-err" id="poll-err" role="status" hidden></p>
     </div>
 
     <div class="panel gate" id="gate" hidden>
@@ -911,10 +913,17 @@ function openPanel(sid) {
 }
 function closePanel() {
   if (dp.hidden) return;
+  const was = OPEN;
   OPEN = null;
   dp.hidden = true;
   const r = releaseFocus; releaseFocus = null;
   if (r) r();
+  // the row the panel was opened from may have been redrawn by a poll
+  const at = document.activeElement;
+  if (!at || at === document.body || dp.contains(at)) {
+    const row = document.querySelector('tr.src[data-sid="' + CSS.escape(was) + '"] .src-btn');
+    if (row) row.focus();
+  }
 }
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
@@ -1046,12 +1055,20 @@ async function load() {
   catch (e) {
     if (e && e.message === 'PIN required') return;   // the gate is already open
     const code = /HTTP (\d+)/.exec(e && e.message || '');
-    document.getElementById('err-meta').textContent =
-      (LAST_OK ? '마지막으로 불러온 시각 ' + mdhm(LAST_OK) + ' · ' : '')
+    const why = (LAST_OK ? '마지막으로 불러온 시각 ' + mdhm(LAST_OK) + ' · ' : '')
       + '오류 ' + (code ? code[1] : (e && e.message) || '알 수 없음');
+    if (DATA) {
+      // a poll that fails (a deploy's 502) keeps what is on screen and says so
+      const pe = document.getElementById('poll-err');
+      pe.textContent = '새로 불러오지 못했어요 · ' + why;
+      pe.hidden = false;
+      return;
+    }
+    document.getElementById('err-meta').textContent = why;
     show('error');
     return;
   }
+  document.getElementById('poll-err').hidden = true;
   DATA = d;
   LAST_OK = new Date().toISOString();
   THEME_NAME = {};
@@ -1063,7 +1080,11 @@ async function load() {
   renderSources(d);
   show('data');
   syncSide();
-  if (OPEN) renderPanel();
+  if (OPEN) {
+    const inside = dp.contains(document.activeElement);
+    renderPanel();
+    if (inside) { const c = dp.querySelector('.dp-close'); if (c) c.focus(); }
+  }
 }
 document.getElementById('btn-reload').addEventListener('click', load);
 document.getElementById('btn-retry').addEventListener('click', () => { show('loading'); load(); });

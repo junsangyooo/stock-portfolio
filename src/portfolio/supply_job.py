@@ -60,7 +60,9 @@ def to_analyze(*, force: bool = False) -> list[str]:
 
 def _run_module(module: str, symbols: list[str], extra: list[str]) -> int:
     if not symbols:
-        print(f"{module}: 0 symbols — nothing to do")
+        # still end with a summary: the sources page reads a run without one
+        # as one that died
+        print(json.dumps({"module": module, "symbols": 0, "done": "nothing to do"}))
         return 0
     return subprocess.run(
         [sys.executable, "-m", module, "--symbols", ",".join(symbols), *extra],

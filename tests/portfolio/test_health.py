@@ -80,9 +80,20 @@ def test_a_run_still_going_is_running_and_one_that_never_finished_is_a_problem(t
     prev = '{"date": "d", "collect": {"failed": []}, "daily": {}}\n'
     (tmp_path / "news.log").write_text(
         prev + f"@run {started}\n" + '[17:01:16]   {"date": "d", "written": 3, "failed": []}\n')
-    assert health.job("news", "news.log", 14, 1, "collect")["status"] == "running"
+    assert health.job("news", "news.log", 14, 1, "collect", 3)["status"] == "running"
     (tmp_path / "news.log").write_text(prev + "@run 2026-01-01T06:00:00+09:00\n")
-    j = health.job("news", "news.log", 14, 1, "collect")
+    j = health.job("news", "news.log", 14, 1, "collect", 3)
     assert j["status"] == "problem" and "끝 요약 없음" in j["problems"]
     (tmp_path / "news.log").write_text(f"@run {started}\n" + prev)
-    assert health.job("news", "news.log", 14, 1, "collect")["status"] == "ok"
+    assert health.job("news", "news.log", 14, 1, "collect", 3)["status"] == "ok"
+
+
+def test_a_run_that_died_hours_ago_is_a_problem_not_running(tmp_path, monkeypatch):
+    """The audit's case: a cycle killed mid-way read as 'running' for half a day."""
+    from datetime import timedelta
+    monkeypatch.setattr(paths, "LOGS_DIR", tmp_path)
+    started = (datetime.now(kst.KST) - timedelta(hours=5)).isoformat()
+    (tmp_path / "news.log").write_text(
+        f"@run {started}\n" + '[17:01:16]   {"date": "d", "written": 3, "failed": []}\nTraceback ...\n')
+    j = health.job("news", "news.log", 14, 1, "collect", 3)
+    assert j["status"] == "problem" and "끝 요약 없음" in j["problems"]

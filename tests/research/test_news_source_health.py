@@ -122,3 +122,20 @@ def test_pipeline_health_counts_today_and_the_queue():
     p = read.pipeline_health(now=NOW)
     assert p["pending_enrich"] == 1 and p["n_themes"] >= 23
     assert p["collected_today"] == 1 and p["enriched_today"] == 0
+
+
+def test_the_week_starts_at_the_first_shown_sweep_not_its_day():
+    """Between 06:00 and 17:00 the oldest shown sweep is a 17:00 one; that
+    day's morning items must not count as collected outside a sweep."""
+    with connect() as c:
+        _cursor(c, "aitimes")
+        _run(c, "2026-10-13T17:00:00+09:00", "aitimes", written=2)
+        for i, fetched in enumerate(("2026-10-13T06:00:01+09:00", "2026-10-13T17:00:01+09:00",
+                                     "2026-10-13T17:00:02+09:00")):
+            c.execute("INSERT INTO signals (dedup_key, title, source_id, source_group, lead_lag, "
+                      "fetched_at, collected_on, enriched_at) VALUES (?, 't', 'aitimes', 'news', "
+                      "'lagging', ?, '2026-10-13', 'x')", (f"k{i}", fetched))
+        c.commit()
+    a = _by_id()["aitimes"]
+    assert a["week"]["collected"] == 2 and a["week"]["outside"] == 0
+    assert a["week"]["important"] == 0                       # all importance NULL: 0, not None

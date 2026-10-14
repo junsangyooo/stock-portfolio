@@ -23,18 +23,20 @@ from ..universe import search as universe
 from .store import holding_store
 
 # (job, log file, hours between runs before it counts as late, summaries kept,
-# a key only the run's final summary has) — the schedule in
-# deploy/portfolio.cron. The news cycle prints a summary per stage on the way;
-# only its last one carries "collect", so the run is over when that appears.
+# a key only the run's final summary has, hours a run may take) — the
+# schedule in deploy/portfolio.cron. The news cycle prints a summary per stage
+# on the way; only its last one carries "collect". A run without its final
+# summary is "running" until its ceiling, then a run that died (measured: a
+# news cycle 67–85 min, an analysis batch of 20 under an hour).
 JOBS = (
-    ("news", "news.log", 14, 1, "collect"),
-    ("backup", "backup.log", 26, 1, None),
-    ("fundamental", "fundamental.log", 26, 1, None),
-    ("etf", "etf.log", 26, 1, None),
-    ("snapshot", "snapshot.log", 14, 1, None),
-    ("screener", "screener.log", 26, 1, None),
-    ("universe", "universe.log", 26, 1, None),
-    ("analysis", "analysis.log", 4 * 24, 1, None),   # weekdays only
+    ("news", "news.log", 14, 1, "collect", 3),
+    ("backup", "backup.log", 26, 1, None, 1),
+    ("fundamental", "fundamental.log", 26, 1, None, 1),
+    ("etf", "etf.log", 26, 1, None, 1),
+    ("snapshot", "snapshot.log", 14, 1, None, 1),
+    ("screener", "screener.log", 26, 1, None, 1),
+    ("universe", "universe.log", 26, 1, None, 1),
+    ("analysis", "analysis.log", 4 * 24, 1, None, 3),   # weekdays only
 )
 # Keys whose non-empty value means something in the run went wrong.
 _BAD = ("failed", "accounts_failed", "quotes_stale", "ohlcv_errors",
@@ -104,7 +106,7 @@ def _last_run(text: str) -> tuple[Optional[float], Optional[str]]:
 
 
 def job(name: str, log: str, late_h: float, keep: int,
-        final: Optional[str] = None) -> dict:
+        final: Optional[str] = None, max_run_h: float = 1) -> dict:
     """The newest summaries a job logged (today's file, else yesterday's
     rotated copy), whether its last run is still going, and whether that run
     is older than its schedule.
@@ -135,7 +137,7 @@ def job(name: str, log: str, late_h: float, keep: int,
         # before its summary leaves only that, which must not read as ok.
         if last and len(last[-1]) == 1:
             problems.append("끝 요약 없음")
-        if not done and age_h is not None and age_h <= late_h:
+        if not done and age_h is not None and age_h <= max_run_h:
             status = "running"
         elif not done and "끝 요약 없음" not in problems:
             problems.append("끝 요약 없음")

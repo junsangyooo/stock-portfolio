@@ -537,17 +537,13 @@ def _source_status(cur: dict, runs: list, last_day: Optional[str],
     return "ok", ""
 
 
-def _counts(c, since: str, until: Optional[str] = None) -> dict:
+def _counts(c, cond: str, args: list) -> dict:
     """Per source: items collected, enriched, important and untagged."""
-    cond, args = "collected_on >= ?", [since]
-    if until:
-        cond += " AND collected_on <= ?"
-        args.append(until)
     return {r["source_id"]: dict(r) for r in c.execute(
         "SELECT s.source_id, count(*) collected, count(s.enriched_at) enriched, "
-        f"sum(s.importance >= {IMPORTANT}) important, "
-        "sum(s.enriched_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM signal_themes t "
-        "WHERE t.signal_id = s.signal_id)) untagged "
+        f"coalesce(sum(s.importance >= {IMPORTANT}), 0) important, "
+        "coalesce(sum(s.enriched_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "
+        "signal_themes t WHERE t.signal_id = s.signal_id)), 0) untagged "
         f"FROM signals s WHERE {cond} GROUP BY s.source_id", args)}
 
 
@@ -615,10 +611,14 @@ def source_health(days: int = 30, now: Optional[datetime] = None) -> dict:
                            "WHERE collected_on >= ? GROUP BY 1, 2",
                            (window_start(GAP_DAYS, now),)):
             per_day.setdefault(r["source_id"], {})[r["collected_on"]] = r["n"]
-        c_today = _counts(c, today)
-        week_from = run_ats[0][:10] if run_ats else today
-        c_week = _counts(c, week_from)
-        c_30 = _counts(c, since)
+        c_today = _counts(c, "collected_on = ?", [today])
+        # The week is the shown sweeps, not calendar days: from 06:00 to 17:00
+        # the oldest shown sweep is a 17:00 one, and counting its whole day
+        # would take that morning's items in as if collected outside a sweep.
+        # fetched_at is the sweep's own clock (collect_all's now).
+        week_cond = ("s.fetched_at >= ?", [run_ats[0]]) if run_ats else ("collected_on = ?", [today])
+        c_week = _counts(c, *week_cond)
+        c_30 = _counts(c, "collected_on >= ?", [since])
         themes30: dict = {}
         for r in c.execute("SELECT s.source_id, t.theme_id, count(*) n FROM signals s "
                            "JOIN signal_themes t ON t.signal_id = s.signal_id "
@@ -629,9 +629,9 @@ def source_health(days: int = 30, now: Optional[datetime] = None) -> dict:
             "ON s.signal_id = t.signal_id WHERE s.collected_on >= ? GROUP BY 1", (since,))}
         examples = [dict(r) for r in c.execute(
             "SELECT s.signal_id, s.title, s.source_id FROM signals s "
-            "WHERE s.collected_on >= ? AND s.enriched_at IS NOT NULL AND NOT EXISTS "
+            f"WHERE {week_cond[0]} AND s.enriched_at IS NOT NULL AND NOT EXISTS "
             "(SELECT 1 FROM signal_themes t WHERE t.signal_id = s.signal_id) "
-            "ORDER BY s.signal_id DESC LIMIT 3", (week_from,))]
+            "ORDER BY s.signal_id DESC LIMIT 3", week_cond[1])]
 
     zero = {"collected": 0, "enriched": 0, "important": 0, "untagged": 0}
     out = []
