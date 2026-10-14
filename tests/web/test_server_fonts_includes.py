@@ -42,7 +42,7 @@ def test_every_page_preloads_the_font(client):
 def _page(tmp_path, monkeypatch, html, files):
     for name in ("theme.json", "shared.css", "shared.js"):
         (tmp_path / name).write_text((STATIC / name).read_text())
-    (tmp_path / "landing.html").write_text(html)
+    (tmp_path / "news.html").write_text(html)          # what `/` serves
     for rel, text in files.items():
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text(text)
@@ -90,8 +90,10 @@ def test_include_failures_are_500(client, monkeypatch, tmp_path, ref, files):
 
 
 def test_old_pages_include_the_legacy_css(client):
-    for name in ("landing.html", "account.html"):
+    # account.html was redone in stage 2 and no longer needs the old classes
+    for name in ("landing.html",):
         assert "<!--#include legacy.css-->" in (STATIC / name).read_text(), name
+    # `/` is the redesigned news page now: no legacy card grammar there
     body = client.get("/", headers=HOST).text
-    assert 'data-include="legacy.css"' in body and ".news-card" in body
+    assert 'data-include="legacy.css"' not in body and 'data-include="news/news.js"' in body
     assert "<!--#include" not in (STATIC / "sources.html").read_text()

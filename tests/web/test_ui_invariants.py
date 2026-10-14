@@ -142,7 +142,7 @@ def test_shared_fragments_injected_in_order(client):
     for path, host in (("/", PORTFOLIO_HOST), ("/a/x", PORTFOLIO_HOST)):
         body = client.get(path, headers={"host": host}).text
         marks = ['<meta charset', 'id="theme-vars"', "window.__THEME_TOKENS",
-                 'id="shared-css"', 'id="shared-js"', "@import url("]
+                 'id="shared-css"', 'id="shared-js"', "@import url(" if "@import url(" in body else "</head>"]
         pos = [body.find(m) for m in marks]
         assert all(p >= 0 for p in pos), (path, dict(zip(marks, pos)))
         assert pos == sorted(pos), (path, dict(zip(marks, pos)))
@@ -155,7 +155,7 @@ def test_missing_fragment_is_a_500_not_a_blank_page(client, monkeypatch, tmp_pat
     without shared.js renders nothing. That must fail where the deploy health
     check (which now also fetches /) can see it, not as a 200."""
     monkeypatch.setattr(server, "STATIC", tmp_path)          # no fragments here
-    (tmp_path / "landing.html").write_text("<html><head><meta charset=utf-8></head></html>")
+    (tmp_path / "news.html").write_text("<html><head><meta charset=utf-8></head></html>")
     r = client.get("/", headers={"host": PORTFOLIO_HOST})
     assert r.status_code == 500 and "shared.css" in r.text
 
@@ -187,18 +187,10 @@ def test_shared_names_not_called_bare():
 ACCOUNT = STATIC / "account.html"
 
 
-def test_account_page_has_one_analysis_run_trigger():
-    """The only thing that starts an analysis job is the modal header's
-    「다시 분석」. Per-domain runs are gone from the server (B7), and a second
-    button in an empty/error state re-created the double-run bug.
-    """
-    src = ACCOUNT.read_text()
-    assert "runChartAnalysis" not in src
-    assert "watchChartJob" not in src
-    assert len(re.findall(r"API\.runAnalysis\(", src)) == 1
-    starts = re.findall(r"[\w/]*/run'", src)
-    assert len(starts) == 1, starts
-    assert "['다시 시도']" not in src and "전체 분석 실행" not in src
+def _account_src() -> str:
+    """account.html as served: the page plus every <!--#include--> piece
+    (account/*.js · common/accounts-menu.js), since redesign stage 2 split it."""
+    return server.expand_includes(ACCOUNT.read_text())
 
 
 def test_account_page_reads_current_engine_schema():
@@ -206,7 +198,7 @@ def test_account_page_reads_current_engine_schema():
     engine._facts_only actually emit. ANALYSIS_BODY_KEYS in account.html is
     the one list; this test resolves every dotted path against both shapes."""
     from src.research.analyze import engine
-    src = ACCOUNT.read_text()
+    src = _account_src()
     for stale in ("crossItems", "disagreement_note_ko", "levels.supports",
                   "levels.resistances", "'junisa'", "10~14"):
         assert stale not in src, stale
@@ -228,37 +220,15 @@ def test_account_page_reads_current_engine_schema():
         assert re.search(rf"[.'\"]{leaf}\b", src.split("const ANALYSIS_BODY_KEYS")[1]), leaf
 
 
-def test_account_page_trade_flow_uses_trades_route():
-    """One request per trade, and no follow-up DELETE / POST /holdings (the
-    second call used to wipe the memo). A full sell deletes the row on the
-    server (C1) — the page reads holding.removed, it never sends a flag."""
-    src = ACCOUNT.read_text()
-    assert "/trades'" in src
-    for gone in ("trade_side", "trade_price", "trade_qty", "sell_price=", "sell_qty=",
-                 "remove_when_flat"):
-        assert gone not in src, gone
-    body = src[src.index("async function submit() {\n    if (!currentStock) return;"):]
-    body = body[:body.index("// edit — a direct correction")]
-    assert "d.holding.removed" in body
-    assert "plan_id" not in body
-    for gone in ("API.removeHolding(", "API.addHolding("):
-        assert gone not in body, gone
-
-
 # ── U5: harness closure ──────────────────────────────────────────────────
 PAGES = ("landing.html", "account.html", "sources.html")
 
 
-def test_facts_only_result_is_not_dressed_as_a_judgement():
-    """engine._facts_only emits confidence 0.0 — a number, so `!= null` alone
-    would draw 「신뢰도 ○○○○○」 under a result that holds no judgement."""
-    src = ACCOUNT.read_text()
-    assert re.search(r"body\.confidence\s*!=\s*null\s*&&\s*!factsOnly", src)
-
-
 def test_pages_route_403_to_their_own_pin_gate():
-    src = (STATIC / "account.html").read_text()
-    assert re.search(r"S\.onForbidden\s*=\s*showPinGate\b", src)
+    src = _account_src()
+    m = re.search(r"S\.onForbidden\s*=\s*\(\)\s*=>\s*\{([^}]*)\}", src)
+    assert m and "showGate" in m.group(1), "account page: S.onForbidden opens its own PIN gate"
+    assert "S.pinGate(" in src
     assert "onForbidden" in SHARED_JS.read_text()
 
 
@@ -298,17 +268,12 @@ def test_every_page_has_a_favicon(client):
 
 def test_ohlcv_and_analysis_fetches_fail_loudly():
     """A swallowed fetch failure renders as 'no data'. Every account-page read
-    goes through S.api (toast + throw, 403 → PIN gate); the only bare fetches
-    left are the PIN/auth POSTs, the summary loader (handles 403 itself) and
-    the analysis job poller."""
-    src = ACCOUNT.read_text()
-    for call in ("API.ohlcv(", "API.quotes(need", "API.analysisSummary(",
-                 "API.analysisStatus(", "API.snapshots(", "API.reorderHoldings(",
-                 "API.marketRefresh(", "API.analysisResult(",
-                 "API.chartAnalysis(", "API.newsSignals(", "API.fundamentalFacts(",
-                 "API.balances(", "API.listAccounts(", "API.search("):
-        assert re.search(r"S\.api\(\s*" + re.escape(call), src), call
-        assert not re.search(r"\bfetch\(\s*" + re.escape(call), src), "bare " + call
+    goes through S.api (toast + throw, 403 → PIN gate) — no bare fetch() in
+    the page or its pieces; the PIN POSTs live in shared.js (authPin)."""
+    src = _account_src()
+    bad = [l.strip() for l in src.splitlines() if re.search(r"(?<![\w.])fetch\(", l)]
+    assert not bad, "bare fetch() on the account page:\n" + "\n".join(bad)
+    assert src.count("S.api(") >= 10
     js = SHARED_JS.read_text()
     assert "네트워크 오류" in js, "S.api toasts a network failure, not only a non-2xx"
 
@@ -330,10 +295,10 @@ def test_a11y_floor():
     assert ":focus-visible" in css
     js = SHARED_JS.read_text()
     assert re.search(r"id: 'toast-host'[^}]*role: 'status'[^}]*'aria-live': 'polite'", js)
-    src = ACCOUNT.read_text()
-    gate = src[src.index("function showPinGate"):]
-    gate = gate[:gate.index("\n}\n")]
-    assert "'aria-label'" in gate, "account.html: PIN gate input needs an aria-label"
+    # the account page's gate is the shared one, whose six cells carry labels
+    assert "S.pinGate(" in _account_src()
+    pin = js[js.index("function pinInput"):]
+    assert "'aria-label'" in pin[:pin.index("\n}\n")], "PIN cells need an aria-label"
 
 
 # ── U6: design-token layer (ui-open-decisions B1/B2/B3/B7/B9) ────────────

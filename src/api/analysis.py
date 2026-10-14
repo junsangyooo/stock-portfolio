@@ -113,7 +113,16 @@ def get_fundamental_facts(market: str, code: str) -> dict:
     symbol_id = _sid(market, code)
     try:
         from ..research.fundamental.assemble import assemble_display
+        from ..market import peer
+        from ..market.store import etf_store
         facts = assemble_display(symbol_id, name=_display_name(symbol_id))
+        # the stock page's tiles: where it sits among its peers, and for an
+        # ETF its NAV snapshot instead of company statements
+        try:
+            facts["peer"] = peer.percentiles(symbol_id)
+        except Exception as e:  # noqa: BLE001 — a tile, not the tab
+            facts["peer"] = {"error": str(e)[:200]}
+        facts["etf"] = etf_store.read(symbol_id)
         facts["queried_at"] = _stamp()
         return facts
     except Exception as e:  # noqa: BLE001 — a missing store must not 500 the tab

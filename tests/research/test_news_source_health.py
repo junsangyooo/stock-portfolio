@@ -153,3 +153,4 @@ def test_themes_overview_has_every_field_with_a_daily_series():
     assert len(t) >= 23 and len(t["steel"]["series"]) == 7
     assert t["steel"]["today"] == {"date": _day(0), "score": 0.4, "trend": "up", "bullets": ["a"]}
     assert t["steel"]["items_today"] == 2 and t["battery"]["today"]["score"] is None
+    assert r["articles"][-1] == {"date": _day(0), "items": 2}         # distinct articles

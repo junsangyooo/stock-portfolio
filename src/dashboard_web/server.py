@@ -1,7 +1,7 @@
 """FastAPI dashboard server for portfolio-dashboard.
 
 Routes:
-  GET /              — landing.html (홈 / 소식)
+  GET /              — news.html (수집: 분야 분위기 · 오늘의 핵심 · 흐름)
   GET /a/{id}        — account.html (per-account view)
   GET /sources       — sources.html (source and job health)
   GET /favicon*.png · /favicon.ico · /apple-touch-icon.png — product icons
@@ -402,7 +402,7 @@ def _is_portfolio_host(request: Request) -> bool:
 
 @app.get("/", response_class=HTMLResponse)
 def landing() -> HTMLResponse:
-    return _serve("landing.html")
+    return _serve("news.html")
 
 
 @app.get("/sources", response_class=HTMLResponse)

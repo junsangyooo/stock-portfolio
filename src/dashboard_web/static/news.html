@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>portfolio · 수집</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* SCR-NEWS 수집 · SCR-THEME 분야 상세(패널) — 디자인 인계 §7 '수집' 행,
+   Figma 12:147560. Tokens come from theme.json (server-injected); shared.css
+   carries the font, the .btn family, chip, segment, card, banner, state
+   block, skeleton, top bar, bottom tab and the side panel.
+   Mobile-first: 390 is the default (grid = name · 7 cells · today's score);
+   600px brings the 1440 chrome; 900px adds the count and first-line columns;
+   1100px puts 오늘의 핵심 beside the grid. Fields show by icon only (no
+   colour); a mood cell never carries text (인계 §3.8). */
+a { color: inherit; }
+
+/* ── page head: when · counts · next run · 내 종목 ── */
+.nh { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-gap-xs) var(--space-gap-md);
+      margin-bottom: var(--space-gap-sm); }
+.nh-title { display: flex; align-items: center; gap: var(--space-gap-sm); font-size: var(--type-heading-2-size);
+            line-height: var(--type-heading-2-line-height); }
+.nh-title .lci { display: none; }
+.nh-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-gap-xs) var(--space-gap-sm);
+           color: var(--text-muted); font-size: var(--type-caption-size); }
+.nh-meta b { color: var(--text-primary); font-weight: var(--type-number-style); font-size: var(--type-body-size); }
+.nh-meta .sk { width: 160px; }
+.nh-tools { margin-left: auto; display: flex; align-items: center; gap: var(--space-gap-sm); }
+.nh-banner:empty { display: none; }
+.nh-banner { margin-bottom: var(--space-gap-lg); }
+
+/* 내 종목 (off: quiet chip with a briefcase · on: black filter chip with ✕) */
+.btn.chip.mine-btn { gap: var(--space-gap-xs); }
+.btn.chip.mine-btn[aria-pressed="true"] { background: var(--bg-inverse); border-color: var(--bg-inverse);
+                                          color: var(--text-inverse); }
+
+/* ── layout ── */
+.nl { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-section); align-items: start; }
+.nl.is-stale .mg-card, .nl.is-stale .core, .nl.is-stale .flow-wrap { opacity: 0.55; }
+
+/* ── mood grid card ── */
+.mg-card { display: flex; flex-direction: column; gap: var(--space-gap-md); }
+.mg-card .card-head { justify-content: space-between; }
+.mg-card .card-head .meta { flex: 1; }
+.legend { display: inline-flex; align-items: center; gap: var(--space-gap-xs); color: var(--text-muted);
+          font-size: var(--type-caption-size); }
+.legend .sw { width: 12px; height: 12px; border-radius: var(--radius-cell); }
+.legend .lg-none { margin-left: var(--space-gap-xs); }
+.sw.b-none { background: var(--bg-default); border: var(--border-width) solid var(--border-default); }
+.mg-note:empty { display: none; }
+.mg-note .mg-info { display: flex; align-items: flex-start; gap: var(--space-gap-sm);
+                    padding: var(--space-gap-md); border-radius: var(--radius-control); background: var(--bg-subtle); }
+.mg-info .lci { margin-top: var(--space-gap-2xs); }
+.mg-note .mg-info { flex-wrap: wrap; }
+.mg-info-text { flex: 1 1 220px; min-width: 0; }
+.mg-info-acts { display: flex; gap: var(--space-gap-sm); margin-left: auto; }
+.mg-info-title { font-size: var(--type-body-size); }
+.mg-info-sub { color: var(--text-muted); font-size: var(--type-caption-size); }
+
+table.mg { width: calc(100% + 2 * var(--space-gap-xs)); border-collapse: separate;
+           border-spacing: var(--space-gap-xs) var(--space-gap-2xs);
+           margin: 0 calc(-1 * var(--space-gap-xs)); table-layout: fixed; }
+.mg th, .mg td { padding: 0; font-weight: var(--type-body-style); }
+.mg tbody th, .mg tbody td { height: 24px; line-height: 1; vertical-align: middle; }
+.mg thead th { color: var(--text-muted); font-size: var(--type-caption-size); line-height: var(--type-caption-line-height);
+               text-align: center; vertical-align: bottom; }
+.mg thead th.c-name, .mg thead th.c-line { text-align: left; }
+.mg thead th.c-score, .mg thead th.c-count { text-align: right; }
+.mg thead th.is-today { color: var(--text-primary); }
+.mg thead th span { display: block; }
+.mg thead .wd { display: none; }
+col.c-name { width: 34%; }
+col.c-score { width: 64px; }
+col.c-count, col.c-line { width: 0; }
+.mg th.c-count, .mg td.c-count, .mg th.c-line, .mg td.c-line { display: none; }
+.mg tbody tr { cursor: pointer; }
+.mg tbody tr:hover .mg-name { background: var(--bg-subtle); }
+.mg tbody tr.is-open .mg-name { background: var(--bg-subtle); }
+.btn.mg-name { width: 100%; justify-content: flex-start; gap: var(--space-gap-sm); min-height: 24px;
+               padding: 0 var(--space-gap-xs); border: none; background: transparent; border-radius: var(--radius-cell);
+               font-size: var(--type-caption-size); text-align: left; }
+.btn.mg-name .lci { display: none; color: var(--text-primary); }
+.mg-name .nm { flex: 1; min-width: 0; }
+.mg-name .mine-n { flex: none; color: var(--accent-default); font-size: var(--type-caption-size); }
+.mc { display: block; height: 22px; border-radius: var(--radius-cell); }
+.mc.is-today { box-shadow: inset 0 0 0 2px var(--text-primary); }
+.mc.is-today.b-none { box-shadow: none; border: 2px dashed var(--text-primary); }
+.mc.b-error { animation: none; }
+.b-positive-strong { background: var(--mood-positive-strong); }
+.b-positive { background: var(--mood-positive); }
+.b-neutral { background: var(--mood-neutral); }
+.b-negative { background: var(--mood-negative); }
+.b-negative-strong { background: var(--mood-negative-strong); }
+.b-none { background: var(--bg-default); box-shadow: inset 0 0 0 var(--border-width) var(--border-default); }
+.b-error { background: var(--skeleton-fill); }
+.mg td.c-score { text-align: right; white-space: nowrap; font-size: var(--type-caption-size); }
+.score { font-weight: var(--type-number-style); }
+.score .ar { margin-left: var(--space-gap-xs); font-size: var(--type-caption-size); }
+.score.s-pos { color: var(--verdict-positive); }
+.score.s-neg { color: var(--mood-negative-text); }
+.score.s-neutral { color: var(--text-primary); }
+.score.s-neutral .ar { color: var(--text-muted); }
+.score.s-none { color: var(--text-muted); }
+.mg td.c-count { text-align: right; color: var(--text-muted); font-size: var(--type-caption-size); padding-right: var(--space-gap-xs); }
+.mg td.c-line { font-size: var(--type-caption-size); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+                 padding-left: var(--space-gap-xs); }
+.mg tr.is-dim > * { opacity: 0.35; }
+.mg tr.is-quiet .c-line { color: var(--text-muted); }
+
+/* the folded row of fields without news today */
+.btn.mg-fold { width: 100%; justify-content: flex-start; gap: var(--space-gap-sm); min-height: 30px;
+               padding: var(--space-gap-xs) var(--space-gap-md); border: var(--border-width) dashed var(--border-default);
+               border-radius: var(--radius-control); background: var(--bg-default); font-size: var(--type-caption-size); }
+.btn.mg-fold { text-align: left; }
+.mg-fold .fold-names { flex: 1; min-width: 0; color: var(--text-muted); }
+.mg-fold .chev { transition: transform var(--motion-fast); }
+.mg-fold[aria-expanded="true"] .chev { transform: rotate(180deg); }
+.mg-fold[aria-expanded="true"] .fold-names { visibility: hidden; }
+.sk.mg-sk-row { height: 22px; }
+
+/* ── 오늘의 핵심 ── */
+.core { display: flex; flex-direction: column; gap: var(--space-gap-sm); }
+.sec-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-gap-xs) var(--space-gap-sm); }
+.sec-head .meta { color: var(--text-muted); font-size: var(--type-caption-size); }
+.core-list { display: flex; flex-direction: column; gap: var(--space-gap-sm); }
+a.core-card { display: flex; flex-direction: column; gap: var(--space-gap-sm); text-decoration: none;
+              background: var(--bg-default); border-radius: var(--radius-card); padding: var(--space-card-compact); }
+a.core-card:hover .core-title { text-decoration: underline; }
+.core-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-gap-sm); }
+.core-title { font-size: var(--type-body-size); }
+.core-meta, .fi-meta { display: flex; align-items: center; gap: var(--space-gap-xs); color: var(--text-muted);
+                       font-size: var(--type-caption-size); }
+.core-meta .lci, .fi-ext { width: var(--icon-size-sm); height: var(--icon-size-sm); }
+.core-sk { background: var(--bg-default); border-radius: var(--radius-card); padding: var(--space-card-compact); }
+.core-empty { background: var(--bg-default); border-radius: var(--radius-card); padding: var(--space-card-compact);
+              color: var(--text-muted); }
+/* importance: five dots, the filled ones count */
+.dots { display: inline-flex; gap: 2px; flex: none; }
+.dots i { width: 6px; height: 6px; border-radius: var(--radius-chip); background: var(--border-default); }
+.dots i.on { background: var(--text-primary); }
+
+/* ── 뉴스 흐름 · 소셜 ── */
+.flow-wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-section); }
+.flow-seg { margin-bottom: var(--space-gap-sm); }
+.flow { display: flex; flex-direction: column; }
+.flow .sec-head { margin-bottom: var(--space-gap-sm); }
+.flow-list { list-style: none; margin: 0; padding: 0; }
+.flow-list li { border-bottom: var(--border-width) solid var(--border-default); }
+a.fi { display: flex; align-items: flex-start; gap: var(--space-gap-sm); padding: var(--space-gap-md) 0;
+       text-decoration: none; }
+a.fi:hover .fi-title { text-decoration: underline; }
+.fi-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-gap-2xs); }
+.fi-meta .lci { width: var(--icon-size-sm); height: var(--icon-size-sm); color: var(--text-primary); }
+.fi-ext { color: var(--text-muted); margin-top: var(--space-gap-xs); }
+.flow-foot { padding-top: var(--space-gap-md); }
+.flow-empty { color: var(--text-muted); padding: var(--space-gap-md) 0; }
+
+/* ── 분야 상세 패널 (S.panel) ── */
+.tp .s-panel-head { flex-wrap: nowrap; align-items: flex-start; }
+.tp-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-gap-md); }
+.tp-ico { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--radius-control);
+          background: var(--bg-subtle); }
+.tp-ico .lci { width: var(--icon-size-lg); height: var(--icon-size-lg); }
+.tp-names { min-width: 0; }
+.tp-sub { color: var(--text-muted); font-size: var(--type-caption-size); }
+.tp-mood { display: flex; flex-direction: column; gap: var(--space-gap-sm); padding: var(--space-card-compact);
+           border-radius: var(--radius-card); background: var(--bg-subtle); }
+.tp-mood-top { display: flex; align-items: center; gap: var(--space-gap-sm); }
+.tp-mood-top .lbl { color: var(--text-muted); font-size: var(--type-caption-size); }
+.tp-mood-top .score { font-size: var(--type-number-size); }
+.tp-range { margin-left: auto; display: flex; align-items: center; gap: var(--space-gap-sm); color: var(--text-muted);
+            font-size: var(--type-caption-size); }
+.rg { position: relative; width: 96px; height: 6px; border-radius: var(--radius-chip); background: var(--border-default); }
+.rg-span { position: absolute; top: 0; bottom: 0; border-radius: var(--radius-chip); }
+.rg-mark { position: absolute; top: -3px; width: 2px; height: 12px; margin-left: -1px; background: var(--text-primary); }
+.tp-line { display: block; width: 100%; height: 132px; overflow: visible; }
+.tp-line .axis { fill: var(--text-muted); font-size: var(--type-caption-size); }
+.tp-line .grid0 { stroke: var(--text-muted); stroke-dasharray: 3 3; stroke-width: 1; }
+.tp-line .path { fill: none; stroke: var(--chart-price); stroke-width: 1.5; stroke-linejoin: round; }
+.tp-line .shift { fill: var(--bg-default); stroke: var(--verdict-positive); stroke-width: 1.5; }
+.tp-line .shift-t { fill: var(--verdict-positive); font-size: var(--type-caption-size); }
+.tp-line .last.s-pos { fill: var(--verdict-positive); }
+.tp-line .last.s-neg { fill: var(--mood-negative-strong); }
+.tp-line .last.s-neutral, .tp-line .last.s-none { fill: var(--text-primary); }
+.tp-flat { display: flex; flex-direction: column; gap: var(--space-gap-2xs); }
+.tp-flat .sub { color: var(--text-muted); font-size: var(--type-caption-size); }
+.tp-sec { display: flex; flex-direction: column; gap: var(--space-gap-sm); }
+.tp-sec h3 { font-size: var(--type-heading-2-size); line-height: var(--type-heading-2-line-height); }
+.tp-sec .muted { color: var(--text-muted); }
+.tp-sec .muted.small { font-size: var(--type-caption-size); }
+.tp-bullets { margin: 0; padding-left: var(--space-gap-lg); display: flex; flex-direction: column; gap: var(--space-gap-xs); }
+.chips { display: flex; flex-wrap: wrap; gap: var(--space-gap-sm); }
+.chips .chip { max-width: 100%; }
+.chips .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.chip.mine-stock { text-decoration: none; color: var(--text-primary); }
+a.chip.mine-stock:hover { background: var(--bg-subtle); }
+.dev-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+a.dev { display: flex; align-items: center; gap: var(--space-gap-sm); padding: var(--space-gap-xs) 0; text-decoration: none; }
+a.dev:hover .dev-pt { text-decoration: underline; }
+.dev-pt { flex: 1; min-width: 0; }
+.dev-date { flex: none; color: var(--text-muted); font-size: var(--type-caption-size); }
+.roll { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-gap-md); }
+.roll-card { display: flex; flex-direction: column; gap: var(--space-gap-xs); padding: var(--space-gap-md) var(--space-gap-lg);
+             border: var(--border-width) solid var(--border-default); border-radius: var(--radius-card); }
+.roll-card h3 { font-size: var(--type-heading-2-size); }
+.roll-text { font-size: var(--type-caption-size); }
+.roll-text.is-clamped { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.roll-card ul { margin: 0; padding-left: var(--space-gap-lg); font-size: var(--type-caption-size); color: var(--text-muted); }
+.roll-card .btn { align-self: flex-start; }
+.roll-none { background: var(--bg-subtle); border: none; }
+.roll-none .sub { color: var(--text-muted); font-size: var(--type-caption-size); }
+.tp-sk { display: flex; flex-direction: column; gap: var(--space-gap-lg); }
+.tp-sk .sk.big { height: 150px; }
+
+/* ── 390: header and grid sit on white, edge to edge ── */
+@media not all and (min-width: 600px) {
+  .news-page { padding-top: 0; }
+  .nh, .mg-card { margin-left: calc(-1 * var(--space-page-compact)); margin-right: calc(-1 * var(--space-page-compact));
+                  background: var(--bg-default); border-radius: 0; }
+  .nh { padding: var(--space-gap-md) var(--space-page-compact) 0; margin-bottom: 0; }
+  .nh-banner { margin: 0 calc(-1 * var(--space-page-compact)); padding: var(--space-gap-sm) var(--space-page-compact);
+               background: var(--bg-default); }
+  .mg-card { padding-top: var(--space-gap-xs); }
+  .mg-card .card-head { display: none; }
+  .nh .legend { margin-left: auto; }
+  .nl { gap: var(--space-gap-lg); }
+  .core { padding-top: var(--space-gap-sm); }
+}
+
+@media (min-width: 600px) {
+  .nh { margin-bottom: var(--space-section); }
+  .nh-title { font-size: var(--type-heading-1-size); line-height: var(--type-heading-1-line-height); }
+  .nh-title .lci { display: inline-block; width: var(--icon-size-lg); height: var(--icon-size-lg); }
+  .nh-meta b { font-size: var(--type-heading-2-size); }
+  .nh .legend.nh-legend { display: none; }
+  .mg thead .wd { display: block; }
+  .btn.mg-name .lci { display: inline-block; }
+  .btn.mg-name { font-size: var(--type-body-size); }
+  col.c-name { width: 150px; }
+  col.c-score { width: 72px; }
+  .mg td.c-score { font-size: var(--type-body-size); }
+  .roll { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 900px) {
+  col.c-day { width: 40px; }
+  col.c-count { width: 36px; }
+  col.c-line { width: auto; }
+  .mg th.c-count, .mg td.c-count, .mg th.c-line, .mg td.c-line { display: table-cell; }
+  .flow-wrap { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+  .flow-seg { display: none; }
+  .flow[hidden] { display: flex !important; }
+  /* the panel takes the right edge: the page gives it room instead of hiding under it */
+  body.has-panel .news-page { width: auto; max-width: none; margin-left: 0;
+                              margin-right: clamp(var(--layout-panel-min), 34vw, var(--layout-panel-max)); }
+}
+@media (min-width: 1100px) {
+  col.c-name { width: 160px; }
+  .nl { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+  .nl .flow-wrap { grid-column: 1 / -1; }
+  body.has-panel .nl { grid-template-columns: minmax(0, 1fr); }
+  body.has-panel .nl .core { display: none; }
+}
+</style>
+<!--#include common/accounts-menu.css-->
+</head>
+<body>
+<a class="skip-link" href="#main">본문으로 건너뛰기</a>
+<main id="main" class="page news-page" aria-busy="true">
+  <div class="nh" id="nh">
+    <h1 class="nh-title"><svg class="lci" aria-hidden="true"><use href="#i-newspaper"/></svg><span id="nh-when">수집</span></h1>
+    <p class="nh-meta" id="nh-meta"><span class="sk"></span></p>
+    <div class="legend nh-legend sm-down" id="nh-legend"></div>
+    <div class="nh-tools sm-up" id="nh-tools"></div>
+  </div>
+  <div class="nh-banner" id="nh-banner"></div>
+
+  <div class="nl" id="nl">
+    <section class="card mg-card" aria-labelledby="mg-h">
+      <div class="card-head">
+        <h2 id="mg-h">분야 분위기 7일</h2>
+        <span class="meta" id="mg-sub"></span>
+        <span class="legend" id="mg-legend"></span>
+      </div>
+      <div class="mg-note" id="mg-note"></div>
+      <table class="mg" id="mg">
+        <caption class="sr-only">분야별 최근 7일 분위기</caption>
+        <colgroup><col class="c-name"><col class="c-day" span="7"><col class="c-score"><col class="c-count"><col class="c-line"></colgroup>
+        <thead id="mg-head"></thead>
+        <tbody id="mg-body"></tbody>
+        <tbody id="mg-quiet" hidden></tbody>
+      </table>
+      <div id="mg-fold-slot"></div>
+    </section>
+
+    <section class="core" aria-labelledby="core-h">
+      <div class="sec-head"><h2 id="core-h">오늘의 핵심</h2><span class="meta" id="core-sub"></span></div>
+      <div class="core-list" id="core-list"></div>
+    </section>
+
+    <div class="flow-wrap" id="flow-wrap">
+      <div class="flow-seg sm-down-flow" id="flow-seg"></div>
+      <section class="card flow" id="flow-news" aria-labelledby="flow-news-h">
+        <div class="sec-head"><h2 id="flow-news-h">뉴스 흐름</h2><span class="meta" id="flow-news-sub">최신순</span></div>
+        <ul class="flow-list" id="flow-news-list"></ul>
+        <div class="flow-foot" id="flow-news-foot"></div>
+      </section>
+      <section class="card flow" id="flow-social" aria-labelledby="flow-social-h">
+        <div class="sec-head"><h2 id="flow-social-h">소셜</h2><span class="meta">지금 오가는 이야기</span></div>
+        <ul class="flow-list" id="flow-social-list"></ul>
+        <div class="flow-foot" id="flow-social-foot"></div>
+      </section>
+    </div>
+  </div>
+</main>
+<!--#include common/accounts-menu.js-->
+<!--#include news/util.js-->
+<!--#include news/theme-panel.js-->
+<!--#include news/news.js-->
+</body>
+</html>

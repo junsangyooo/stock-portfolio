@@ -354,6 +354,26 @@ body.has-bottomtab { padding-bottom: calc(var(--layout-bottomtab-height) + env(s
 .s-dialog-foot.keep-cancel .dlg-cancel { display: inline-flex; flex: 1; }
 .pin-prompt { display: flex; flex-direction: column; gap: var(--space-gap-md); }
 
+/* ── form field (Figma Input · 계좌 추가·설정·대화상자): caption label above,
+   40px box, hint or error below. .field-row puts two side by side (390 too). */
+.field { display: flex; flex-direction: column; gap: var(--space-gap-xs); min-width: 0; }
+.field-label { color: var(--text-muted); font-size: var(--type-caption-size); line-height: var(--type-caption-line-height); }
+.field-hint { color: var(--text-muted); font-size: var(--type-caption-size); }
+.field-error { color: var(--status-error); font-size: var(--type-caption-size); }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-gap-sm); }
+.input {
+  width: 100%; min-height: var(--control-height-input); padding: 0 var(--space-control-x);
+  border: var(--border-width) solid var(--border-default); border-radius: var(--radius-control);
+  background: var(--bg-default); color: var(--text-primary); font-size: var(--type-body-size);
+}
+textarea.input { padding: var(--space-control-x); resize: vertical; line-height: var(--type-body-line-height); }
+.input::placeholder { color: var(--text-disabled); }
+.input:focus { outline: none; border-color: var(--focus-ring); box-shadow: 0 0 0 1px var(--focus-ring); }
+.input:disabled { background: var(--bg-disabled); color: var(--text-disabled); }
+.input[aria-invalid="true"] { border-color: var(--status-error); }
+.field .pin-input { align-items: flex-start; }
+.form-stack { display: flex; flex-direction: column; gap: var(--space-gap-lg); }
+
 /* ── side panel (Figma PNL-*) — 390 full sheet ── */
 .s-panel {
   position: fixed; inset: 0; z-index: var(--z-panel); overflow-y: auto;

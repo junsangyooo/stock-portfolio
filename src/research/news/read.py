@@ -177,6 +177,11 @@ def themes_overview(days: int = MOOD_DAYS, now: Optional[datetime] = None) -> di
                 "JOIN signals s ON s.signal_id = t.signal_id WHERE s.collected_on >= ? "
                 "GROUP BY 1, 2", (since,)):
             counts.setdefault(r["theme_id"], {})[r["d"]] = r["n"]
+        # distinct articles per day — the per-field counts above count an
+        # article once for every field it belongs to (33.8% have several)
+        per_day = {r[0]: r[1] for r in c.execute(
+            "SELECT collected_on, count(*) FROM signals WHERE collected_on >= ? "
+            "GROUP BY 1", (since,))}
         week = {r[0]: r[1] for r in c.execute(
             "SELECT theme_id, max(week_start) FROM theme_weekly GROUP BY 1")}
         month = {r[0]: r[1] for r in c.execute(
@@ -203,7 +208,8 @@ def themes_overview(days: int = MOOD_DAYS, now: Optional[datetime] = None) -> di
             "weekly_start": week.get(t.theme_id), "monthly": month.get(t.theme_id),
             "last_shift": shifts[t.theme_id],
         })
-    return {"days": day_keys, "themes": out}
+    return {"days": day_keys, "themes": out,
+            "articles": [{"date": d, "items": per_day.get(d, 0)} for d in day_keys]}
 
 
 # ── landing feed ────────────────────────────────────────────────────────────
