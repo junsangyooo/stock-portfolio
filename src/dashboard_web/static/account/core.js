@@ -15,8 +15,11 @@
 //   ACC.held(h) · ACC.region(sid) · ACC.holding(sid) · ACC.market(region) · ACC.lock() · ACC.toast(msg, opts)
 //
 // core가 ACC.data에 붙이는 것 (시세 판정, 인계 §3.2·§3.3)
-//   data.markets[region] = { phase, session, today, label: S.pnlLabel(...) }   region 'KR'|'US'
-//   data.warm = { state: 'idle'|'warming'|'ok'|'error', at }
+//   data.markets[region] = { phase, session, last_session, today, known, label: S.pnlLabel(...) }
+//     region 'KR'|'US'. phase·last_session은 서버 달력(GET /api/market/session,
+//     휴장일 포함)이고, 계좌를 다시 읽을 때마다 함께 다시 읽는다. 그 경로를
+//     못 읽으면 시계만으로 추정(S.marketState, known: false — 주말만 앎)
+//   data.warm = { state: 'idle'|'warming'|'ok'|'error', at, kind: 'warm'|'refresh' }
 //   holding.region · holding.code · holding.held (qty>0) · holding.q = S.quoteState(...)
 //
 // 다른 파일이 정의하는 것: ACC.openTrade · ACC.openHoldFix (종목 담당),
@@ -31,11 +34,11 @@
 
   const id = decodeURIComponent((location.pathname.split('/')[2] || '').trim());
   const listeners = {};
-  const sessions = {};               // region → 'YYYY-MM-DD' (대표 종목의 마지막 일봉)
+  let sessionInfo = null;            // GET /api/market/session 마지막 응답 { KR: {...}, US: {...} }
   let current = null;                // { name, view }
   let chromeEls = null;
   let chromeOpts = {};
-  let warm = { state: 'idle', at: null };
+  let warm = { state: 'idle', at: null, kind: 'warm' };
   let poller = null;
   let gateShown = false;
   let lastCheck = 0;
@@ -78,10 +81,18 @@
   ACC.accountRef = () => ({ id, name: (ACC.data && ACC.data.account && ACC.data.account.name) || (ACC.meta && ACC.meta.name) || id });
 
   function marketInfo(region) {
-    const phase = S.marketPhase(region);
-    const today = S.marketToday(region);
-    const session = sessions[region] || null;
-    return { phase, today, session, label: S.pnlLabel({ phase, session, today }) };
+    const known = !!(sessionInfo && sessionInfo[region]);
+    const m = known ? sessionInfo[region] : S.marketState(region);
+    return { phase: m.phase, today: m.today, session: m.last_session, last_session: m.last_session,
+      known, label: S.pnlLabel(m) };
+  }
+  // 서버 달력: 실패하면 지난 응답(없으면 시계 추정)을 그대로 쓴다
+  async function loadMarketSession() {
+    try {
+      const r = await S.api('/api/market/session', { toast: false, gate: false });
+      if (r && r.KR && r.US) sessionInfo = r;
+    } catch (e) { /* keep the last answer */ }
+    return sessionInfo;
   }
 
   // ── routing ────────────────────────────────────────────────────────
@@ -233,38 +244,10 @@
       h.region = r;
       if (!h.code) h.code = String(h.symbol_id).split(':')[1] || '';
       h.held = ACC.held(h);
-      h.q = S.quoteState({ quoteTs: h.quote_ts, market: r, session: m.session, phase: m.phase });
+      h.q = S.quoteState({ quoteTs: h.quote_ts, market: r, session: m });
     });
     d.warm = warm;
     return d;
-  }
-
-  // The last trading day per market: the newest daily bar of one held symbol
-  // (인계 §3.2 — quote_ts is when a quote arrived, not a trading day).
-  async function loadSessions(d) {
-    const pick = {};
-    (d.holdings || []).forEach(h => {
-      const r = ACC.region(h.symbol_id);
-      if (!pick[r] || (!ACC.held(pick[r]) && ACC.held(h))) pick[r] = h;
-    });
-    const jobs = Object.keys(pick).filter(r => !sessions[r]).map(async r => {
-      const [m, c] = pick[r].symbol_id.split(':');
-      try {
-        const res = await S.api('/api/market/ohlcv/' + encodeURIComponent(m) + '/' + encodeURIComponent(c) + '?n=1',
-          { toast: false, gate: false });
-        const b = (res.bars || [])[res.bars.length - 1];
-        if (b && b.ts) sessions[r] = barDate(b.ts, r);
-      } catch (e) { /* the label falls back to today */ }
-    });
-    await Promise.all(jobs);
-    return jobs.length > 0;
-  }
-  // Daily bars are stamped at the session's local midnight (KR) or UTC
-  // midnight (US); read the date in UTC+9 for KR and UTC for US so both
-  // land on their own calendar day.
-  function barDate(ts, region) {
-    const shift = region === 'KR' ? 9 * 3600 : 0;
-    return new Date((ts + shift) * 1000).toISOString().slice(0, 10);
   }
 
   async function fetchMeta() {
@@ -279,6 +262,7 @@
   ACC.reload = async function (opts) {
     opts = opts || {};
     const seq = ++loadSeq;
+    const sess = loadMarketSession();          // the calendar, read again with every account read
     let d;
     try {
       d = await S.api(ACC.path(''), { toast: false });
@@ -287,11 +271,14 @@
       if (err.forbidden) return ACC.data;                  // S.onForbidden already put up the gate
       if (err.status === 403 && /PIN을 먼저/.test(err.message || '')) { fetchMeta().then(() => showGate({ noPin: true })); return null; }
       if (err.status === 404) { showProblem('not_found'); return null; }
-      if (opts.quiet && ACC.data) { ACC.toast('계좌를 다시 읽지 못했어요', { kind: 'err' }); return ACC.data; }
+      // a recheck (back from a lock) that cannot reach the server shows no numbers
+      if (opts.quiet && ACC.data && !opts.recheck) { ACC.toast('계좌를 다시 읽지 못했어요', { kind: 'err' }); return ACC.data; }
       showProblem('error', err);
       return null;
     }
+    await sess;
     if (seq !== loadSeq) return ACC.data;
+    unhide();
     lastCheck = Date.now();
     const wasReady = ACC.state === 'ready';
     ACC.data = enrich(d);
@@ -302,26 +289,24 @@
     if (!wasReady) { renderChrome(); route(); }
     else if (!opts.quiet) renderChrome();
     emit('data', ACC.data);
-    if (await loadSessions(d)) {
-      if (ACC.data === d) { enrich(d); emit('data', d); }
-    }
     return ACC.data;
   };
 
   // ── 시세 데우기 (인계 §3.3) ────────────────────────────────────────
-  function setWarm(state) {
-    warm = { state, at: Date.now() };
+  function setWarm(state, kind) {
+    warm = { state, at: Date.now(), kind: kind || 'warm' };
     if (ACC.data) ACC.data.warm = warm;
     emit('warm', warm);
   }
   // ACC.warm()            열 때: 모든 보유, 5분 안의 시세면 그대로 ('시세 받는 중')
   // ACC.warm(true)        장중 5분마다: 열린 시장 종목만, 조용히
-  // ACC.refreshQuotes()   ↻: 모든 보유를 새로 ('시세 받는 중')
+  // ACC.refreshQuotes()   ↻: POST /api/market/refresh (보유 종목 일봉 갭필 + 시세
+  //                       새로) 뒤 계좌를 다시 읽는다 ('새로 받는 중')
   ACC.warm = async function (onlyOpen, maxAge) {
     const d = ACC.data;
     if (!d) return;
     let hs = (d.holdings || []);
-    if (onlyOpen) hs = hs.filter(h => S.marketPhase(ACC.region(h.symbol_id)) === 'open');
+    if (onlyOpen) hs = hs.filter(h => marketInfo(ACC.region(h.symbol_id)).phase === 'open');
     const syms = hs.map(h => h.symbol_id);
     if (!syms.length) { if (!onlyOpen) setWarm('ok'); return; }
     if (!onlyOpen) setWarm('warming');
@@ -336,13 +321,37 @@
     await ACC.reload({ quiet: true });
     if (!onlyOpen || warm.state !== 'ok') setWarm('ok');
   };
-  ACC.refreshQuotes = () => (warm.state === 'warming' ? Promise.resolve() : ACC.warm(false, 10));
+  ACC.refreshQuotes = async function () {
+    if (warm.state === 'warming' || !ACC.data) return;
+    setWarm('warming', 'refresh');
+    let res = null;
+    try {
+      res = await S.api('/api/market/refresh', { method: 'POST', toast: false });
+    } catch (err) {
+      if (err.forbidden) { stopPoll(); return; }
+      setWarm('error', 'refresh');
+      return;
+    }
+    // new bars: the stock view's and the trade dialog's caches start over
+    if (ACC.stk && ACC.stk.forget) ['daily:', 'bars:', 'quote:'].forEach(k => ACC.stk.forget(k));
+    await ACC.reload({ quiet: true });
+    setWarm('ok', 'refresh');
+    if (res && res.failed > 0) ACC.toast('일봉을 받지 못한 종목이 ' + res.failed + '개 있어요 · 저장된 숫자를 보여 줘요', { kind: 'err' });
+  };
+  // 장중 5분마다: 서버 달력을 다시 묻고, 열린 시장이 있으면 그 종목만 데운다.
+  // 열림·마감이 바뀌었으면(장 시작, 마감) 계좌를 다시 읽어 라벨을 바꾼다.
   function startPoll() {
     if (poller) return;
-    poller = S.whenVisible(() => {
+    poller = S.whenVisible(async () => {
       if (ACC.state !== 'ready' || !ACC.data) return;
-      const anyOpen = Object.keys(ACC.data.markets || {}).some(r => S.marketPhase(r) === 'open');
-      if (anyOpen) ACC.warm(true);
+      const before = ACC.data.markets || {};
+      await loadMarketSession();
+      if (ACC.state !== 'ready' || !ACC.data) return;
+      const regions = Object.keys(before);
+      if (regions.some(r => marketInfo(r).phase === 'open')) ACC.warm(true);
+      else if (regions.some(r => marketInfo(r).phase !== before[r].phase || marketInfo(r).session !== before[r].session)) {
+        ACC.reload({ quiet: true });
+      }
     }, POLL_MS);
   }
   function stopPoll() { if (poller) { poller(); poller = null; } }
@@ -350,6 +359,7 @@
   // ── 잠금 ───────────────────────────────────────────────────────────
   function showGate(o) {
     o = o || {};
+    unhide();
     stopPoll();
     unmountCurrent();
     closeLayers();
@@ -373,7 +383,23 @@
     document.querySelectorAll('.s-scrim, .s-menu-scrim').forEach(n => n.remove());
     document.body.classList.remove('has-layer', 'has-panel');
   }
-  S.onForbidden = () => { fetchMeta().then(() => showGate()); };
+  // 세션이 끝났다는 403. 대화상자가 열려 있으면(입력 중) 본문을 비우지 않고 그
+  // 위에 PIN 다시 입력을 띄운다 — 통과하면 대화상자는 그대로, 계좌만 다시
+  // 읽는다. 취소하면 그때 게이트(금액을 남겨 두지 않는다).
+  let prompting = false;
+  S.onForbidden = () => {
+    if (prompting) return;
+    const dlgOpen = !!document.querySelector('.s-scrim .s-dialog');
+    if (!dlgOpen || ACC.state !== 'ready') { fetchMeta().then(() => showGate()); return; }
+    prompting = true;
+    stopPoll();
+    S.pinPrompt({ account: ACC.accountRef(), message: ACC.accountRef().name + ' 세션이 끝났어요 · 열린 창의 입력은 그대로예요',
+      hint: '6자리를 넣으면 이어서 볼 수 있어요' }).then(ok => {
+      prompting = false;
+      if (ok) { ACC.reload({ quiet: true }); startPoll(); }
+      else fetchMeta().then(() => showGate());
+    });
+  };
 
   ACC.lock = async function () {
     try {
@@ -382,6 +408,7 @@
       ACC.toast('잠그지 못했어요 · 잠시 뒤 다시 해 주세요', { kind: 'err' });
       return;
     }
+    S.rememberAccount(null);                 // the 계좌 tab no longer points here
     location.replace('/?locked=' + encodeURIComponent(ACC.id));
   };
 
@@ -391,7 +418,15 @@
     if (Date.now() - lastCheck < RECHECK_MS) return;
     ACC.reload({ quiet: true });
   }
-  window.addEventListener('pageshow', e => { if (e.persisted) { lastCheck = 0; recheck(); } });
+  // 뒤로 가기로 돌아온 페이지(bfcache)는 다시 확인이 끝날 때까지 본문을 가린다 —
+  // 잠근 계좌의 금액이 잠깐이라도 보이지 않게. 끝나면(읽음·게이트·오류) unhide().
+  window.addEventListener('pageshow', e => {
+    if (!e.persisted || ACC.state !== 'ready') return;
+    document.body.classList.add('is-rechecking');
+    lastCheck = 0;
+    ACC.reload({ quiet: true, recheck: true });
+  });
+  function unhide() { document.body.classList.remove('is-rechecking'); }
   document.addEventListener('visibilitychange', () => { if (!document.hidden) recheck(); });
 
   // ── page-level problems (계좌를 못 읽음 · 없는 계좌) ─────────────────
@@ -402,6 +437,7 @@
       fetchMeta().then(() => showProblem(kind, err));
       return;
     }
+    unhide();
     stopPoll();
     unmountCurrent();
     ACC.state = kind;

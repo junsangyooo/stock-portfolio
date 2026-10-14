@@ -17,6 +17,7 @@ const POLL_MS = 10 * 60 * 1000;
 const CACHE_KEY = 'pdash.newsCache.v1';
 const FLOW_FIRST = { news: 10, social: 6 };
 const CORE_N = 6;
+const FEED_LIMIT = 150;               // per lane: 오늘의 핵심 picks from a wider pool than the flow shows
 
 const ST = {
   feed: null, themes: null,            // last good payloads
@@ -72,6 +73,10 @@ S.chrome({
   bottomTabOpts: hasLast ? {} : { onAccounts: openAccounts },
 });
 $('nh-tools').appendChild(mineButton());
+// 소스 현황: a quiet text link beside 내 종목 (1440) and at the end of the head (390)
+const srcLink = cls => el('a', { className: 'nh-src ' + cls, href: '/sources' }, ['소스 현황']);
+$('nh-tools').appendChild(srcLink(''));
+$('nh').appendChild(srcLink('sm-down'));
 paintMineButtons();
 
 // legend: 부정 ■■■■■ 긍정 □ 없음 (the cell colours, no text on cells)
@@ -361,14 +366,16 @@ function renderCore() {
   }
   items.forEach(x => {
     const t = (x.themes || [])[0];
-    list.appendChild(el('a', { className: 'core-card', href: x.url || '#', target: '_blank', rel: 'noopener noreferrer' }, [
+    const url = S.safeUrl(x.url);           // only http(s) becomes a link; anything else stays text
+    list.appendChild(el(url ? 'a' : 'div', url ? { className: 'core-card', href: url, target: '_blank', rel: 'noopener noreferrer' }
+      : { className: 'core-card' }, [
       el('div', { className: 'core-top' }, [
         t ? el('span', { className: 'chip' }, [svgIco(S.newsThemeIcon(t.id)), t.kr]) : el('span', {}),
         U.dots(x.importance),
       ]),
       el('p', { className: 'core-title clamp-2' }, [x.title]),
-      el('p', { className: 'core-meta' }, [U.srcLabel(x.source) + ' · ' + timeOf(x), svgIco('external-link'),
-        el('span', { className: 'sr-only' }, ['새 탭에서 열려요'])]),
+      el('p', { className: 'core-meta' }, [U.srcLabel(x.source) + ' · ' + timeOf(x), url ? svgIco('external-link') : null,
+        url ? el('span', { className: 'sr-only' }, ['새 탭에서 열려요']) : null]),
     ]));
   });
 }
@@ -393,13 +400,15 @@ function renderFlow(kind) {
   shown.forEach(x => {
     const t = (x.themes || [])[0];
     const meta = [t ? t.kr : null, U.srcLabel(x.source), timeOf(x)].filter(Boolean).join(' · ');
-    ul.appendChild(el('li', {}, [el('a', { className: 'fi', href: x.url || '#', target: '_blank', rel: 'noopener noreferrer' }, [
+    const url = S.safeUrl(x.url);
+    ul.appendChild(el('li', {}, [el(url ? 'a' : 'div', url ? { className: 'fi', href: url, target: '_blank', rel: 'noopener noreferrer' }
+      : { className: 'fi' }, [
       el('div', { className: 'fi-body' }, [
         el('p', { className: 'fi-meta' }, [t ? svgIco(S.newsThemeIcon(t.id)) : null, el('span', { className: 'ellipsis' }, [meta])]),
         el('p', { className: 'fi-title' }, [x.title]),
       ]),
-      svgIco('external-link', 'fi-ext'),
-      el('span', { className: 'sr-only' }, ['새 탭에서 열려요']),
+      url ? svgIco('external-link', 'fi-ext') : null,
+      url ? el('span', { className: 'sr-only' }, ['새 탭에서 열려요']) : null,
     ])]));
   });
   if (all.length > FLOW_FIRST[kind]) {
@@ -563,7 +572,7 @@ async function load() {
   loading = (async () => {
     const q = { toast: false, gate: false };
     const [f, t] = await Promise.allSettled([
-      S.api('/api/analysis/news/feed', q),
+      S.api('/api/analysis/news/feed?limit=' + FEED_LIMIT, q),
       S.api('/api/analysis/news/themes?days=30', q),
     ]);
     const feedOk = f.status === 'fulfilled', themesOk = t.status === 'fulfilled';

@@ -21,7 +21,7 @@ const vm = require('vm');
 const src = require('fs').readFileSync(process.argv[1], 'utf8');
 const window = { __THEME_TOKENS: JSON.parse(process.argv[2]) };
 const document = { addEventListener() {}, body: null };
-vm.runInNewContext(src, { window, document, Intl, Date, Math, JSON, Promise, setTimeout, console });
+vm.runInNewContext(src, { window, document, Intl, Date, Math, JSON, Promise, setTimeout, console, URL });
 const S = window.S;
 const cases = JSON.parse(process.argv[3]);
 const out = cases.map(([fn, args]) => {
@@ -76,29 +76,55 @@ def test_dates_are_kst():
         ("fmtDate", ["2026-10-13T16:00:00Z"]),                 # 01:00 KST next day
         ("fmtDate", [None]),
         ("tradingDaysBetween", ["2026-10-09", "2026-10-13"]),  # Fri → Tue = Mon, Tue
-        ("marketPhase", ["KR", "2026-10-13T01:00:00Z"]),        # 10:00 KST Tue
-        ("marketPhase", ["KR", "2026-10-13T07:00:00Z"]),        # 16:00 KST
-        ("marketPhase", ["KR", "2026-10-11T01:00:00Z"]),        # Sunday
-        ("marketPhase", ["US", "2026-10-13T14:00:00Z"]),        # 10:00 New York (EDT)
     ]
     out = run(cases)
     assert out[:3] == ["10/13(화)", "10/8(목)", "10/13(화) 15:42"]
     assert re.fullmatch(r"\d{1,2}/\d{1,2}\([일월화수목금토]\) \d\d:\d\d", out[3])
-    assert out[4:] == ["10/14(수)", "", 2, "open", "closed", "holiday", "open"]
+    assert out[4:] == ["10/14(수)", "", 2]
+
+
+def test_market_state_from_the_clock_only_as_a_fallback():
+    """The server calendar (GET /api/market/session) is what pages use; this
+    is its shape from the clock when that route cannot be read — weekends
+    only, a weekday holiday reads as a session (src/market/calendar.py knows)."""
+    out = run([
+        ("marketState", ["KR", "2026-10-12T23:30:00Z"]),        # 08:30 KST Tue
+        ("marketState", ["KR", "2026-10-13T01:00:00Z"]),        # 10:00 KST Tue
+        ("marketState", ["KR", "2026-10-13T07:00:00Z"]),        # 16:00 KST
+        ("marketState", ["KR", "2026-10-11T01:00:00Z"]),        # Sunday
+        ("marketState", ["US", "2026-10-13T14:00:00Z"]),        # 10:00 New York (EDT)
+    ])
+    assert [(o["phase"], o["today"], o["last_session"]) for o in out] == [
+        ("pre", "2026-10-13", "2026-10-12"),
+        ("open", "2026-10-13", "2026-10-13"),
+        ("post", "2026-10-13", "2026-10-13"),
+        ("closed", "2026-10-11", "2026-10-09"),
+        ("open", "2026-10-13", "2026-10-13"),
+    ]
+    assert all(o["covered"] is False for o in out)
+    # the same keys the server answers with
+    assert set(out[0]) == {"phase", "today", "today_is_session", "last_session", "covered"}
 
 
 def test_pnl_label():
+    """인계 §3.2 over the server's answer {phase: pre|open|post|closed,
+    today, last_session}."""
+    m = lambda phase, last, today: ("pnlLabel", [{"phase": phase, "last_session": last, "today": today}])
     cases = [
-        ("pnlLabel", [{"phase": "open", "session": "2026-10-13", "today": "2026-10-13"}]),
-        ("pnlLabel", [{"phase": "closed", "session": "2026-10-13", "today": "2026-10-13"}]),
-        ("pnlLabel", [{"phase": "closed", "session": "2026-10-12", "today": "2026-10-13"}]),
-        ("pnlLabel", [{"phase": "holiday", "session": "2026-10-09", "today": "2026-10-11"}]),
+        m("open", "2026-10-13", "2026-10-13"),
+        m("post", "2026-10-13", "2026-10-13"),
+        m("pre", "2026-10-12", "2026-10-13"),             # before the open: yesterday · 마감
+        m("closed", "2026-10-09", "2026-10-11"),          # Sunday
+        m("closed", "2026-10-08", "2026-10-09"),          # 한글날, a weekday holiday
+        ("pnlLabel", [{"phase": "post", "session": "2026-10-13", "today": "2026-10-13"}]),   # older key
     ]
     assert run(cases) == [
         {"pnl": "오늘 손익 · 장중", "head": "현재가 · 오늘", "day": "오늘"},
         {"pnl": "오늘 손익 · 마감", "head": "현재가 · 오늘", "day": "오늘"},
         {"pnl": "10/12(월) 손익 · 마감", "head": "현재가 · 10/12(월)", "day": "10/12(월)"},
         {"pnl": "10/9(금) 손익 · 휴장", "head": "현재가 · 10/9(금)", "day": "10/9(금)"},
+        {"pnl": "10/8(목) 손익 · 휴장", "head": "현재가 · 10/8(목)", "day": "10/8(목)"},
+        {"pnl": "오늘 손익 · 마감", "head": "현재가 · 오늘", "day": "오늘"},
     ]
 
 
@@ -113,11 +139,23 @@ def test_quote_state():
         ("quoteState", [dict(base, quoteTs="2026-10-01T06:30:00Z")]),   # 12 days → none
         ("quoteState", [dict(base, quoteTs=None)]),
         # received 07:00 KST Tue = Monday's close; after the Tuesday close it is stale
-        ("quoteState", [{"market": "KR", "session": "2026-10-13", "phase": "closed",
+        ("quoteState", [{"market": "KR", "session": "2026-10-13", "phase": "post",
                          "now": "2026-10-13T08:00:00Z", "quoteTs": "2026-10-12T22:00:00Z"}]),
+        # the server's answer as one object: 한글날 (Fri 10/9, closed), last
+        # session Thu 10/8 — Thursday's close is current, and 2 h old is not late
+        ("quoteState", [{"market": "KR", "now": "2026-10-09T03:00:00Z", "quoteTs": "2026-10-08T07:00:00Z",
+                         "session": {"phase": "closed", "last_session": "2026-10-08", "today": "2026-10-09"}}]),
+        # …and on the next session day, open, that quote is a day behind
+        ("quoteState", [{"market": "KR", "now": "2026-10-12T03:00:00Z", "quoteTs": "2026-10-08T07:00:00Z",
+                         "session": {"phase": "open", "last_session": "2026-10-12", "today": "2026-10-12"}}]),
+        # 30 minutes old outside the session (post): not 지연
+        ("quoteState", [{"market": "KR", "now": "2026-10-13T07:30:00Z", "quoteTs": "2026-10-13T07:00:00Z",
+                         "session": {"phase": "post", "last_session": "2026-10-13", "today": "2026-10-13"}}]),
     ]
     out = run(cases)
-    assert [o["state"] for o in out] == ["fresh", "delayed", "stale", "stale", "none", "none", "stale"]
+    assert [o["state"] for o in out] == ["fresh", "delayed", "stale", "stale", "none", "none", "stale",
+                                         "fresh", "stale", "fresh"]
+    # (the count of days between is weekday-only — the page has no holiday list)
     assert out[1]["text"] == "30분 전" and out[1]["inToday"] is True
     assert out[2]["text"] == "1거래일 전" and out[2]["inTotal"] is True and out[2]["inToday"] is False
     assert out[3]["tradingDays"] == 3
@@ -143,6 +181,14 @@ def test_analysis_state():
     assert out[2]["badge"] == "갱신 누락" and out[10]["badge"] == "자동 분석 없음"
     assert out[6]["keepPrevious"] is True and out[10]["line"] == "faded" and out[11]["line"] == "hidden"
     assert out[12:] == ["빠른 분석", "정밀 분석", "negative"]
+
+
+def test_safe_url():
+    out = run([("safeUrl", [u]) for u in (
+        "https://example.com/a?b=1", "http://x.kr", "  https://x.kr/p  ", "javascript:alert(1)",
+        "JAVASCRIPT:alert(1)", "data:text/html,hi", "/a/x", "", None, "ftp://x", "https://")])
+    assert out == ["https://example.com/a?b=1", "http://x.kr/", "https://x.kr/p", None,
+                   None, None, None, None, None, None, None]
 
 
 def test_mood_band():

@@ -229,6 +229,29 @@ def test_mine_reads_only_this_devices_books():
         assert "mine" not in m.group(1).lower() and "total" not in m.group(1).lower()
 
 
+def test_links_out_are_http_only():
+    """An article address is data: only http(s) becomes a link (no
+    javascript:/data: href, no '#' stand-in), the rest is plain text."""
+    code = _all_code()
+    assert "x.url || '#'" not in code and "v.url || '#'" not in code
+    assert code.count("S.safeUrl(") >= 3
+    stock = (STATIC / "account" / "stock.js").read_text()
+    assert "S.safeUrl(dv.url)" in stock and "href: dv.url" not in stock
+
+
+def test_feed_is_read_wide_and_sources_are_one_link_away():
+    js = _code(STATIC / "news" / "news.js")
+    assert "const FEED_LIMIT = 150;" in js and "'/api/analysis/news/feed?limit=' + FEED_LIMIT" in js
+    assert "href: '/sources' }, ['소스 현황']" in js
+    assert "$('nh-tools').appendChild(srcLink(''))" in js
+
+
+def test_shift_words_keep_off_the_line():
+    js = _code(STATIC / "news" / "theme-panel.js")
+    assert "function shiftLabelY(" in js and "shiftLabelY(series, x, y, cx, cy, text, anchor" in js
+    assert re.search(r"\.shift-t \{[^}]*paint-order: stroke", _src(PAGE))
+
+
 def test_open_routes_only_before_a_session():
     """The page's own reads must work without any cookie (news is public)."""
     open_ = server._OPEN_API

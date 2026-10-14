@@ -113,6 +113,14 @@ const SRC_NAME = {
   arxiv_battery:'arXiv mtrl-sci',
 };
 function srcName(id) { return SRC_NAME[id] || id || ''; }
+// A link out is drawn only for an http(s) address; anything else (javascript:,
+// data:, a bare path, empty) comes back null and the caller shows plain text.
+function safeUrl(u) {
+  const s = typeof u === 'string' ? u.trim() : '';
+  if (!/^https?:\/\//i.test(s)) return null;
+  try { const p = new URL(s); return p.protocol === 'http:' || p.protocol === 'https:' ? p.href : null; }
+  catch (e) { return null; }
+}
 
 // ── label dictionary: one Korean word per shared action (인계 §3.6).
 //    Pages take the word from here instead of picking a synonym. Three words
@@ -239,17 +247,17 @@ function fmtTime(t, tz) {
 }
 // 'YYYY-MM-DD' of `now` in the market's own calendar
 function marketToday(market, now) { const p = parts(now || new Date(), TZ[market] || TZ.KR); return p ? p.date : ''; }
-// Weekdays from date a (exclusive) to date b (inclusive) — trading days with
-// weekends removed and holidays not known (ops notes §11: the same approximation
-// the analysis trigger uses; a holiday makes it one day early, never late).
-function tradingDaysBetween(a, b) {
+// Trading days from date a (exclusive) to date b (inclusive): weekdays, minus
+// the exchange holidays when the caller has them (GET /api/market/session
+// .holidays); without them a holiday counts as a session.
+function tradingDaysBetween(a, b, holidays) {
   if (!a || !b || a >= b) return 0;
   let n = 0;
   const d = new Date(a + 'T00:00:00Z'), end = new Date(b + 'T00:00:00Z');
   while (d < end) {
     d.setUTCDate(d.getUTCDate() + 1);
     const w = d.getUTCDay();
-    if (w !== 0 && w !== 6) n++;
+    if (w !== 0 && w !== 6 && !(holidays && holidays.includes(d.toISOString().slice(0, 10)))) n++;
   }
   return n;
 }
@@ -258,37 +266,53 @@ function prevWeekday(date) {
   do { d.setUTCDate(d.getUTCDate() - 1); } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
   return d.toISOString().slice(0, 10);
 }
-// Regular session hours in market-local minutes. Holidays are not known here:
-// a weekday holiday reads as 'closed', and a page that knows better passes
-// phase 'holiday' itself.
+// ── where a market stands (GET /api/market/session, src/market/calendar.py) ──
+// The server knows the exchanges' holidays; the pages read its answer
+//   { phase: 'pre'|'open'|'post'|'closed', today, today_is_session, last_session, covered }
+// per market and hand it to pnlLabel / quoteState. marketState() is the same
+// shape from the clock alone — only for when that route could not be read: it
+// knows weekends, not holidays (a weekday holiday reads as a session day).
 const SESSION = { KR: [9 * 60, 15 * 60 + 30], US: [9 * 60 + 30, 16 * 60] };
-function marketPhase(market, now) {
+function marketState(market, now) {
   const p = parts(now || new Date(), TZ[market] || TZ.KR);
-  if (!p) return 'closed';
-  if (p.wd === 0 || p.wd === 6) return 'holiday';
+  if (!p) return { phase: 'closed', today: '', today_is_session: false, last_session: '', covered: false };
   const s = SESSION[market] || SESSION.KR, mins = p.hh * 60 + p.mm;
-  return mins >= s[0] && mins < s[1] ? 'open' : 'closed';
+  const isSession = p.wd !== 0 && p.wd !== 6;
+  const phase = !isSession ? 'closed' : mins < s[0] ? 'pre' : mins < s[1] ? 'open' : 'post';
+  const last = phase === 'open' || phase === 'post' ? p.date : prevWeekday(p.date);
+  return { phase, today: p.date, today_is_session: isSession, last_session: last, covered: false };
+}
+// the newest session date of a market answer (older callers said `session`)
+function lastSessionOf(m) {
+  if (!m) return '';
+  return typeof m === 'string' ? m : (m.last_session || m.session || '');
 }
 
 // ── 손익 라벨 (인계 §3.2) ────────────────────────────────────────────
-// o: { phase: 'open'|'closed'|'holiday', session: last session 'YYYY-MM-DD'
-//      (the representative symbol's last daily bar), today: 'YYYY-MM-DD' }
+// m: the market's answer from /api/market/session (or marketState):
+//    { phase: 'pre'|'open'|'post'|'closed', today, last_session }
 // → { pnl: '오늘 손익 · 장중', head: '현재가 · 오늘', day: '오늘' | 'M/D(요일)' }
-function pnlLabel(o) {
-  o = o || {};
-  if (o.phase === 'open') return { pnl: '오늘 손익 · 장중', head: '현재가 · 오늘', day: '오늘' };
-  const day = o.session && o.session !== o.today ? fmtDate(o.session) : '오늘';
-  const tail = o.phase === 'holiday' ? '휴장' : '마감';
+//   open → 오늘 · 장중 · post → 오늘 · 마감 · pre → the last session · 마감
+//   closed (weekend, holiday) → the last session · 휴장
+function pnlLabel(m) {
+  m = m || {};
+  if (m.phase === 'open') return { pnl: '오늘 손익 · 장중', head: '현재가 · 오늘', day: '오늘' };
+  const last = lastSessionOf(m);
+  const day = last && last !== m.today ? fmtDate(last) : '오늘';
+  const tail = m.phase === 'closed' ? '휴장' : '마감';
   return { pnl: day + ' 손익 · ' + tail, head: '현재가 · ' + day, day };
 }
 
 // ── 시세 상태 (인계 §3.3) ────────────────────────────────────────────
 // o: { quoteTs (ISO | epoch s — when the quote was RECEIVED), market: 'KR'|'US',
-//      session: last trading day 'YYYY-MM-DD', phase (marketPhase), now }
+//      session: the market's answer ({ phase, last_session }) — or its
+//      last_session date with `phase` beside it, now }
 // → { state: 'fresh'|'delayed'|'stale'|'none', minutes, tradingDays, text,
 //     inTotal, inToday }
 // The quote's own session is its market-local date, or the weekday before
-// when it arrived before the open (a 07:00 quote is yesterday's close).
+// when it arrived before the open (a 07:00 quote is yesterday's close). A
+// quote whose session is older than last_session is 지난 시세; a late quote
+// is 지연 only while the market is open.
 const QUOTE_DELAY_MIN = 20, QUOTE_STALE_DAYS = 8;
 function quoteState(o) {
   o = o || {};
@@ -298,15 +322,18 @@ function quoteState(o) {
   if (isNaN(ms) || (now - ms) / 86400000 > QUOTE_STALE_DAYS) return none;
   const minutes = Math.max(0, Math.floor((now - ms) / 60000));
   const market = o.market || 'KR';
+  const last = lastSessionOf(o.session);
+  const phase = o.session && typeof o.session === 'object' ? o.session.phase : o.phase;
   const p = parts(ms / 1000, TZ[market] || TZ.KR);
   const open = (SESSION[market] || SESSION.KR)[0];
   let qs = p.date;
   if (p.wd === 0 || p.wd === 6 || p.hh * 60 + p.mm < open) qs = prevWeekday(p.date);
-  if (o.session && qs < o.session) {
-    const n = Math.max(1, tradingDaysBetween(qs, o.session));
+  if (last && qs < last) {
+    const hol = o.session && typeof o.session === 'object' ? o.session.holidays : null;
+    const n = Math.max(1, tradingDaysBetween(qs, last, hol));
     return { state: 'stale', minutes, tradingDays: n, text: n + '거래일 전', inTotal: true, inToday: false };
   }
-  if (o.phase === 'open' && minutes > QUOTE_DELAY_MIN) {
+  if (phase === 'open' && minutes > QUOTE_DELAY_MIN) {
     return { state: 'delayed', minutes, tradingDays: 0, text: minutes + '분 전', inTotal: true, inToday: true };
   }
   return { state: 'fresh', minutes, tradingDays: 0, text: '', inTotal: true, inToday: true };
@@ -568,9 +595,12 @@ function formSnapshot(root) {
 //   · a failure keeps the input, shows a banner (words only) and the main
 //     button becomes 「다시 시도」
 //   · network/5xx with `verify`: no blind resend — the dialog first asks
-//     verify(err) whether the write landed ('…확인 중' banner); true → done
+//     verify(err) whether the write landed ('…확인 중' banner); true → done.
+//     When verify itself throws, nothing can be resent from the dialog: the
+//     `unverified` banner shows and the main button becomes its action
 //   · 403 'PIN required' (ctx.api never opens the page gate): the PIN is
 //     re-asked over the dialog, and on success the request goes once more
+//     (a second 403 asks again — never the server's words as a failure)
 //   · Esc / ✕ / ← / scrim close it, unless submitting; `confirmDiscard`
 //     asks 버리기 / 계속 입력 when inputs changed
 // dialog({
@@ -578,6 +608,7 @@ function formSnapshot(root) {
 //   cancelLabel, onSubmit: async (ctx) => result   (ctx.api = S.api without
 //   gate/toast; ctx.dialog = this), verify: async (err) => boolean,
 //   verifyText: { title, sub }, failText: { title, sub }, account: { id, name },
+//   unverified: { title, sub, action: { label, onClick } }   (verify threw),
 //   confirmDiscard, initialFocus: Element | 'cancel', keepCancel (390 shows
 //   취소 beside the main button — confirmations), onClose(result)
 // }) → { el, body, close(result), banner(o|null), busy(bool), done: Promise }
@@ -608,7 +639,7 @@ function dialog(o) {
   ]);
   const scrim = el('div', { className: 's-scrim' }, [box]);
   scrim.addEventListener('mousedown', e => { if (e.target === scrim) api_.close(null); });
-  let busy = false, snap = '', release = null, closed = false, pinTried = false;
+  let busy = false, snap = '', release = null, closed = false, unverified = false;
   const layer = { modal: true, onEscape: () => api_.close(null) };
 
   function setBusy(on) {
@@ -630,8 +661,30 @@ function dialog(o) {
         : (f.sub || '잠시 뒤 다시 시도해 주세요 · 입력은 그대로예요') });
     setMainLabel(LABELS.retry);
   }
+  // The write may or may not have landed and the look itself failed: no
+  // resend from here (it could write twice). The inputs stay locked, the main
+  // button becomes the way to look (o.unverified.action) or goes away.
+  function stuck() {
+    unverified = true;
+    const u = o.unverified || {};
+    setBanner({ kind: 'warn', title: u.title || '저장됐는지 확인하지 못했어요',
+      sub: u.sub || '다시 보내기 전에 저장된 내용을 확인해 주세요' });
+    lockControls(bodyWrap, true);
+    if (primary) {
+      if (u.action) {
+        setMainLabel(u.action.label);
+        primary.classList.remove('btn-danger');
+        primary.classList.add('btn-primary');
+      } else primary.hidden = true;
+    }
+  }
   async function submit() {
     if (busy) return;
+    if (unverified) {
+      const u = o.unverified || {};
+      if (u.action) { api_.close(null, true); u.action.onClick(); }
+      return;
+    }
     if (!o.onSubmit) { close(true, true); return; }
     setBanner(null);
     setBusy(true);
@@ -640,19 +693,28 @@ function dialog(o) {
     try {
       result = await o.onSubmit(ctx);
     } catch (err) {
-      if (err && err.forbidden && o.account && !pinTried) {
-        pinTried = true;
+      // a session that is gone (again): the PIN over the dialog, every time —
+      // never the server's 'PIN required' as a failure line
+      if (err && err.forbidden && o.account) {
         setBusy(false);
         const ok = await pinPrompt({ account: o.account });
         if (ok) return submit();               // the original request, once more
-        fail(err); return;
+        setBanner({ kind: 'error', title: (o.failText || {}).title || '저장하지 못했어요',
+          sub: 'PIN을 넣으면 다시 보낼 수 있어요 · 입력은 그대로예요' });
+        setMainLabel(LABELS.retry);
+        return;
       }
       if (err && (err.network || err.status >= 500) && o.verify) {
         const v = o.verifyText || {};
         setBanner({ kind: 'warn', busy: true, title: v.title || '저장됐는지 확인 중',
           sub: v.sub || '응답이 끊겨서 다시 확인하고 있어요' });
         let landed = false;
-        try { landed = await o.verify(err); } catch (e) { landed = false; }
+        try { landed = await o.verify(err); }
+        catch (e) {
+          setBusy(false);
+          stuck();
+          return;
+        }
         if (landed) { setBusy(false); api_.close(landed === true ? true : landed, true); return; }
         setBusy(false);
         const f = o.failText || {};
@@ -670,7 +732,7 @@ function dialog(o) {
   }
   async function close(result, force) {
     if (closed || (busy && !force)) return;
-    if (!force && o.confirmDiscard && formSnapshot(bodyWrap) !== snap) {
+    if (!force && !unverified && o.confirmDiscard && formSnapshot(bodyWrap) !== snap) {
       const ok = await confirmModal({ title: '입력한 내용을 버릴까요?', body: '임시 저장은 없어요',
         confirmLabel: LABELS.discard, cancelLabel: LABELS.keepEditing, danger: true });
       if (!ok) return;
@@ -1127,7 +1189,7 @@ window.S = {
   el, clear, svgIco, spinner, designColor, designRgba, designToken, cssVar, newsThemeIcon, srcName, LABELS,
   // numbers · dates · rules (인계 §3.1–3.5)
   fmtPrice, fmtMoney, fmtPnl, fmtPnlPct, fmtChange, fmtChangePct, fmtQty, fmtCount, fmtAxisMan, trend,
-  fmtDate, fmtDateTime, fmtTime, marketToday, marketPhase, tradingDaysBetween,
+  fmtDate, fmtDateTime, fmtTime, marketToday, marketState, tradingDaysBetween, safeUrl,
   pnlLabel, quoteState, analysisState, depthLabel, verdictTone, LABEL_KO, moodBand,
   // feedback · requests
   toast, api, banner, stateBlock, skeleton,

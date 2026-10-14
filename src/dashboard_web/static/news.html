@@ -26,6 +26,10 @@ a { color: inherit; }
 .nh-meta b { color: var(--text-primary); font-weight: var(--type-number-style); font-size: var(--type-body-size); }
 .nh-meta .sk { width: 160px; }
 .nh-tools { margin-left: auto; display: flex; align-items: center; gap: var(--space-gap-sm); }
+/* 소스 현황: small text link (not a button), next to 내 종목 */
+.nh-src { color: var(--text-muted); font-size: var(--type-caption-size); text-decoration: underline;
+          text-underline-offset: 2px; padding: var(--space-gap-xs) 0; }
+.nh-src:hover { color: var(--text-primary); }
 .nh-banner:empty { display: none; }
 .nh-banner { margin-bottom: var(--space-gap-lg); }
 
@@ -123,7 +127,7 @@ col.c-count, col.c-line { width: 0; }
 .sec-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-gap-xs) var(--space-gap-sm); }
 .sec-head .meta { color: var(--text-muted); font-size: var(--type-caption-size); }
 .core-list { display: flex; flex-direction: column; gap: var(--space-gap-sm); }
-a.core-card { display: flex; flex-direction: column; gap: var(--space-gap-sm); text-decoration: none;
+.core-card { display: flex; flex-direction: column; gap: var(--space-gap-sm); text-decoration: none;
               background: var(--bg-default); border-radius: var(--radius-card); padding: var(--space-card-compact); }
 a.core-card:hover .core-title { text-decoration: underline; }
 .core-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-gap-sm); }
@@ -146,7 +150,7 @@ a.core-card:hover .core-title { text-decoration: underline; }
 .flow .sec-head { margin-bottom: var(--space-gap-sm); }
 .flow-list { list-style: none; margin: 0; padding: 0; }
 .flow-list li { border-bottom: var(--border-width) solid var(--border-default); }
-a.fi { display: flex; align-items: flex-start; gap: var(--space-gap-sm); padding: var(--space-gap-md) 0;
+.fi { display: flex; align-items: flex-start; gap: var(--space-gap-sm); padding: var(--space-gap-md) 0;
        text-decoration: none; }
 a.fi:hover .fi-title { text-decoration: underline; }
 .fi-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-gap-2xs); }
@@ -178,7 +182,8 @@ a.fi:hover .fi-title { text-decoration: underline; }
 .tp-line .grid0 { stroke: var(--text-muted); stroke-dasharray: 3 3; stroke-width: 1; }
 .tp-line .path { fill: none; stroke: var(--chart-price); stroke-width: 1.5; stroke-linejoin: round; }
 .tp-line .shift { fill: var(--bg-default); stroke: var(--verdict-positive); stroke-width: 1.5; }
-.tp-line .shift-t { fill: var(--verdict-positive); font-size: var(--type-caption-size); }
+.tp-line .shift-t { fill: var(--verdict-positive); font-size: var(--type-caption-size);
+                    paint-order: stroke; stroke: var(--bg-default); stroke-width: 3px; stroke-linejoin: round; }
 .tp-line .last.s-pos { fill: var(--verdict-positive); }
 .tp-line .last.s-neg { fill: var(--mood-negative-strong); }
 .tp-line .last.s-neutral, .tp-line .last.s-none { fill: var(--text-primary); }
@@ -195,7 +200,7 @@ a.fi:hover .fi-title { text-decoration: underline; }
 a.chip.mine-stock { text-decoration: none; color: var(--text-primary); }
 a.chip.mine-stock:hover { background: var(--bg-subtle); }
 .dev-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-a.dev { display: flex; align-items: center; gap: var(--space-gap-sm); padding: var(--space-gap-xs) 0; text-decoration: none; }
+.dev { display: flex; align-items: center; gap: var(--space-gap-sm); padding: var(--space-gap-xs) 0; text-decoration: none; }
 a.dev:hover .dev-pt { text-decoration: underline; }
 .dev-pt { flex: 1; min-width: 0; }
 .dev-date { flex: none; color: var(--text-muted); font-size: var(--type-caption-size); }

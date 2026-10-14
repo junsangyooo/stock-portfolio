@@ -41,8 +41,8 @@
       clear(msg);
       if (!n) { msg.appendChild(S.banner({ kind: 'error', title: '표시 이름을 넣어 주세요' })); name.focus(); return; }
       busyBtn(save, true); inputs.forEach(i => { i.disabled = true; });
-      const body = { name: n, account_type: type.value, broker: broker.value.trim() || null, base_currency: ccy.value,
-        note: memo.value.trim() || null };
+      const body = { name: n, account_type: type.value, broker: broker.value.trim(), base_currency: ccy.value,
+        note: memo.value.trim() };
       const send = () => S.api(ACC.path(''), { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body), gate: false, toast: false });
       try {

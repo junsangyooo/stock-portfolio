@@ -17,6 +17,7 @@
     { value: 'all', label: '전체', months: null, words: '전체 기간', head: '전체' },
     { value: 'range', label: '기간', months: null, words: '', head: '기간' },
   ];
+  const LIMIT = 1000;                 // GET /trades caps a page here
   const today = () => S.marketToday('KR');
   const addMonths = (d, n) => {
     const x = new Date(d + 'T00:00:00Z'); x.setUTCMonth(x.getUTCMonth() + n); return x.toISOString().slice(0, 10);
@@ -168,7 +169,7 @@
     const f = v.f;
     v.rows = undefined; v.err = null;
     paintBody(v);
-    const q = new URLSearchParams({ limit: '1000' });
+    const q = new URLSearchParams({ limit: String(LIMIT) });
     if (f.sid) q.set('symbol_id', f.sid);
     if (f.since) q.set('since', f.since);
     if (f.until) q.set('until', f.until);
@@ -240,9 +241,13 @@
       b.n++;
     });
     const first = v.rows[v.rows.length - 1];
-    const span = (f.since ? S.fmtDate(f.since) : S.fmtDate(first.traded_at)) + ' – ' + (f.until ? S.fmtDate(f.until) : S.fmtDate(today()));
+    // the route returns at most LIMIT rows (newest first): at the cap, the
+    // sums cover only those, and the span starts at the oldest one shown
+    const capped = v.rows.length >= LIMIT;
+    const span = (f.since && !capped ? S.fmtDate(f.since) : S.fmtDate(first.traded_at)) + ' – ' + (f.until ? S.fmtDate(f.until) : S.fmtDate(today()));
     sum.appendChild(el('div', { className: 'trd-sum-head' }, [el('h2', {}, [sumTitle]),
-      el('span', { className: 't-caption t-muted' }, [span + (Object.keys(by).length === 1 ? ' · ' + Object.keys(by)[0] + ' · ' + v.rows.length + '건' : ' · ' + v.rows.length + '건')])]));
+      el('span', { className: 't-caption t-muted' }, [span + (Object.keys(by).length === 1 ? ' · ' + Object.keys(by)[0] + ' · ' + v.rows.length + '건' : ' · ' + v.rows.length + '건')]),
+      capped ? el('span', { className: 'chip trd-capped' }, [svgIco('info'), '최근 ' + S.fmtCount(LIMIT) + '건 기준']) : null]));
     Object.keys(by).forEach(c => {
       const b = by[c];
       sum.appendChild(el('div', { className: 'trd-sum-row' }, [

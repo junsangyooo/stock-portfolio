@@ -314,6 +314,14 @@
       account: ACC.accountRef(), confirmDiscard: true,
       verifyText: { title: '기록됐는지 확인 중', sub: '응답이 끊겨서 거래 이력을 확인하고 있어요' },
       failText: { title: '저장하지 못했어요', sub: '거래 이력에 없는 걸 확인했어요 · 입력은 그대로예요' },
+      // the look failed too: no 다시 보내기 (it could record the trade twice)
+      unverified: { title: '기록됐는지 확인하지 못했어요', sub: '거래 이력에서 확인해 주세요',
+        action: { label: LABELS.viewTrade, onClick: () => {
+          const b = st.sent || {};
+          const day = S.marketToday('KR', new Date((b.traded_at != null ? b.traded_at : opened) * 1000));
+          ACC.go({ v: 'trades', s: b.symbol_id || st.sid, since: day, until: S.marketToday('KR') });
+          ACC.reload({ quiet: true });
+        } } },
       onSubmit: async ctx => {
         const r = calc();
         if (!r.valid) { const e = new Error(r.over ? '보유보다 많이 팔 수 없어요' : '수량·가격을 확인해 주세요'); e.status = 400; throw e; }
@@ -333,11 +341,18 @@
           throw e;
         }
       },
-      // the write may have landed before the line dropped: look before resending
+      // the write may have landed before the line dropped: look before resending.
+      // The look is that day's trades of this symbol (KST days, as the book
+      // keeps them); same side · qty · price · fee, written after this dialog
+      // opened. If the look itself fails, S.dialog blocks the resend (unverified).
       verify: async () => {
         const b = st.sent;
         if (!b) return false;
-        const r = await S.api(ACC.path('/trades') + '?symbol_id=' + encodeURIComponent(b.symbol_id) + '&limit=5', { toast: false, gate: false });
+        const kstDay = sec => S.marketToday('KR', new Date(sec * 1000));
+        const since = kstDay(b.traded_at != null ? b.traded_at : opened);
+        const until = kstDay(b.traded_at != null ? b.traded_at : Math.floor(Date.now() / 1000));
+        const r = await S.api(ACC.path('/trades') + '?symbol_id=' + encodeURIComponent(b.symbol_id) +
+          '&since=' + since + '&until=' + until + '&limit=50', { toast: false, gate: false });
         const hit = (r.trades || []).find(t => t.side === b.side && Math.abs(t.qty - b.qty) < EPS && Math.abs(t.price - b.price) < 1e-6
           && Math.abs((t.fee || 0) - b.fee) < 1e-6 && (b.traded_at == null || t.traded_at === b.traded_at) && (t.created_at || 0) >= opened - 5);
         return hit ? { trade: hit, verified: true } : false;

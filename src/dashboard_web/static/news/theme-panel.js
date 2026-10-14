@@ -102,12 +102,15 @@ function create(ctx) {
     // 최근 전개
     const devs = (detail.recent_developments || []).slice(0, 5);
     if (devs.length) {
-      dp.body.appendChild(sec('최근 전개', [el('ul', { className: 'dev-list' }, devs.map(v => el('li', {}, [
-        el('a', { className: 'dev', href: v.url || '#', target: '_blank', rel: 'noopener noreferrer' }, [
-          el('span', { className: 'dev-pt ellipsis', title: v.point }, [v.point]),
-          el('span', { className: 'dev-date' }, [S.fmtDate(v.date)]),
-          U.dots(Math.round((v.weight || 0) * 5)),
-        ])])))]));
+      dp.body.appendChild(sec('최근 전개', [el('ul', { className: 'dev-list' }, devs.map(v => {
+        const url = S.safeUrl(v.url);      // only http(s) becomes a link
+        return el('li', {}, [
+          el(url ? 'a' : 'div', url ? { className: 'dev', href: url, target: '_blank', rel: 'noopener noreferrer' } : { className: 'dev' }, [
+            el('span', { className: 'dev-pt ellipsis', title: v.point }, [v.point]),
+            el('span', { className: 'dev-date' }, [S.fmtDate(v.date)]),
+            U.dots(Math.round((v.weight || 0) * 5)),
+          ])]);
+      }))]));
     }
     dp.body.appendChild(rollups());
     if (focusInside) { const x = dp.el.querySelector('.s-panel-x'); if (x) x.focus(); }
@@ -187,9 +190,10 @@ function create(ctx) {
 
   // 30-day line: nulls break the line; zero is a dashed rule; the last
   // shift is an open dot with its date; the newest point a filled dot.
-  function lineChart(series, shift) {
+  function lineChart(series, shift, padTop) {
     const NS = 'http://www.w3.org/2000/svg';
-    const W = 400, H = 132, L = 34, R = 10, T = 10, B = 22;
+    const extra = padTop || 0;
+    const W = 400, H = 132 + extra, L = 34, R = 10, T = 10 + extra, B = 22;
     const svg = document.createElementNS(NS, 'svg');
     const mk = (tag, attrs, text) => {
       const n = document.createElementNS(NS, tag);
@@ -199,6 +203,7 @@ function create(ctx) {
     };
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
     svg.setAttribute('class', 'tp-line');
+    if (extra) svg.style.height = H + 'px';
     svg.setAttribute('role', 'img');
     const vals = series.filter(p => p.score != null).map(p => p.score);
     const lo = Math.max(-1, Math.min(-0.5, Math.floor(Math.min(...vals) * 2) / 2));
@@ -223,10 +228,17 @@ function create(ctx) {
     if (shift) {
       const i = series.findIndex(p => p.date === shift.date);
       if (i >= 0 && series[i].score != null) {
-        mk('circle', { cx: x(i), cy: y(series[i].score), r: 4, className: 'shift' });
-        const below = y(series[i].score) < (H - B) / 2 + T;
-        mk('text', { x: x(i), y: y(series[i].score) + (below ? 18 : -9), className: 'shift-t',
-          'text-anchor': i > series.length * 0.75 ? 'end' : 'middle' }, S.fmtDate(shift.date) + ' 전환');
+        const cx = x(i), cy = y(series[i].score);
+        mk('circle', { cx, cy, r: 4, className: 'shift' });
+        const text = S.fmtDate(shift.date) + ' 전환';
+        const anchor = i > series.length * 0.75 ? 'end' : i < series.length * 0.25 ? 'start' : 'middle';
+        let at = shiftLabelY(series, x, y, cx, cy, text, anchor, { top: 0, bottom: H - B + 6 });
+        // no room above or below the line across the words: a taller chart
+        // (a label lane on top) once, then the halo carries it
+        if (at == null && !extra) return lineChart(series, shift, 16);
+        if (at == null) at = cy < T + (H - B - T) / 2 ? cy + 18 : cy - 9;
+        mk('text', { x: anchor === 'start' ? cx - 4 : anchor === 'end' ? cx + 4 : cx, y: at, className: 'shift-t',
+          'text-anchor': anchor }, text);
       }
     }
     let last = -1;
@@ -235,6 +247,40 @@ function create(ctx) {
     svg.setAttribute('aria-label', '30일 분위기 선 · ' + S.fmtDate(series[0].date) + '부터 '
       + S.fmtDate(series[series.length - 1].date) + '까지 · 마지막 ' + U.fmtScore(last >= 0 ? series[last].score : null));
     return svg;
+  }
+
+  // Where the '전환' words go: wholly above or wholly below the line across
+  // the words' width (the line is continuous there, so its highest and
+  // lowest points over that span bound it), whichever stays in the plot and
+  // sits closer to the dot. The words also carry a background halo (CSS), so
+  // a line that still crosses them (no room either side) stays readable.
+  function shiftLabelY(series, x, y, cx, cy, text, anchor, plot) {
+    const CAP = 10, DESC = 3, GAP = 3;                 // caption glyph box around the baseline (px)
+    const w = [...text].reduce((n, ch) => n + (/[가-힣]/.test(ch) ? 12 : 7), 0);
+    const x0 = anchor === 'start' ? cx - 4 : anchor === 'end' ? cx + 4 - w : cx - w / 2;
+    const x1 = x0 + w;
+    const ys = [cy];
+    for (let k = 0; k < series.length; k++) {
+      const p = series[k], q = series[k + 1];
+      if (p.score == null) continue;
+      const xa = x(k);
+      if (xa >= x0 && xa <= x1) ys.push(y(p.score));
+      if (q && q.score != null) {                       // a segment crossing either edge
+        const xb = x(k + 1);
+        [x0, x1].forEach(e => {
+          if ((xa - e) * (xb - e) < 0) ys.push(y(p.score) + (y(q.score) - y(p.score)) * (e - xa) / (xb - xa));
+        });
+      }
+    }
+    const top = Math.min(...ys), bottom = Math.max(...ys);
+    const above = top - GAP - DESC - 4;                 // baseline above the line's highest point (r 4 dot)
+    const below = bottom + GAP + CAP + 4;               // baseline below its lowest point
+    const okAbove = above - CAP >= plot.top;            // may use the top margin, not past the edge
+    const okBelow = below + DESC <= plot.bottom;        // clear of the date labels
+    if (okAbove && okBelow) return cy - above <= below - cy ? above : below;
+    if (okAbove) return above;
+    if (okBelow) return below;
+    return null;
   }
 
   // ── 주간 · 월간 ──

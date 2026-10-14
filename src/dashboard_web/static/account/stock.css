@@ -343,6 +343,8 @@ a.stk-news-t:hover { text-decoration: underline; }
 .trd-sum { display: flex; flex-direction: column; gap: var(--space-gap-md); }
 .trd-sum-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-gap-xs) var(--space-gap-sm); }
 .trd-sum-head h2 { font-size: var(--type-heading-2-size); }
+.chip.trd-capped { align-self: flex-start; gap: var(--space-gap-2xs); }
+.chip.trd-capped .lci { width: var(--icon-size-sm); height: var(--icon-size-sm); }
 .trd-sum-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-gap-md) var(--space-section); }
 .trd-fig { display: flex; flex-direction: column; gap: var(--space-gap-2xs); }
 .trd-fig-v { font-family: var(--type-number-family); font-weight: var(--type-number-style); font-size: var(--type-number-size); }

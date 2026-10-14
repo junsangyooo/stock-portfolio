@@ -116,22 +116,30 @@
       const warn = as.state === 'overdue';
       kids.push(el('span', { className: 'chip vd-badge' + (warn ? ' is-warn' : '') }, [warn ? svgIco('triangle-alert') : null, as.badge]));
     }
-    return el('span', { className: 'vd' + (as.state === 'old' ? ' is-old' : '') }, kids);
+    return el('span', { className: 'vd' + (as.state === 'old' ? ' is-old' : '') + (as.badge && hasLabel ? ' has-badge' : '') }, kids);
   }
+  // The line ages with its analysis (인계 §3.4): up to 14 days as is, 15–30
+  // days dimmed with the analysis date, older not shown — a stop or target
+  // from a month ago is not a coordinate to measure today's holding against.
+  // → { text, faded } | null
   function coordLine(h) {
     const a = st.summary[h.symbol_id];
     const c = a && a.coords;
     if (!c) return null;
+    const as = S.analysisState({ date: a.date, held: true, status: a.status });
+    if (as.days == null || as.state === 'old' || as.state === 'facts') return null;
+    const faded = as.state === 'overdue';
+    const tail = faded ? ' · ' + S.fmtDate(a.date) + ' 분석' : '';
     const ccy = ccyOf(h);
     if (h.held && h.avg_cost) {
       const part = (label, v) => (v == null ? null : label + ' ' + S.fmtPrice(v, ccy) + ' (' + S.fmtPnlPct((v / h.avg_cost - 1) * 100) + ')');
       const parts = [part('손절', c.stop), part('목표', c.target)].filter(Boolean);
-      return parts.length ? '평단 대비 · ' + parts.join(' · ') : null;
+      return parts.length ? { text: '평단 대비 · ' + parts.join(' · ') + tail, faded } : null;
     }
     if (!h.held && (c.entry_low != null || c.entry_high != null)) {
       const lo = c.entry_low != null ? S.fmtPrice(c.entry_low, ccy) : '';
       const hi = c.entry_high != null ? S.fmtPrice(c.entry_high, ccy) : '';
-      return '진입 기준 · 진입구간 ' + (lo && hi ? lo + '~' + hi : lo || hi);
+      return { text: '진입 기준 · 진입구간 ' + (lo && hi ? lo + '~' + hi : lo || hi) + tail, faded };
     }
     return null;
   }
@@ -144,8 +152,8 @@
     const latest = ts.length ? Math.max(...ts.map(t => (typeof t === 'number' ? t : Date.parse(t) / 1000))) : null;
     const delayed = hs.filter(h => h.held && h.q && h.q.state === 'delayed');
     const when = t => (S.fmtDate(t) === S.fmtDate(Date.now() / 1000) ? S.fmtTime(t) : S.fmtDateTime(t));
-    if (w.state === 'warming') return { text: '시세 받는 중', busy: true };
-    if (w.state === 'error') return { text: '시세 못 받음' + (latest ? ' · ' + when(latest) + ' 기준' : ''), cls: 'is-muted' };
+    if (w.state === 'warming') return { text: w.kind === 'refresh' ? '새로 받는 중' : '시세 받는 중', busy: true };
+    if (w.state === 'error') return { text: (w.kind === 'refresh' ? '새로 받지 못함' : '시세 못 받음') + (latest ? ' · ' + when(latest) + ' 기준' : ''), cls: 'is-muted' };
     if (!latest) return { text: hs.length ? '시세 없음' : '' };
     if (delayed.length) {
       const m = Math.max(...delayed.map(h => h.q.minutes));
@@ -317,8 +325,15 @@
       box._ro.observe(box);
     }
     const pts = rows.filter(r => r.total_assets != null);
+    // the server skips today's snapshot while a holding has no quote (its sum
+    // would draw a fall that never happened) — say so under the line
+    const t = ((ACC.data && ACC.data.totals) || {})[ccy] || {};
+    const lastDay = pts.length ? String(pts[pts.length - 1].date).slice(0, 10) : null;
+    const note = t.n_missing > 0 && lastDay !== S.marketToday('KR')
+      ? el('p', { className: 'trend-note' }, [svgIco('info'), '시세 없는 종목이 있어 오늘 기록을 쓰지 않았어요']) : null;
     if (pts.length < 2) {
       box.appendChild(el('div', { className: 'trend-empty' }, [svgIco('chart-line'), el('span', {}, ['추이는 내일부터 그려져요'])]));
+      if (note) box.appendChild(note);
       return;
     }
     const wide = window.matchMedia('(min-width: 600px)').matches;
@@ -330,7 +345,12 @@
     lo -= pad; hi += pad;
     const ticks = niceTicks(lo, hi, 4);
     lo = Math.min(lo, ticks[0]); hi = Math.max(hi, ticks[ticks.length - 1]);
-    const x = i => PL + i / (pts.length - 1) * (W - PL - PR);
+    // x is the calendar, not the row number: a week without a snapshot keeps
+    // its width instead of folding two dates together
+    const dayMs = d => Date.parse(String(d).slice(0, 10) + 'T00:00:00Z');
+    const t0 = dayMs(pts[0].date), t1 = dayMs(pts[pts.length - 1].date), tSpan = (t1 - t0) || 1;
+    const xAt = ms => PL + (ms - t0) / tSpan * (W - PL - PR);
+    const x = i => xAt(dayMs(pts[i].date));
     const y = v => PT + (1 - (v - lo) / (hi - lo)) * (H - PT - PB);
     const path = f => pts.map((r, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(f(r)).toFixed(1)).join(' ');
     const stepPath = pts.map((r, i) => {
@@ -345,17 +365,30 @@
       tx.textContent = axisFmt(t);
       g.appendChild(tx);
     });
-    // x labels: month starts (≥ 60 days) or about 4 dates
-    const long = pts.length > 45;
-    let lastLabel = '';
-    const every = Math.max(1, Math.round(pts.length / 4));
-    pts.forEach((r, i) => {
-      const mm = +r.date.slice(5, 7), dd = +r.date.slice(8, 10);
-      const lab = long ? mm + '월' : mm + '/' + dd;
-      const show = long ? lab !== lastLabel && (i > 0 || dd <= 3) : i % every === 0;
-      if (long) lastLabel = lab;
-      if (!show) return;
-      const tx = svg('text', { 'class': 'tr-xlab', x: Math.min(x(i), W - PR - 20), y: H - 6 });
+    // x labels on the calendar: month starts when the span is long (> 45
+    // days, every 2nd/3rd month past a year), else about 4 evenly spaced dates
+    const days = Math.round(tSpan / 86400000);
+    const labels = [];
+    if (days > 45) {
+      const step = days > 730 ? 6 : days > 365 ? 3 : days > 180 ? 2 : 1;
+      const d = new Date(t0);
+      d.setUTCDate(1);
+      if (d.getTime() < t0) d.setUTCMonth(d.getUTCMonth() + 1);
+      for (; d.getTime() <= t1; d.setUTCMonth(d.getUTCMonth() + step)) {
+        const mm = d.getUTCMonth() + 1;
+        labels.push([d.getTime(), mm === 1 ? String(d.getUTCFullYear()).slice(2) + '년 1월' : mm + '월']);
+      }
+    } else {
+      const n = Math.min(4, Math.max(1, days));
+      for (let k = 0; k <= n; k += 1) {
+        if (k === n && n > 1) break;                      // the right edge sits under the axis labels
+        const ms = t0 + Math.round(tSpan * k / n / 86400000) * 86400000;
+        const dt = new Date(ms);
+        labels.push([ms, (dt.getUTCMonth() + 1) + '/' + dt.getUTCDate()]);
+      }
+    }
+    labels.forEach(([ms, lab]) => {
+      const tx = svg('text', { 'class': 'tr-xlab', x: Math.min(xAt(ms), W - PR - 20), y: H - 6 });
       tx.textContent = lab;
       g.appendChild(tx);
     });
@@ -372,10 +405,13 @@
     tip.hidden = true;
     const wrap = el('div', { className: 'trend-plot' }, [plot, tip]);
     box.appendChild(wrap);
+    if (note) box.appendChild(note);
     function show(clientX) {
       const r = plot.getBoundingClientRect();
       const fx = (clientX - r.left) / r.width * W;
-      const i = Math.max(0, Math.min(pts.length - 1, Math.round((fx - PL) / (W - PL - PR) * (pts.length - 1))));
+      // the snapshot nearest in time to the pointer
+      let i = 0;
+      pts.forEach((q, k) => { if (Math.abs(x(k) - fx) < Math.abs(x(i) - fx)) i = k; });
       const p = pts[i];
       clear(hover);
       hover.appendChild(svg('line', { 'class': 'tr-cross', x1: x(i), x2: x(i), y1: PT, y2: H - PB }));
@@ -729,7 +765,7 @@
       el('span', { className: 'r-spark' }, [spark(h.spark)]),
       priceEl, evalEl, weightEl, pnlEl,
       el('span', { className: 'r-vd' }, [verdictCell(h)]),
-      coords ? el('span', { className: 'r-coords' }, [coords]) : null,
+      coords ? el('span', { className: 'r-coords' + (coords.faded ? ' is-faded' : ''), title: coords.text }, [coords.text]) : null,
     ];
     const r = link({ s: h.symbol_id }, 'ls-row' + (q.state === 'stale' ? ' is-stale' : '') + (h.held ? '' : ' is-watch') + (coords ? '' : ' no-coords'), kids);
     r.setAttribute('aria-label', nameOf(h));
@@ -914,8 +950,11 @@
     clear(root);
     st.els = {};
     const empty = !(d.holdings || []).length && !(d.balances && Object.keys(d.balances).some(k => d.balances[k]));
-    const banner = d.warm && d.warm.state === 'error' ? S.banner({ kind: 'error', title: '시세를 받지 못했어요',
-      sub: '저장된 숫자를 보여 줘요', action: { label: S.LABELS.retry, onClick: () => ACC.warm() } }) : null;
+    const refreshFailed = d.warm && d.warm.kind === 'refresh';
+    const banner = d.warm && d.warm.state === 'error' ? S.banner({ kind: 'error',
+      title: refreshFailed ? '시세와 일봉을 새로 받지 못했어요' : '시세를 받지 못했어요',
+      sub: '저장된 숫자를 보여 줘요',
+      action: { label: S.LABELS.retry, onClick: () => (refreshFailed ? ACC.refreshQuotes() : ACC.warm()) } }) : null;
     if (banner) banner.classList.add('acc-banner');
     root.append(pageHead(d), banner || '',
       el('div', { className: 'acc-top' }, [summaryCard(d), trendCard()]));

@@ -561,7 +561,8 @@
   }
   function phaseChip(v) {
     const ph = ACC.market(v.region).phase;
-    return el('span', { className: 'chip' }, [ph === 'open' ? '장중' : ph === 'holiday' ? '휴장' : '마감']);
+    // server calendar (core.js): open · pre/post → 마감 · closed (주말·휴장일) → 휴장
+    return el('span', { className: 'chip' }, [ph === 'open' ? '장중' : ph === 'closed' ? '휴장' : '마감']);
   }
   function paintHead(v) {
     const hd = v.els.head;
@@ -1323,10 +1324,10 @@
     if (!devs.length) { b.appendChild(el('p', { className: 't-muted' }, ['최근 7일 소식이 없어요'])); return; }
     b.appendChild(el('p', { className: 't-caption t-muted stk-news-cap' }, ['최근 전개']));
     b.appendChild(el('ul', { className: 'stk-news-list' }, devs.map(dv => el('li', {}, [
-      dv.url ? el('a', { href: dv.url, target: '_blank', rel: 'noopener noreferrer', className: 'stk-news-t' }, [dv.point])
+      S.safeUrl(dv.url) ? el('a', { href: S.safeUrl(dv.url), target: '_blank', rel: 'noopener noreferrer', className: 'stk-news-t' }, [dv.point])
         : el('span', { className: 'stk-news-t' }, [dv.point]),
       el('span', { className: 't-caption t-muted stk-news-m' }, [[dv.theme_kr, dv.date ? S.fmtDate(dv.date) : ''].filter(Boolean).join(' · '),
-        dv.url ? svgIco('external-link') : null]),
+        S.safeUrl(dv.url) ? svgIco('external-link') : null]),
     ]))));
   }
 

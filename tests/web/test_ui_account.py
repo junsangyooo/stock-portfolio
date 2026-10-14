@@ -124,9 +124,65 @@ def test_quotes_warm_on_open_and_every_five_minutes_while_visible():
     src = _src("account/core.js")
     assert "/api/market/quotes?symbols=" in src and "max_age_s=" in src
     assert "WARM_MAX_AGE = 300" in src and "POLL_MS = 5 * 60 * 1000" in src
-    assert "S.whenVisible(" in src and "marketPhase" in src
+    assert "S.whenVisible(" in src and "marketInfo(r).phase === 'open'" in src
     # quote state comes from the account's quote_ts, not the /quotes reply
     assert "S.quoteState({ quoteTs: h.quote_ts" in src
+
+
+def test_market_phase_and_session_date_come_from_the_server_calendar():
+    """감사: a weekday holiday read as '장중' all day, and one held symbol's
+    newest bar named the P&L day. Both now come from GET /api/market/session,
+    read again with every account read; the clock is only the fallback."""
+    src = _src("account/core.js")
+    assert "'/api/market/session'" in src
+    assert "const sess = loadMarketSession();" in src and "await sess;" in src   # with every reload
+    assert "S.marketState(region)" in src                                     # fallback only
+    assert "/api/market/ohlcv/" not in src and "marketPhase" not in src
+    assert "S.pnlLabel(m)" in src
+
+
+def test_refresh_fills_bars_then_reads_the_account_again():
+    src = _src("account/core.js")
+    body = src[src.index("ACC.refreshQuotes = async function"):]
+    body = body[:body.index("\n  };")]
+    assert "S.api('/api/market/refresh', { method: 'POST'" in body
+    assert body.index("/api/market/refresh") < body.index("ACC.reload(")
+    assert "setWarm('warming', 'refresh')" in body and "setWarm('error', 'refresh')" in body
+    view = _src("account/view-account.js")
+    assert "onClick: () => ACC.refreshQuotes()" in view
+    assert "'새로 받는 중'" in view and "'시세와 일봉을 새로 받지 못했어요'" in view
+
+
+def test_back_from_a_lock_hides_the_page_until_checked():
+    src = _src("account/core.js")
+    assert "classList.add('is-rechecking')" in src and "recheck: true" in src
+    assert ".is-rechecking #main" in _src("account/account.css")
+    lock = src[src.index("ACC.lock = async function"):]
+    lock = lock[:lock.index("\n  };")]
+    assert lock.index("S.rememberAccount(null)") < lock.index("location.replace(")
+
+
+def test_background_403_keeps_an_open_dialog():
+    src = _src("account/core.js")
+    fb = src[src.index("S.onForbidden = () =>"):]
+    fb = fb[:fb.index("\n  };")]
+    assert "document.querySelector('.s-scrim .s-dialog')" in fb
+    assert "S.pinPrompt(" in fb and "showGate()" in fb
+
+
+def test_coordinate_line_ages_with_the_analysis():
+    src = _src("account/view-account.js")
+    body = src[src.index("function coordLine(h)"):]
+    body = body[:body.index("\n  }\n")]
+    assert "S.analysisState(" in body and "as.state === 'old'" in body and "'overdue'" in body
+    assert "' 분석'" in body
+    assert "is-faded" in src and ".r-coords.is-faded" in _src("account/account.css")
+
+
+def test_asset_trend_is_on_the_calendar_and_says_when_today_is_skipped():
+    src = _src("account/view-account.js")
+    assert "const x = i => xAt(dayMs(pts[i].date));" in src
+    assert "n_missing > 0" in src and "시세 없는 종목이 있어 오늘 기록을 쓰지 않았어요" in src
 
 
 def test_lock_clears_the_cookie_and_replaces_the_history_entry():

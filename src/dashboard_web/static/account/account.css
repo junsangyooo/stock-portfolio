@@ -17,6 +17,8 @@ a { color: inherit; }
 .btn.acc-refresh.is-busy { color: var(--accent-default); }
 .acc-banner { margin-bottom: var(--space-gap-lg); }
 .acc-problem { padding: var(--space-page) var(--space-gap-lg); }
+/* back from a lock (bfcache): nothing shows until the session is checked again */
+.is-rechecking #main, .is-rechecking .s-panel { visibility: hidden; }
 
 /* 390: white sections edge to edge, thin gaps between */
 .acc-top, .acc-bottom, .acc-side { display: flex; flex-direction: column; gap: var(--space-gap-sm); }
@@ -100,6 +102,9 @@ a { color: inherit; }
 .trend-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-gap-xs);
                min-height: 160px; border: var(--border-width) dashed var(--border-default); border-radius: var(--radius-control);
                color: var(--text-muted); }
+.trend-note { display: flex; align-items: center; gap: var(--space-gap-xs); margin-top: var(--space-gap-sm);
+              color: var(--text-muted); font-size: var(--type-caption-size); }
+.trend-note .lci { width: var(--icon-size-sm); height: var(--icon-size-sm); flex: none; }
 .skeleton-block { display: block; height: 180px; border-radius: var(--radius-control); background: var(--skeleton-fill);
                   animation: s-blink 1.4s ease-in-out infinite; }
 
@@ -223,10 +228,13 @@ a { color: inherit; }
 .r-vd { grid-area: vd; min-width: 0; }
 .r-coords { grid-area: coords; color: var(--text-muted); font-size: var(--type-caption-size); min-width: 0;
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.r-coords.is-faded { opacity: .55; }
 .ls-row.no-coords { grid-template-areas: "name name name eval" "spark price price pnl" "vd vd vd vd"; }
 
 .vd { display: inline-flex; align-items: center; gap: var(--space-gap-xs); font-size: var(--type-caption-size); white-space: nowrap; }
 .vd.is-old { opacity: .55; }
+/* a verdict with a badge (갱신 누락) drops the score bar and dots — the row column has no room for all four */
+.vd.has-badge .vd-score, .vd.has-badge .vd-dots { display: none; }
 .vd-label { display: inline-flex; align-items: center; gap: var(--space-gap-2xs); }
 .vd-arrow { font-size: var(--type-caption-size); letter-spacing: -1px; }
 .tone-positive { color: var(--verdict-positive); }

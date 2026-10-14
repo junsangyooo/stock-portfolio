@@ -30,6 +30,7 @@
     avgErr.hidden = true;
     const nm = el('input', { className: 'input', id: 'hfx-name', autocomplete: 'off', value: h.name_kr || '', maxlength: '60' });
     const note = el('input', { className: 'input', id: 'hfx-note', autocomplete: 'off', value: h.note || '', placeholder: '선택', maxlength: '200' });
+    const shown = { qty: qty.value, avg: avg.value };
     const body = el('div', { className: 'form-stack hfx' }, [
       el('div', { className: 'tdl-sym' }, [
         el('div', { className: 'tdl-sym-n' }, [el('strong', { className: 'ellipsis', title: h.name_kr || sid }, [h.name_kr || sid]),
@@ -39,7 +40,7 @@
       el('p', { className: 't-caption t-muted hfx-note' }, [svgIco('info'), '거래 기록 없이 숫자만 바꿔요 · 예수금 그대로']),
       field('hfx-qty', '수량', el('div', { className: 'tdl-inp' }, [qty, el('span', { className: 'tdl-suffix', 'aria-hidden': 'true' }, ['주'])]), [qtyErr]),
       field('hfx-avg', '평단 (' + (c === 'USD' ? '$' : '₩') + ')', avg, [avgErr]),
-      field('hfx-name', '표시 이름', nm),
+      field('hfx-name', '표시 이름', nm, [el('p', { className: 't-caption t-muted' }, ['비우면 원래 종목명으로 돌아가요'])]),
       field('hfx-note', '메모', note),
     ]);
     let d = null;
@@ -65,13 +66,17 @@
       onSubmit: async ctx => {
         const bad = check();
         if (bad) { const e = new Error(bad); e.status = 400; throw e; }
-        const q = parseNum(qty.value), a = parseNum(avg.value);
+        // a box left as it opened sends the stored value, not the rounded
+        // text it shows (12.345678주 opens as '12.3457')
+        const q = qty.value === shown.qty && h.qty != null ? +h.qty : parseNum(qty.value);
+        const a = avg.value === shown.avg && h.avg_cost != null ? +h.avg_cost : parseNum(avg.value);
         const name = nm.value.trim();
         // every field goes, every time (a field left out would be written empty)
         // name: only a changed one is an override — sending the shown name back
-        // would pin today's universe name to this row (null keeps what is stored)
+        // would pin today's universe name to this row (null keeps what is
+        // stored); an emptied box sends '' — back to the listed name
         const payload = { symbol_id: sid, qty: q, avg_cost: q > 0 ? a : (a || null), note: note.value.trim() || null,
-          name: name && name !== (h.name_kr || '') ? name : null };
+          name: !name ? '' : name !== (h.name_kr || '') ? name : null };
         await ctx.api(ACC.path('/holdings'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         return true;
       },

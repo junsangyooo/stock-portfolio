@@ -586,3 +586,20 @@ def test_sprite_has_every_design_icon():
     used.discard("name")   # the placeholder in shared.js's own comment
     assert not sorted(used - sprite), sorted(used - sprite)
     assert "Lucide 1.55.0" in js
+
+
+def test_dialog_never_resends_blind_and_reasks_the_pin_every_time():
+    """S.dialog (인계 §3.8, audit): when the look after a dropped write fails
+    too, nothing can be resent from the dialog (it could write twice); a 403
+    after a PIN re-entry asks for the PIN again instead of showing the
+    server's 'PIN required'."""
+    src = SHARED_JS.read_text()
+    body = src[src.index("function dialog(o)"):src.index("function confirmModal(o)")]
+    catch = body[body.index("try { landed = await o.verify(err); }"):]
+    catch = catch[:catch.index("if (landed)")]
+    assert "stuck();" in catch and "landed = false" not in catch
+    assert "if (unverified) {" in body                     # the main button no longer submits
+    assert "pinTried" not in body
+    forb = body[body.index("if (err && err.forbidden && o.account) {"):]
+    forb = forb[:forb.index("if (err && (err.network")]
+    assert "pinPrompt(" in forb and "fail(err)" not in forb

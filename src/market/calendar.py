@@ -68,4 +68,6 @@ def state(market: str, now: Optional[datetime] = None) -> dict:
         phase = "post"
     last = today if phase in ("open", "post") else last_session(market, today - timedelta(days=1))
     return {"phase": phase, "today": today.isoformat(), "today_is_session": is_session(market, today),
-            "last_session": last.isoformat(), "covered": covered(today.year)}
+            "last_session": last.isoformat(), "covered": covered(today.year),
+            # weekday holidays, so a page counts '2거래일 전' over 한글날 right
+            "holidays": sorted(d.isoformat() for d in HOLIDAYS.get(market, ()))}

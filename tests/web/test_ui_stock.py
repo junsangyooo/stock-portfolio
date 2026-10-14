@@ -216,6 +216,8 @@ def test_trades_filters_live_in_the_address():
         assert f"'{k}'" in s or f"q.{k}" in s or f"{k}=" in s, k
     assert "이 기간엔 거래가 없어요" in s and "아직 기록한 거래가 없어요" in s and "거래 이력을 불러오지 못했어요" in s
     assert "LABELS.clearFilter" in s
+    # at the route's cap the sums say they cover only the newest rows
+    assert "const LIMIT = 1000;" in s and "'최근 ' + S.fmtCount(LIMIT) + '건 기준'" in s
 
 
 # ── DLG-TRADE ────────────────────────────────────────────────────────────
@@ -225,8 +227,12 @@ def test_trade_dialog_one_post_then_look_before_resend():
     assert "ACC.path('/trades')" in s
     verify = s[s.index("verify: async"):]
     verify = verify[:verify.index("},\n    });")]
-    assert "'&limit=5'" in verify and "symbol_id=" in verify, "verify reads GET /trades?symbol_id=…&limit=5"
+    # the same day, the same symbol (인계 §3.8, audit: limit=5 missed a busy day)
+    assert "'&limit=50'" in verify and "symbol_id=" in verify and "'&since='" in verify and "'&until='" in verify
     assert "method" not in verify, "verify never writes"
+    # the look failed too → no resend from the dialog, only 거래 보기
+    assert "unverified: { title: '기록됐는지 확인하지 못했어요', sub: '거래 이력에서 확인해 주세요'" in s
+    assert "label: LABELS.viewTrade" in s
     assert "account: ACC.accountRef()" in s, "403 → PIN 다시 입력 → 1회 재전송 (S.dialog)"
     assert "confirmDiscard: true" in s
     assert "DELETE" not in s and "/holdings" not in s, "one door for a trade: POST /trades"
@@ -254,6 +260,11 @@ def test_hold_fix_sends_every_field_and_blocks_zero():
     for k in ("symbol_id", "qty", "avg_cost", "note", "name"):
         assert re.search(rf"\b{k}:", payload), k
     assert "0주로 만들려면 매도 기록이나 종목 삭제를 써요" in s
+    # an untouched box sends the stored number, not its rounded text
+    assert "qty.value === shown.qty && h.qty != null ? +h.qty" in s
+    assert "avg.value === shown.avg && h.avg_cost != null ? +h.avg_cost" in s
+    # an emptied display name goes back to the listed name ('' clears the override)
+    assert "name: !name ? '' :" in payload
     assert "거래 기록 없이 숫자만 바꿔요 · 예수금 그대로" in s
 
 
