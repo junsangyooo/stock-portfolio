@@ -71,11 +71,13 @@ if __name__ == "__main__":
     # Daily cron entry: warm the cache OUTSIDE the chat subprocess — the chat
     # child has KRX_* scrubbed from its env (core/llm.py), so screening from
     # chat only ever reads the parquet this writes.
+    # One JSON line, like every other job, so the sources dashboard reads it.
+    import json
     import sys
     logging.basicConfig(level=logging.INFO)
     try:
         ymd, df = load()
-        print(f"screener ok {ymd}: {len(df)} tickers")
+        print(json.dumps({"date": ymd, "tickers": len(df), "error": None}))
     except Exception as e:  # noqa: BLE001 — cron convention: non-zero + message
-        print(f"screener FAILED: {e}", file=sys.stderr)
+        print(json.dumps({"date": None, "tickers": 0, "error": str(e)[:300]}))
         sys.exit(1)

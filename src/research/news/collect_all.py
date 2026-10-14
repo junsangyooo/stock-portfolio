@@ -29,6 +29,10 @@ from .fetch.base import published_iso
 from .fetch.og_image import enrich_images
 from .fetch.rss import fetch_rss
 
+# Newest items kept per source per sweep. More than this in one sweep is
+# dropped; read.source_health counts the sweeps that hit it.
+MAX_PER_SOURCE = 40
+
 log = logging.getLogger(__name__)
 
 # Short latin keywords (AI, ESS, HBM, LFP) need letter boundaries — a bare
@@ -103,7 +107,7 @@ def _mark(source_id: str, *, newest: Optional[str], ok: bool,
 
 
 def collect_one(feed: Feed, keywords: list[str], cursor: Optional[str],
-                *, now: datetime, max_per_source: int = 40,
+                *, now: datetime, max_per_source: int = MAX_PER_SOURCE,
                 timeout: float = 15.0) -> dict:
     """Fetch one feed and store what is new. Never raises."""
     stat = {"source": feed.source_id, "written": 0, "filtered": 0,
@@ -175,7 +179,7 @@ def collect_one(feed: Feed, keywords: list[str], cursor: Optional[str],
 
 def collect_all(*, catalog: Optional[Catalog] = None,
                 now: Optional[datetime] = None,
-                max_per_source: int = 40, timeout: float = 15.0) -> dict:
+                max_per_source: int = MAX_PER_SOURCE, timeout: float = 15.0) -> dict:
     """Sweep every source in sources.json once."""
     catalog = catalog or load_catalog()
     now = now or datetime.now(KST)

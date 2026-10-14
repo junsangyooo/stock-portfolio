@@ -24,6 +24,7 @@ class TestApiGate(unittest.TestCase):
             ("POST", "/api/analysis/analysis/KR/005930/run"),
             ("POST", "/api/accounts/junisa/chat"),
             ("GET", "/api/universe/search?q=samsung"),
+            ("GET", "/api/health/sources"),
         ]:
             r = self.c.request(method, path)
             self.assertEqual(r.status_code, 403, f"{method} {path} not gated")
@@ -103,3 +104,18 @@ class TestTheHumanBookHasNoPlanRoutes(unittest.TestCase):
         paths = {getattr(r, "path", "") for r in app.routes}
         assert not [p for p in paths if "/plans" in p and p.startswith("/api/accounts")]
         assert not [p for p in paths if "/plan_runs" in p]
+
+
+def test_sources_page_is_served_and_its_data_opens_with_any_session(tmp_path, monkeypatch):
+    """The page itself is a shell anyone can load; the report behind it needs
+    an account session, like every /api route but the three entry points."""
+    from src.core import paths
+    monkeypatch.setattr(paths, "LOGS_DIR", tmp_path)
+    c = TestClient(app)
+    page = c.get("/sources")
+    assert page.status_code == 200 and "소스 현황" in page.text
+    assert "nonce-" in page.headers.get("content-security-policy", "")
+    c.cookies.set(security.COOKIE_PREFIX + "junisa", security.make_session_token("junisa"))
+    r = c.get("/api/health/sources")
+    assert r.status_code == 200
+    assert {"news", "pipeline", "market", "universe", "jobs"} <= set(r.json())

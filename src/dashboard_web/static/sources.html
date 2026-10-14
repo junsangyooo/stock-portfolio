@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>portfolio-dashboard · 소스 현황</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+/* Tokens come from theme.json (server-injected); shared.css sets the base font
+   and the .btn family. Mobile-first: rows stack on phones, 600px lays a news
+   source out on one line, 900px puts the market and job cards in columns. */
+* { box-sizing:border-box; margin:0; padding:0; }
+[hidden] { display:none !important; }
+body { font-family:'JetBrains Mono', monospace; min-height:100vh; }
+a { color:inherit; text-decoration:none; }
+.wrap { max-width:1400px; margin:0 auto; padding:var(--space-2) var(--space-1); }
+
+.header {
+  display:flex; justify-content:space-between; align-items:center; gap:var(--space-2);
+  padding:var(--space-2); background:var(--panel);
+  border:var(--border-w) solid var(--line); border-radius:var(--radius-md);
+  box-shadow:var(--shadow-sm); flex-wrap:wrap;
+}
+.header .left { display:flex; gap:var(--space-2); align-items:center; }
+.header .title { font-size:var(--text-xs); letter-spacing:1px; }
+.header .asof { color:var(--dim); font-size:var(--text-xs); }
+
+.panel {
+  background:var(--panel); border:var(--border-w) solid var(--line);
+  border-radius:var(--radius-md); box-shadow:var(--shadow-sm);
+  padding:var(--space-3); margin-top:var(--space-2);
+}
+.panel h2 { display:flex; align-items:baseline; gap:var(--space-2); margin-bottom:var(--space-2); }
+.panel h2 .n { color:var(--dim); font-size:var(--text-xs); font-weight:400; }
+
+/* status colours: one class per state, shared by chips, dots and counts */
+.st-ok { --st:var(--green); }
+.st-capped, .st-late { --st:var(--yellow); }
+.st-quiet { --st:var(--orange); }
+.st-failing, .st-dead, .st-problem { --st:var(--red); }
+.st-never, .st-none { --st:var(--muted); }
+.chip {
+  display:inline-flex; align-items:center; gap:6px;
+  font-size:var(--text-xs); padding:2px var(--space-1);
+  border:1px solid var(--st); color:var(--st); border-radius:var(--radius-sm);
+  background:transparent; cursor:pointer; min-height:24px;
+}
+.chip .dot, .dot { width:8px; height:8px; border-radius:50%; background:var(--st); flex:none; }
+.chip.on { background:var(--st); color:var(--panel); }
+.chip.on .dot { background:var(--panel); }
+
+/* gauge strip: one tile per status */
+.gauges { display:grid; grid-template-columns:repeat(3, 1fr); gap:var(--space-1); }
+.gauge {
+  border:1px solid var(--line); border-radius:var(--radius-sm); padding:var(--space-1) var(--space-2);
+  display:flex; flex-direction:column; gap:2px; border-left:4px solid var(--st);
+}
+.gauge .v { font-size:var(--text-xl); font-weight:700; color:var(--st); }
+.gauge .k { font-size:var(--text-xs); color:var(--dim); }
+.pipe { display:flex; flex-wrap:wrap; gap:var(--space-3); margin-top:var(--space-2);
+        font-size:var(--text-xs); color:var(--dim); }
+.pipe b { color:var(--fg); font-weight:500; }
+
+.filters { display:flex; flex-wrap:wrap; gap:var(--space-1); margin-bottom:var(--space-2); }
+
+.src-row {
+  display:grid; grid-template-columns:auto 1fr; gap:2px var(--space-2);
+  padding:var(--space-2) 0; border-top:1px solid var(--line); align-items:center;
+}
+.src-row .name { font-size:var(--text-sm); color:var(--fg); }
+.src-row .name small { color:var(--muted); font-size:var(--text-xs); margin-left:6px; }
+.src-row canvas { grid-column:1 / -1; width:100%; height:28px; }
+.src-row .nums { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:var(--space-3);
+                 font-size:var(--text-xs); color:var(--dim); }
+.src-row .nums b { color:var(--fg); font-weight:500; }
+.src-row .why { grid-column:1 / -1; font-size:var(--text-xs); color:var(--st);
+                overflow-wrap:anywhere; }
+
+.cards { display:grid; grid-template-columns:1fr; gap:var(--space-2); }
+.card {
+  border:1px solid var(--line); border-left:4px solid var(--st); border-radius:var(--radius-sm);
+  padding:var(--space-2); display:flex; flex-direction:column; gap:4px;
+}
+.card .h { display:flex; justify-content:space-between; gap:var(--space-2); align-items:center; }
+.card .h strong { font-size:var(--text-sm); }
+.card .kv { font-size:var(--text-xs); color:var(--dim); display:flex; flex-wrap:wrap; gap:4px var(--space-3); }
+.card .kv b { color:var(--fg); font-weight:500; }
+.card .bad { font-size:var(--text-xs); color:var(--red); overflow-wrap:anywhere; }
+.bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; }
+.bar > i { display:block; height:100%; background:var(--st); }
+
+.gate { text-align:center; padding:var(--space-6) var(--space-3); color:var(--dim); }
+.gate a { color:var(--cyan); text-decoration:underline; }
+
+@media (min-width: 600px) {
+  .wrap { padding:var(--space-3) var(--space-2); }
+  .header .title { font-size:var(--text-md); letter-spacing:2px; }
+  .gauges { grid-template-columns:repeat(6, 1fr); }
+  .src-row { grid-template-columns:110px minmax(160px, 1.2fr) 2fr minmax(260px, 1.4fr); }
+  .src-row canvas, .src-row .nums { grid-column:auto; }
+  .src-row .why { grid-column:2 / -1; }
+  .cards { grid-template-columns:repeat(2, 1fr); }
+}
+@media (min-width: 900px) {
+  .cards { grid-template-columns:repeat(3, 1fr); }
+}
+@media (min-width: 1100px) {
+  .cards { grid-template-columns:repeat(4, 1fr); }
+}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">본문으로 건너뛰기</a>
+<h1 class="sr-only">소스 현황</h1>
+<div class="wrap">
+  <div class="header">
+    <div class="left">
+      <a class="title" href="/">◆ PORTFOLIO</a>
+      <span class="title">소스 현황</span>
+    </div>
+    <div class="left">
+      <span class="asof" id="asof"></span>
+      <button id="btn-reload" type="button" class="btn btn-sm" aria-label="다시 불러오기">↻</button>
+    </div>
+  </div>
+
+  <main id="main">
+    <div class="panel gate" id="gate" hidden>
+      <p>계좌에 들어간 뒤 볼 수 있습니다. <a href="/">홈</a>에서 계좌를 열어 주세요.</p>
+    </div>
+
+    <section class="panel" aria-labelledby="sum-h" id="sec-sum" hidden>
+      <h2 id="sum-h">뉴스 소스 <span class="n" id="sum-n"></span></h2>
+      <div class="gauges" id="gauges"></div>
+      <div class="pipe" id="pipe"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="src-h" id="sec-src" hidden>
+      <h2 id="src-h">소스별 <span class="n" id="src-n"></span></h2>
+      <div class="filters" id="filters" role="group" aria-label="상태 필터"></div>
+      <div id="src-list"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="mkt-h" id="sec-mkt" hidden>
+      <h2 id="mkt-h">시세·재무 <span class="n" id="mkt-n"></span></h2>
+      <div class="cards" id="mkt-cards"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="job-h" id="sec-job" hidden>
+      <h2 id="job-h">정기 작업 <span class="n">deploy/portfolio.cron</span></h2>
+      <div class="cards" id="job-cards"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+const { el, clear } = S;
+
+// ── vocabulary ──────────────────────────────────────────────────────
+const SRC_STATUS = {   // severity order: worst first
+  dead: '죽음', failing: '실패 중', quiet: '조용함', capped: '상한 도달', never: '읽은 적 없음', ok: '정상',
+};
+const JOB_STATUS = { problem: '문제', late: '늦음', none: '기록 없음', ok: '정상' };
+const GROUP_KO = { news: '뉴스', research: '논문', social: '커뮤니티' };
+const JOB_KO = {
+  news: '뉴스 수집·정리', backup: 'DB 백업', fundamental: '재무', etf: 'ETF',
+  snapshot: '종가 스냅샷', screener: 'KRX 스크리너', universe: '종목 마스터', analysis: '종합 분석',
+};
+const ORDER = Object.keys(SRC_STATUS);
+
+let DATA = null;
+let FILTER = 'issues';   // 'issues' | 'all' | a status
+
+function n(v) { return v == null ? '-' : Number(v).toLocaleString('ko-KR'); }
+function pct(v) { return v == null ? '-' : Math.round(v * 100) + '%'; }
+function hoursKo(h) {
+  if (h == null) return '-';
+  return h < 1 ? Math.round(h * 60) + '분 전' : h < 48 ? Math.round(h) + '시간 전'
+    : Math.round(h / 24) + '일 전';
+}
+
+// ── 30-day bars: one per collected day, today on the right ─────────
+function sparkline(canvas, values, status) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 300, h = canvas.clientHeight || 28;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const max = Math.max(1, ...values);
+  const bw = w / values.length;
+  const tok = { ok: 'green', capped: 'yellow', quiet: 'orange', failing: 'red', dead: 'red' }[status] || 'muted';
+  values.forEach((v, i) => {
+    const bh = v ? Math.max(2, (v / max) * (h - 2)) : 1;
+    ctx.fillStyle = v ? S.designColor(tok) : S.designColor('line');
+    ctx.fillRect(i * bw + 1, h - bh, Math.max(1, bw - 2), bh);
+  });
+}
+
+// ── summary ─────────────────────────────────────────────────────────
+function renderSummary(d) {
+  const srcs = d.news.sources, counts = {};
+  srcs.forEach(s => { counts[s.status] = (counts[s.status] || 0) + 1; });
+  document.getElementById('sum-n').textContent = srcs.length + '곳 · 최근 ' + d.news.days.length + '일';
+  const g = document.getElementById('gauges');
+  clear(g);
+  ORDER.forEach(k => g.appendChild(el('div', { className: 'gauge st-' + k }, [
+    el('span', { className: 'v' }, [String(counts[k] || 0)]),
+    el('span', { className: 'k' }, [SRC_STATUS[k]]),
+  ])));
+  const p = d.pipeline, pipe = document.getElementById('pipe');
+  clear(pipe);
+  [['정리 대기', n(p.pending_enrich) + '건'],
+   ['마지막 정리', S.itemTime({ fetched_at: p.last_enriched_at }) || '-'],
+   ['하루 요약', (p.daily_date || '-') + ' · ' + p.daily_themes + '/' + p.n_themes + '분야'],
+   ['주간', p.weekly_start || '-'], ['월간', p.monthly || '-'],
+   ['수집 상한', d.news.cap + '건/회']].forEach(([k, v]) =>
+    pipe.appendChild(el('span', {}, [k + ' ', el('b', {}, [v])])));
+}
+
+// ── per source ─────────────────────────────────────────────────────
+function renderFilters(srcs) {
+  const f = document.getElementById('filters');
+  clear(f);
+  const issues = srcs.filter(s => s.status !== 'ok').length;
+  const opts = [['issues', '문제만 (' + issues + ')', 'st-failing'], ['all', '전체 (' + srcs.length + ')', 'st-never']]
+    .concat(ORDER.filter(k => srcs.some(s => s.status === k))
+      .map(k => [k, SRC_STATUS[k], 'st-' + k]));
+  opts.forEach(([key, label, cls]) => {
+    const b = el('button', {
+      type: 'button', className: 'chip ' + cls + (FILTER === key ? ' on' : ''),
+      'aria-pressed': FILTER === key ? 'true' : 'false',
+      onClick: () => { FILTER = key; renderSources(DATA); },
+    }, [el('span', { className: 'dot' }), label]);
+    f.appendChild(b);
+  });
+}
+
+function renderSources(d) {
+  const all = d.news.sources.slice().sort((a, b) =>
+    ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || b.n_30d - a.n_30d);
+  renderFilters(all);
+  const shown = all.filter(s => FILTER === 'all' ? true
+    : FILTER === 'issues' ? s.status !== 'ok' : s.status === FILTER);
+  document.getElementById('src-n').textContent = shown.length + '곳';
+  const list = document.getElementById('src-list');
+  clear(list);
+  if (!shown.length) {
+    list.appendChild(el('p', { className: 'pipe' }, ['해당하는 소스가 없습니다.']));
+    return;
+  }
+  const pending = [];
+  shown.forEach(s => {
+    const canvas = el('canvas', { role: 'img',
+      'aria-label': '최근 ' + s.daily.length + '일 날짜별 수집 건수, 합계 ' + s.n_30d + '건' });
+    const why = [s.reason, s.last_error].filter(Boolean).join(' · ');
+    list.appendChild(el('div', { className: 'src-row st-' + s.status }, [
+      el('span', { className: 'chip st-' + s.status, role: 'note' },
+        [el('span', { className: 'dot' }), SRC_STATUS[s.status]]),
+      el('span', { className: 'name', title: s.url || '' }, [S.srcName(s.source_id),
+        el('small', {}, [s.source_id + ' · ' + (GROUP_KO[s.group] || s.group) + (s.broad ? ' · 관문' : '')])]),
+      canvas,
+      el('div', { className: 'nums' }, [
+        el('span', {}, ['7일 ', el('b', {}, [n(s.n_7d)])]),
+        el('span', {}, ['30일 ', el('b', {}, [n(s.n_30d)])]),
+        el('span', {}, ['상한 ', el('b', {}, [n(s.capped_sweeps) + '회'])]),
+        el('span', {}, ['무분야 ', el('b', {}, [pct(s.untagged_share)])]),
+        el('span', {}, ['성공 ', el('b', {}, [S.itemTime({ fetched_at: s.last_ok_at }) || '-'])]),
+      ]),
+      why ? el('div', { className: 'why' }, [why]) : null,
+    ]));
+    pending.push([canvas, s.daily, s.status]);
+  });
+  requestAnimationFrame(() => pending.forEach(([c, v, st]) => sparkline(c, v, st)));
+}
+
+// ── market facts ───────────────────────────────────────────────────
+function factCard(title, f, unit, lateLabel) {
+  const bad = (f.missing || 0) + (f.late || 0);
+  const st = f.n === 0 ? 'none' : bad ? (f.missing ? 'problem' : 'late') : 'ok';
+  const okShare = f.n ? (f.n - bad) / f.n : 0;
+  return el('div', { className: 'card st-' + st }, [
+    el('div', { className: 'h' }, [el('strong', {}, [title]),
+      el('span', { className: 'chip st-' + st }, [el('span', { className: 'dot' }),
+        f.n ? (f.n - bad) + '/' + f.n : '대상 없음'])]),
+    el('div', { className: 'bar', role: 'img', 'aria-label': '정상 비율 ' + pct(okShare) },
+      [el('i', { style: 'width:' + Math.round(okShare * 100) + '%' })]),
+    el('div', { className: 'kv' }, [
+      el('span', {}, ['없음 ', el('b', {}, [n(f.missing)])]),
+      el('span', {}, [lateLabel + ' ', el('b', {}, [n(f.late)])]),
+      f.oldest != null ? el('span', {}, ['가장 오래됨 ', el('b', {}, [unit(f.oldest)])]) : null,
+    ]),
+  ]);
+}
+
+function simpleCard(title, st, chip, kv) {
+  return el('div', { className: 'card st-' + st }, [
+    el('div', { className: 'h' }, [el('strong', {}, [title]),
+      el('span', { className: 'chip st-' + st }, [el('span', { className: 'dot' }), chip])]),
+    el('div', { className: 'kv' }, kv.map(([k, v]) => el('span', {}, [k + ' ', el('b', {}, [v])]))),
+  ]);
+}
+
+function renderMarket(d) {
+  const m = d.market, u = d.universe, box = document.getElementById('mkt-cards');
+  document.getElementById('mkt-n').textContent = '보유 ' + m.held + '종목 기준';
+  clear(box);
+  const days = v => v + '일';
+  const secs = v => hoursKo(v / 3600);
+  box.appendChild(factCard('일봉 (pykrx·yfinance)', m.bars, days, '4일 넘음'));
+  box.appendChild(factCard('현재가 캐시', m.quotes, secs, '4일 넘음'));
+  box.appendChild(factCard('밸류에이션', m.valuation, days, '-'));
+  box.appendChild(factCard('업종', m.sector, days, '-'));
+  box.appendChild(factCard('ETF (네이버)', m.etf, days, '2일 넘음'));
+  const fl = m.filings;
+  box.appendChild(simpleCard('재무 공시 (DART·EDGAR)', fl.n ? 'ok' : 'none',
+    fl.with_filed_at + '/' + fl.n, [['공시일 있음', fl.with_filed_at + '종목'], ['최신 공시', fl.newest || '-']]));
+  const sc = m.screener;
+  box.appendChild(simpleCard('KRX 스크리너', sc.date == null ? 'problem' : sc.age_days > 4 ? 'late' : 'ok',
+    sc.date || '없음', [['캐시 날짜', sc.date || '-'], ['나이', sc.age_days == null ? '-' : sc.age_days + '일']]));
+  const uAge = Math.max(u.kr_age_h || 0, u.us_age_h || 0);
+  box.appendChild(simpleCard('종목 마스터', !u.total ? 'problem' : uAge > 26 ? 'late' : 'ok',
+    n(u.total) + '종목', [['한국', n(u.by_region.KR)], ['미국', n(u.by_region.US)], ['갱신', hoursKo(uAge)]]));
+}
+
+// ── jobs ───────────────────────────────────────────────────────────
+function flat(obj, prefix, out) {
+  for (const k in obj) {
+    const v = obj[k];
+    if (v && typeof v === 'object') flat(v, prefix + k + '.', out);
+    else if (out.length < 8) out.push([prefix + k, v == null ? '-' : String(v)]);
+  }
+  return out;
+}
+
+function renderJobs(d) {
+  const box = document.getElementById('job-cards');
+  clear(box);
+  d.jobs.forEach(j => {
+    const last = j.summaries[j.summaries.length - 1] || {};
+    box.appendChild(el('div', { className: 'card st-' + j.status }, [
+      el('div', { className: 'h' }, [el('strong', {}, [JOB_KO[j.job] || j.job]),
+        el('span', { className: 'chip st-' + j.status }, [el('span', { className: 'dot' }), JOB_STATUS[j.status]])]),
+      el('div', { className: 'kv' }, [el('span', {}, ['마지막 기록 ', el('b', {}, [hoursKo(j.age_h)])])]),
+      j.problems.length ? el('div', { className: 'bad' }, [j.problems.join(' · ')]) : null,
+      el('div', { className: 'kv' }, flat(last, '', []).map(([k, v]) =>
+        el('span', {}, [k + ' ', el('b', {}, [v])]))),
+    ]));
+  });
+}
+
+// ── load ───────────────────────────────────────────────────────────
+S.onForbidden = () => {
+  document.getElementById('gate').hidden = false;
+  ['sec-sum', 'sec-src', 'sec-mkt', 'sec-job'].forEach(id => { document.getElementById(id).hidden = true; });
+};
+
+async function load() {
+  let d;
+  try { d = await S.api('/api/health/sources'); }
+  catch (_) { return; }   // S.api already toasted, or opened the gate
+  DATA = d;
+  document.getElementById('asof').textContent = (d.asof || '').slice(0, 16).replace('T', ' ') + ' KST';
+  ['sec-sum', 'sec-src', 'sec-mkt', 'sec-job'].forEach(id => { document.getElementById(id).hidden = false; });
+  renderSummary(d); renderSources(d); renderMarket(d); renderJobs(d);
+}
+document.getElementById('btn-reload').addEventListener('click', load);
+window.addEventListener('resize', () => { if (DATA) renderSources(DATA); });
+load();
+</script>
+</body>
+</html>

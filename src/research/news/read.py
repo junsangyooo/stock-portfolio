@@ -476,3 +476,102 @@ def catalog() -> dict:
                         if k != "source_id"}}
                     for f in load_sources()],
     }
+
+
+# ── source health (the sources dashboard) ───────────────────────────────────
+# A source's state from its cursor and what it actually delivered. "Failing"
+# is the cursor's own count; "quiet" is the case the cursor cannot see — a
+# feed that answers 200 with nothing in it (or a page that is not a feed)
+# reads as a success there, so a week without a single item is flagged here.
+DEAD_AFTER = 4          # consecutive failed sweeps (two a day → two days)
+QUIET_DAYS = 7
+
+
+def _source_status(cur: dict, n_quiet: int, capped: int) -> tuple[str, str]:
+    fails = cur.get("n_consecutive_fail") or 0
+    if not cur:
+        return "never", "아직 한 번도 읽지 않음"
+    if fails >= DEAD_AFTER:
+        return "dead", f"{fails}회 연속 실패"
+    if fails:
+        return "failing", f"{fails}회 연속 실패"
+    if n_quiet == 0:
+        return "quiet", f"{QUIET_DAYS}일간 0건"
+    if capped:
+        return "capped", f"{QUIET_DAYS}일간 상한 도달 {capped}회"
+    return "ok", ""
+
+
+def source_health(days: int = 30, now: Optional[datetime] = None) -> dict:
+    """Every configured source: cursor state, items per collected day over
+    `days`, sweeps that hit the per-sweep cap, and the untagged share."""
+    from .catalog import load_sources
+    from .collect_all import MAX_PER_SOURCE
+    now = now or kst.now()
+    since = window_start(days, now)
+    quiet_since = window_start(QUIET_DAYS, now)
+    day_keys = [(now.date() - timedelta(days=i)).isoformat()
+                for i in range(days - 1, -1, -1)]
+    with connect() as c:
+        cur = {r["source_id"]: dict(r) for r in c.execute(
+            "SELECT source_id, last_fetched_at, last_ok_at, last_error, "
+            "n_consecutive_fail FROM source_cursor")}
+        per_day: dict = {}
+        for r in c.execute(
+                "SELECT source_id, collected_on, count(*) n FROM signals "
+                "WHERE collected_on >= ? GROUP BY source_id, collected_on", (since,)):
+            per_day.setdefault(r["source_id"], {})[r["collected_on"]] = r["n"]
+        capped: dict = {}
+        for r in c.execute(
+                "SELECT source_id, fetched_at, collected_on FROM signals "
+                "WHERE collected_on >= ? GROUP BY source_id, fetched_at "
+                "HAVING count(*) >= ?", (since, MAX_PER_SOURCE)):
+            d = capped.setdefault(r["source_id"], {"n": 0, "recent": 0})
+            d["n"] += 1
+            d["recent"] += r["collected_on"] >= quiet_since
+        untagged = {r["source_id"]: (r["n"], r["bare"]) for r in c.execute(
+            "SELECT s.source_id, count(*) n, sum(NOT EXISTS (SELECT 1 FROM "
+            "signal_themes t WHERE t.signal_id = s.signal_id)) bare "
+            "FROM signals s WHERE s.collected_on >= ? AND s.enriched_at IS NOT NULL "
+            "GROUP BY s.source_id", (since,))}
+    out = []
+    for f in load_sources():
+        c_ = cur.get(f.source_id, {})
+        daily = [per_day.get(f.source_id, {}).get(d, 0) for d in day_keys]
+        n_quiet = sum(daily[-QUIET_DAYS:])
+        cap = capped.get(f.source_id, {"n": 0, "recent": 0})
+        n_en, bare = untagged.get(f.source_id, (0, 0))
+        status, reason = _source_status(c_, n_quiet, cap["recent"])
+        out.append({
+            "source_id": f.source_id, "kind": f.kind, "group": f.group,
+            "broad": f.broad, "url": f.url,
+            "status": status, "reason": reason,
+            "last_ok_at": c_.get("last_ok_at"),
+            "last_fetched_at": c_.get("last_fetched_at"),
+            "last_error": c_.get("last_error"),
+            "n_consecutive_fail": c_.get("n_consecutive_fail") or 0,
+            "daily": daily, "n_1d": daily[-1], "n_7d": n_quiet, "n_30d": sum(daily),
+            "capped_sweeps": cap["n"], "capped_sweeps_7d": cap["recent"],
+            "untagged_share": round(bare / n_en, 3) if n_en else None,
+        })
+    return {"days": day_keys, "cap": MAX_PER_SOURCE, "sources": out}
+
+
+def pipeline_health(now: Optional[datetime] = None) -> dict:
+    """Where the stages after collection stand: the enrichment queue, the
+    newest daily/weekly/monthly summaries, and how many themes the newest
+    day covered."""
+    now = now or kst.now()
+    with connect() as c:
+        pending = c.execute("SELECT count(*) FROM signals WHERE enriched_at IS NULL "
+                            "AND collected_on >= ?", (window_start(7, now),)).fetchone()[0]
+        last_enriched = c.execute("SELECT max(enriched_at) FROM signals").fetchone()[0]
+        day = c.execute("SELECT date, count(*) n FROM theme_daily "
+                        "GROUP BY date ORDER BY date DESC LIMIT 1").fetchone()
+        week = c.execute("SELECT max(week_start) FROM theme_weekly").fetchone()[0]
+        month = c.execute("SELECT max(month) FROM theme_monthly").fetchone()[0]
+    return {"pending_enrich": pending, "last_enriched_at": last_enriched,
+            "daily_date": day["date"] if day else None,
+            "daily_themes": day["n"] if day else 0,
+            "n_themes": len(load_catalog().themes),
+            "weekly_start": week, "monthly": month}

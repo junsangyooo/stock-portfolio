@@ -40,7 +40,7 @@ SHARED_JS = STATIC / "shared.js"
 SHARED_CSS = STATIC / "shared.css"
 THEME = STATIC / "theme.json"
 NEWS_THEMES = Path(server.__file__).resolve().parents[1] / "research" / "news" / "themes.json"
-SCREEN_FILES = ("landing.html", "account.html", "shared.js", "shared.css")
+SCREEN_FILES = ("landing.html", "account.html", "sources.html", "shared.js", "shared.css")
 
 # Every name the injected fragment exports (ui-02-architecture §4). Each must
 # be defined exactly once across the fragment and the pages.
@@ -229,7 +229,7 @@ def test_account_page_trade_flow_uses_trades_route():
 
 
 # ── U5: harness closure ──────────────────────────────────────────────────
-PAGES = ("landing.html", "account.html")
+PAGES = ("landing.html", "account.html", "sources.html")
 
 
 def test_facts_only_result_is_not_dressed_as_a_judgement():

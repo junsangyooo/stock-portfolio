@@ -3,6 +3,7 @@
 Routes:
   GET /              — landing.html (홈 / 소식)
   GET /a/{id}        — account.html (per-account view)
+  GET /sources       — sources.html (source and job health)
   GET /favicon*.png · /favicon.ico · /apple-touch-icon.png — product icons
   /api/universe/*    — symbol master search
   /api/accounts/*    — account CRUD + holdings + balances + snapshots + chat
@@ -267,6 +268,12 @@ def _is_portfolio_host(request: Request) -> bool:
 @app.get("/", response_class=HTMLResponse)
 def landing() -> HTMLResponse:
     return _serve("landing.html")
+
+
+@app.get("/sources", response_class=HTMLResponse)
+def sources_page() -> HTMLResponse:
+    # Data comes from /api/health/sources, behind the session gate.
+    return _serve("sources.html")
 
 
 @app.get("/a/{account_id}", response_class=HTMLResponse)

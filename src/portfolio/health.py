@@ -1,0 +1,129 @@
+"""The sources dashboard's data: is every source and scheduled job delivering?
+
+Composes the shared layers' own health reads with the two things only this
+app knows — which symbols are held (market facts are checked for those) and
+which jobs it schedules (deploy/portfolio.cron, each with its own log).
+
+Any account's session can open the dashboard, so nothing here names a
+holding: market facts are counts, and a job summary's lists (stale symbols,
+failed accounts) are reduced to their length.
+"""
+from __future__ import annotations
+
+import json
+import os
+import time
+from datetime import datetime
+from typing import Optional
+
+from ..core import kst, paths
+from ..market import health as market_health
+from ..research.news import read as news
+from ..universe import search as universe
+from .store import holding_store
+
+# (job, log file, hours between runs before it counts as late, summaries kept)
+# — the schedule in deploy/portfolio.cron. Each run ends with one summary
+# (the news cycle's last one carries collect, enrich and daily together).
+JOBS = (
+    ("news", "news.log", 14, 1),
+    ("backup", "backup.log", 26, 1),
+    ("fundamental", "fundamental.log", 26, 1),
+    ("etf", "etf.log", 26, 1),
+    ("snapshot", "snapshot.log", 14, 1),
+    ("screener", "screener.log", 26, 1),
+    ("universe", "universe.log", 26, 1),
+    ("analysis", "analysis.log", 4 * 24, 1),   # weekdays only
+)
+# Keys whose non-empty value means something in the run went wrong.
+_BAD = ("failed", "accounts_failed", "quotes_stale", "ohlcv_errors",
+        "kept_previous", "errors", "error")
+
+
+def _summaries(text: str) -> list:
+    """JSON objects a job printed as its summary: a `{` at the start of a
+    line, or after the news cycle's `[hh:mm:ss]` prefix. Nested objects of a
+    pretty-printed summary start indented, so they are never taken alone."""
+    dec, out, pos = json.JSONDecoder(), [], 0
+    for line in text.splitlines(keepends=True):
+        start = 0 if line.startswith("{") else (
+            line.find("{") if line.startswith("[") and "]" in line[:12] else -1)
+        if start >= 0:
+            try:
+                obj, _ = dec.raw_decode(text[pos + start:])
+                if isinstance(obj, dict):
+                    out.append(obj)
+            except json.JSONDecodeError:
+                pass
+        pos += len(line)
+    return out
+
+
+def _counts_only(v):
+    if isinstance(v, list):
+        return len(v)
+    if isinstance(v, dict):
+        return {k: _counts_only(x) for k, x in v.items()}
+    return v
+
+
+def _problems(summary: dict) -> list:
+    found = []
+
+    def walk(d, path=""):
+        for k, v in d.items():
+            if k in _BAD and v not in (None, [], {}, 0, ""):
+                found.append(f"{path}{k}")
+            elif isinstance(v, dict):
+                walk(v, f"{path}{k}.")
+        if isinstance(d.get("total"), int) and isinstance(d.get("ok"), int) \
+                and d["ok"] < d["total"]:
+            found.append(f"{path}ok {d['ok']}/{d['total']}")
+    walk(summary)
+    return found
+
+
+def job(name: str, log: str, late_h: float, keep: int) -> dict:
+    """The newest summaries a job logged (today's file, else yesterday's
+    rotated copy) and whether its last write is older than its schedule."""
+    for path in (paths.LOGS_DIR / log, paths.LOGS_DIR / f"{log}.1"):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        found = _summaries(text)
+        if found:
+            last = found[-keep:]
+            written = os.path.getmtime(path)
+            age_h = (time.time() - written) / 3600
+            problems = [p for s in last for p in _problems(s)]
+            status = "late" if age_h > late_h else ("problem" if problems else "ok")
+            return {"job": name, "status": status, "problems": problems,
+                    "written_at": datetime.fromtimestamp(written, kst.KST).isoformat(),
+                    "age_h": round(age_h, 1),
+                    "summaries": [_counts_only(s) for s in last]}
+    return {"job": name, "status": "none", "problems": [], "written_at": None,
+            "age_h": None, "summaries": []}
+
+
+def _file_age_h(p) -> Optional[float]:
+    try:
+        return round((time.time() - os.path.getmtime(p)) / 3600, 1)
+    except OSError:
+        return None
+
+
+def report() -> dict:
+    held = holding_store.all_symbol_ids()
+    uni = universe.stats()
+    return {
+        "asof": kst.now().isoformat(),
+        "news": news.source_health(),
+        "pipeline": news.pipeline_health(),
+        "market": {"held": len(held), **market_health.symbols(held),
+                   "screener": market_health.screener()},
+        "universe": {"total": uni["total"], "by_region": uni["by_region"],
+                     "kr_age_h": _file_age_h(paths.UNIVERSE_DIR / "kr.json"),
+                     "us_age_h": _file_age_h(paths.UNIVERSE_DIR / "us.json")},
+        "jobs": [job(*j) for j in JOBS],
+    }
