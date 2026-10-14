@@ -105,16 +105,39 @@ def _get(url: str, ua: str, timeout: float) -> bytes:
         return resp.read()
 
 
+class NotAFeed(ValueError):
+    """A 200 whose body is not RSS/RDF/Atom — a bot wall, an error page, a
+    moved feed. It used to parse to [] and read as a quiet day
+    (recyclingtoday answered an Incapsula page for a month)."""
+
+
+_FEED_ROOTS = {"rss", "feed", "rdf"}
+
+
+def _check_feed(text: str) -> None:
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        raise NotAFeed("not XML: " + re.sub(r"\s+", " ", text[:80])) from None
+    if _local(root.tag) not in _FEED_ROOTS:
+        raise NotAFeed(f"not a feed: <{_local(root.tag)}>")
+
+
 def fetch_rss(url: str, source_id: str, kind: str = "rss",
               timeout: float = 15.0) -> list[RawItem]:
-    """Fetch + parse a feed. Raises urllib errors on network failure."""
+    """Fetch + parse a feed. Raises urllib errors on network failure and
+    NotAFeed when the answer is not a feed; 304 is nothing new."""
     try:
         data = _get(url, _UA, timeout)
     except urllib.error.HTTPError as e:
+        if e.code == 304:            # not modified: a success with no items
+            return []
         # The two camps pull opposite ways: cloudflare-fronted feeds refuse
         # a named bot, hankyung refuses a browser. One retry covers both
         # without a per-source UA column.
         if e.code != 403:
             raise
         data = _get(url, _UA_BOT, timeout)
-    return parse_feed(data.decode("utf-8", errors="replace"), source_id, kind)
+    text = data.decode("utf-8", errors="replace")
+    _check_feed(text)
+    return parse_feed(text, source_id, kind)

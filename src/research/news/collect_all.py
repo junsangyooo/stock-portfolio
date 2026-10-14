@@ -111,7 +111,7 @@ def collect_one(feed: Feed, keywords: list[str], cursor: Optional[str],
                 timeout: float = 15.0) -> dict:
     """Fetch one feed and store what is new. Never raises."""
     stat = {"source": feed.source_id, "written": 0, "filtered": 0,
-            "stale": 0, "dup": 0, "error": None}
+            "stale": 0, "dup": 0, "over": 0, "error": None}
     now_iso = now.isoformat()
     try:
         if feed.kind == "rss":
@@ -129,9 +129,15 @@ def collect_one(feed: Feed, keywords: list[str], cursor: Optional[str],
               now_iso=now_iso)
         return stat
 
-    items = items[:max_per_source]
-    fresh, newest = [], cursor or ""
     floor = (now - timedelta(days=_FIRST_SWEEP_DAYS)).isoformat()
+    cap = feed.max_items or max_per_source
+    # Past the cap the rest is dropped; count the dropped ones that were new
+    # (newer than the cursor, or undated), so a cap that loses news shows.
+    stat["over"] = sum(1 for it in items[cap:]
+                       if (p := published_iso(it.published)) is None
+                       or p > (cursor or floor))
+    items = items[:cap]
+    fresh, newest = [], cursor or ""
     for it in items:
         pub = published_iso(it.published)
         # An item the feed dates at or before our cursor was seen last cycle;
@@ -196,6 +202,7 @@ def collect_all(*, catalog: Optional[Catalog] = None,
         "filtered": sum(s["filtered"] for s in stats),
         "stale": sum(s["stale"] for s in stats),
         "dup": sum(s["dup"] for s in stats),
+        "over": {s["source"]: s["over"] for s in stats if s["over"]},
         "failed": [s["source"] for s in stats if s["error"]],
         "detail": stats,
     }

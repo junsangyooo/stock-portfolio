@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "updated": "2026-09-03",
-  "note": "소스 목록. 테마에 묶이지 않는다 — 수집은 이 목록을 한 번씩 훑고, 테마는 기사 단위로 붙는다. group이 lead_lag을 결정한다: research=leading, social=coincident, news=lagging. broad=true는 전체 사이트 피드라 enrich 전에 키워드 사전 필터를 탄다. reddit는 서브레딧을 multireddit 한 URL로 합친다 — IP당 스로틀이 초 단위가 아니라 장시간 예산이라, 세 번 부르면 두 번은 429다.",
+  "updated": "2026-10-14",
+  "note": "소스 목록. 테마에 묶이지 않는다 — 수집은 이 목록을 한 번씩 훑고, 테마는 기사 단위로 붙는다. group이 lead_lag을 결정한다: research=leading, social=coincident, news=lagging. broad=true는 전체 사이트 피드라 enrich 전에 키워드 사전 필터를 탄다. reddit는 서브레딧을 multireddit 한 URL로 합친다 — IP당 스로틀이 초 단위가 아니라 장시간 예산이라, 세 번 부르면 두 번은 429다. max_items는 한 회차에 남기는 최신 건수(기본 40)를 소스별로 올린다. 2026-10-14: fiercebiotech(403 차단)·recyclingtoday(봇 차단 화면) 제외, bok_press는 실제 보도자료 게시판(B0000502)으로.",
   "sources": [
     {
       "id": "3dpi",
@@ -32,7 +32,7 @@
       "id": "bok_press",
       "kind": "rss",
       "group": "news",
-      "url": "https://www.bok.or.kr/portal/bbs/B0000338/news.rss"
+      "url": "https://www.bok.or.kr/portal/bbs/B0000502/news.rss"
     },
     {
       "id": "breakingdefense",
@@ -130,12 +130,6 @@
       "url": "https://www.ferrotimes.com/rss/allArticle.xml"
     },
     {
-      "id": "fiercebiotech",
-      "kind": "rss",
-      "group": "news",
-      "url": "https://www.fiercebiotech.com/rss/xml"
-    },
-    {
       "id": "finextra",
       "kind": "rss",
       "group": "news",
@@ -157,7 +151,8 @@
       "id": "hk_finance",
       "kind": "rss",
       "group": "news",
-      "url": "https://www.hankyung.com/feed/finance"
+      "url": "https://www.hankyung.com/feed/finance",
+      "max_items": 100
     },
     {
       "id": "irobotnews",
@@ -214,12 +209,6 @@
       "kind": "rss",
       "group": "news",
       "url": "https://payloadspace.com/feed/"
-    },
-    {
-      "id": "recyclingtoday",
-      "kind": "rss",
-      "group": "news",
-      "url": "https://www.recyclingtoday.com/rss/"
     },
     {
       "id": "robotreport",

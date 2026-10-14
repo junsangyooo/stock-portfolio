@@ -39,18 +39,21 @@ def test_statuses():
         _cursor(c, "aitimes"); _signals(c, "aitimes", _day(1), 3, "a1")
         _cursor(c, "geeknews", fails=1, error="HTTP Error 500")
         _signals(c, "geeknews", _day(2), 2, "g1")
-        _cursor(c, "fiercebiotech", fails=38, error="HTTP Error 403: Forbidden")
+        _cursor(c, "statnews", fails=38, error="HTTP Error 403: Forbidden")
         _cursor(c, "bok_press")                                   # 200s, nothing in it
         _signals(c, "bok_press", _day(20), 1, "b1")
-        _cursor(c, "hk_finance")
-        _signals(c, "hk_finance", _day(0), MAX_PER_SOURCE, "h1")  # a sweep at the cap
+        _cursor(c, "mk_stock")
+        _signals(c, "mk_stock", _day(0), MAX_PER_SOURCE, "h1")    # a sweep at the cap
+        _cursor(c, "hk_finance")                                  # its own cap is 100
+        _signals(c, "hk_finance", _day(0), MAX_PER_SOURCE, "h2")
         c.commit()
     s = _by_id()
     assert s["aitimes"]["status"] == "ok" and s["aitimes"]["n_7d"] == 3
     assert s["geeknews"]["status"] == "failing"
-    assert s["fiercebiotech"]["status"] == "dead" and "403" in s["fiercebiotech"]["last_error"]
+    assert s["statnews"]["status"] == "dead" and "403" in s["statnews"]["last_error"]
     assert s["bok_press"]["status"] == "quiet" and s["bok_press"]["n_30d"] == 1
-    assert s["hk_finance"]["status"] == "capped" and s["hk_finance"]["capped_sweeps"] == 1
+    assert s["mk_stock"]["status"] == "capped" and s["mk_stock"]["capped_sweeps"] == 1
+    assert s["hk_finance"]["status"] == "ok" and s["hk_finance"]["cap"] == 100
     assert s["3dpi"]["status"] == "never"
     assert len(s) == len(read.source_health(now=NOW)["sources"])   # every configured source
 

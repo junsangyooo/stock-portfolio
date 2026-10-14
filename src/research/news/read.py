@@ -521,11 +521,15 @@ def source_health(days: int = 30, now: Optional[datetime] = None) -> dict:
                 "SELECT source_id, collected_on, count(*) n FROM signals "
                 "WHERE collected_on >= ? GROUP BY source_id, collected_on", (since,)):
             per_day.setdefault(r["source_id"], {})[r["collected_on"]] = r["n"]
+        feeds = load_sources()
+        caps = {f.source_id: f.max_items or MAX_PER_SOURCE for f in feeds}
         capped: dict = {}
         for r in c.execute(
-                "SELECT source_id, fetched_at, collected_on FROM signals "
+                "SELECT source_id, fetched_at, collected_on, count(*) n FROM signals "
                 "WHERE collected_on >= ? GROUP BY source_id, fetched_at "
-                "HAVING count(*) >= ?", (since, MAX_PER_SOURCE)):
+                "HAVING count(*) >= ?", (since, min(caps.values(), default=MAX_PER_SOURCE))):
+            if r["n"] < caps.get(r["source_id"], MAX_PER_SOURCE):
+                continue
             d = capped.setdefault(r["source_id"], {"n": 0, "recent": 0})
             d["n"] += 1
             d["recent"] += r["collected_on"] >= quiet_since
@@ -535,7 +539,7 @@ def source_health(days: int = 30, now: Optional[datetime] = None) -> dict:
             "FROM signals s WHERE s.collected_on >= ? AND s.enriched_at IS NOT NULL "
             "GROUP BY s.source_id", (since,))}
     out = []
-    for f in load_sources():
+    for f in feeds:
         c_ = cur.get(f.source_id, {})
         daily = [per_day.get(f.source_id, {}).get(d, 0) for d in day_keys]
         n_quiet = sum(daily[-QUIET_DAYS:])
@@ -544,7 +548,7 @@ def source_health(days: int = 30, now: Optional[datetime] = None) -> dict:
         status, reason = _source_status(c_, n_quiet, cap["recent"])
         out.append({
             "source_id": f.source_id, "kind": f.kind, "group": f.group,
-            "broad": f.broad, "url": f.url,
+            "broad": f.broad, "url": f.url, "cap": caps[f.source_id],
             "status": status, "reason": reason,
             "last_ok_at": c_.get("last_ok_at"),
             "last_fetched_at": c_.get("last_fetched_at"),

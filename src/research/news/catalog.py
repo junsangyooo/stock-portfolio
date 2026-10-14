@@ -118,6 +118,8 @@ class Feed:
         query:     search expression (arxiv).
         broad:     whole-site feed. Its off-topic articles are dropped by a
                    keyword gate before they cost an enrichment slot.
+        max_items: newest items kept per sweep, for a feed that publishes
+                   more than the default cap between two sweeps.
     """
 
     source_id: str
@@ -126,6 +128,7 @@ class Feed:
     url: Optional[str] = None
     query: Optional[str] = None
     broad: bool = False
+    max_items: Optional[int] = None   # per-sweep cap; None = MAX_PER_SOURCE
 
     @property
     def lead_lag(self) -> str:
@@ -142,7 +145,8 @@ def load_sources(path: Optional[Path] = None) -> list[Feed]:
     for e in raw["sources"]:
         f = Feed(source_id=e["id"], kind=e["kind"], group=e["group"],
                  url=e.get("url"), query=e.get("query"),
-                 broad=bool(e.get("broad", False)))
+                 broad=bool(e.get("broad", False)),
+                 max_items=int(e["max_items"]) if e.get("max_items") else None)
         if f.source_id in seen:
             raise ValueError(f"duplicate source id '{f.source_id}'")
         if f.kind == "rss" and not f.url:
