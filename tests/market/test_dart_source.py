@@ -1,4 +1,6 @@
 """Unit tests for DART parsing helpers — pure, no network."""
+import pytest
+
 from src.market.source.base import FinancialRow
 from src.market.source.dart_source import (_parse_amount, _pick_common_dps,
                                            derive_quarter_cf, REPRT)
@@ -76,3 +78,50 @@ def test_pick_common_dps():
     assert _pick_common_dps([{"se": "주당 현금배당금(원)",
                               "stock_knd": "보통주", "thstrm": "-"}]) is None
     assert _pick_common_dps([]) is None
+
+
+# ── 2026-10-14: totals by IFRS id, filing date, honest failures ────────────
+
+def test_equity_and_liabilities_total_is_not_taken_for_liabilities():
+    """'자본과부채총계' contains '부채총계' and comes first in the filing;
+    383 of 884 stored rows had total assets as total liabilities."""
+    from src.market.source.dart_source import match_accounts
+    rows = [
+        {"sj_div": "BS", "account_id": "ifrs-full_Assets", "account_nm": "자산총계", "thstrm_amount": "100"},
+        {"sj_div": "BS", "account_id": "ifrs-full_EquityAndLiabilities", "account_nm": "자본과부채총계", "thstrm_amount": "100"},
+        {"sj_div": "BS", "account_id": "ifrs-full_Liabilities", "account_nm": "부채총계", "thstrm_amount": "60"},
+        {"sj_div": "BS", "account_id": "ifrs-full_Equity", "account_nm": "자본총계", "thstrm_amount": "40"},
+    ]
+    f = match_accounts(rows)
+    assert (f["total_assets"], f["total_liabilities"], f["total_equity"]) == (100, 60, 40)
+
+
+def test_a_report_is_dated_by_its_receipt_number():
+    from src.market.source.dart_source import DartSource
+    row = DartSource()._parse([{"sj_div": "IS", "account_nm": "영업이익", "thstrm_amount": "5",
+                                 "rcept_no": "20260318001622"}], 2025, "11011")
+    assert row.filed_at == "2026-03-18" and row.period == "2025FY"
+
+
+@pytest.mark.parametrize("status,expect", [("013", None), ("010", "raise"), ("020", "raise")])
+def test_no_such_report_is_none_any_other_status_raises(monkeypatch, status, expect):
+    from src.market.source import dart_source
+    monkeypatch.setattr(dart_source, "_api_key", lambda: "k")
+    monkeypatch.setattr(dart_source.requests, "get", lambda *a, **k: type(
+        "R", (), {"json": lambda self: {"status": status, "message": "m"}})())
+    ds = dart_source.DartSource()
+    if expect == "raise":
+        with pytest.raises(dart_source.DartError):
+            ds._finstate("c", 2025, "11011", "CFS")
+    else:
+        assert ds._finstate("c", 2025, "11011", "CFS") is None
+
+
+def test_a_rows_own_filing_date_is_stored():
+    from src.market.source.base import FinancialRow
+    from src.market.store import financials_store
+    financials_store.write("KR:000001", [FinancialRow(period="2025FY", source="dart",
+                                                       revenue=1, filed_at="2026-03-18")])
+    assert financials_store.latest_filed_at(["KR:000001"]) == {"KR:000001": "2026-03-18"}
+    financials_store.write("KR:000001", [FinancialRow(period="2025FY", source="dart", revenue=2)])
+    assert financials_store.latest_filed_at(["KR:000001"]) == {"KR:000001": "2026-03-18"}

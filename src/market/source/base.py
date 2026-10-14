@@ -65,6 +65,7 @@ class FinancialRow:
     operating_cf: Optional[float] = None
     investing_cf: Optional[float] = None
     financing_cf: Optional[float] = None
+    filed_at: Optional[str] = None        # ISO date the filing was received
 
 
 class Source(ABC):

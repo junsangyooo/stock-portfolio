@@ -56,8 +56,9 @@ def run(symbols, years: int = 4) -> dict:
             ok += 1
         except Exception as e:  # noqa: BLE001 — keep going, report per-symbol
             results.append({"symbol_id": sid, "fatal": str(e)[:200]})
-    return {"date": kst.today(),
-            "total": len(symbols), "ok": ok, "results": results}
+    return {"date": kst.today(), "total": len(symbols), "ok": ok,
+            "failed": [r["symbol_id"] for r in results if "fatal" in r],
+            "results": results}
 
 
 def main() -> int:

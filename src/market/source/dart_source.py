@@ -5,8 +5,12 @@ The fundamental pipeline calls this directly for KR symbols.
 
 Pipeline:
   1. resolve KR 6-digit stock code → DART 8-digit corp_code (cached once)
-  2. finstate_all(corp_code, year, reprt_code, fs_div='CFS')  [fnlttSinglAcntAll]
-  3. parse Korean account names → standardized FinancialRow fields
+  2. fnlttSinglAcntAll(corp_code, year, reprt_code, fs_div='CFS'), called
+     directly: status 013 is "no such report", any other non-000 status is a
+     failure and raises (OpenDartReader turned both into an empty frame and a
+     print, so a bad key or the daily limit read as "no statements")
+  3. map accounts → standardized FinancialRow fields: the IFRS account_id
+     first, the Korean name second; the receipt number dates the filing
 
 reprt_code → period label:
   11013 → Q1   (1분기보고서)
@@ -32,6 +36,8 @@ from __future__ import annotations
 import json
 from datetime import date
 from typing import Dict, Iterable, List, Optional
+
+import requests
 
 from .base import FinancialRow
 from ...core import secrets
@@ -63,6 +69,27 @@ _ACCOUNT_RULES = [
 ]
 
 
+# IFRS account ids for the balance-sheet totals. Names alone are ambiguous:
+# '자본과부채총계' (equity and liabilities = total assets) contains '부채총계'
+# and comes first in the filing, so 383 of 884 per-symbol rows stored total
+# assets as total liabilities (found 2026-10-14). The id is exact.
+_ACCOUNT_IDS = {
+    "ifrs-full_Assets": "total_assets",
+    "ifrs-full_Liabilities": "total_liabilities",
+    "ifrs-full_Equity": "total_equity",
+    "ifrs-full_CurrentAssets": "current_assets",
+    "ifrs-full_CurrentLiabilities": "current_liabilities",
+}
+
+_FINSTATE_URL = "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json"
+_NO_DATA = "013"
+
+
+class DartError(RuntimeError):
+    """DART answered with a status that is not 'no such report' — a bad key,
+    the daily call limit, a server fault. Never read as an empty filing."""
+
+
 def _api_key() -> Optional[str]:
     return secrets.get("DART_API_KEY") or secrets.get("DART_PERSONAL_API_KEY")
 
@@ -84,7 +111,13 @@ def match_accounts(entries: Iterable) -> Dict[str, float]:
     """Run _ACCOUNT_RULES over one statement's rows (dict-likes carrying
     sj_div / account_nm / thstrm_amount) → {field: amount}. Shared by the
     per-symbol finstate_all parse and the bulk fnlttMultiAcnt backfill."""
+    entries = list(entries)
     fields: Dict[str, float] = {}
+    for r in entries:                       # exact ids first
+        field = _ACCOUNT_IDS.get(str(r.get("account_id") or "").strip())
+        amount = _parse_amount(r.get("thstrm_amount"))
+        if field and amount is not None and str(r.get("sj_div") or "").strip() == "BS":
+            fields.setdefault(field, amount)
     for r in entries:
         sj = str(r.get("sj_div") or "").strip()
         name = str(r.get("account_nm") or "").strip()
@@ -236,6 +269,23 @@ class DartSource:
                 return {"dps": dps, "year": year}
         return None
 
+    def _finstate(self, corp: str, year: int, reprt: str,
+                  fs_div: str) -> Optional[List[dict]]:
+        """One fnlttSinglAcntAll call: the rows, or None for 'no such report'.
+        Raises DartError for any other status, and on a network fault."""
+        key = _api_key()
+        if not key:
+            raise DartError("DART API key not found (env or ~/.claude/secrets/.env)")
+        j = requests.get(_FINSTATE_URL, timeout=30, params={
+            "crtfc_key": key, "corp_code": corp, "bsns_year": year,
+            "reprt_code": reprt, "fs_div": fs_div}).json()
+        status = j.get("status")
+        if status == "000":
+            return j.get("list") or None
+        if status == _NO_DATA:
+            return None
+        raise DartError(f"DART {status}: {j.get('message')}")
+
     def _fetch_one(self, code: str, year: int,
                    reprt: str) -> Optional[FinancialRow]:
         """Try consolidated (CFS) first; fall back to separate (OFS).
@@ -243,24 +293,26 @@ class DartSource:
         Companies with no subsidiaries file ONLY 개별재무제표 (OFS) — for them
         CFS returns empty, so without this fallback they yield no financials.
         """
+        corp = self.corp_code(code)
+        if not corp:
+            raise DartError(f"no DART corp_code for {code}")
         for fs in ("CFS", "OFS"):
-            try:
-                df = self._client().finstate_all(code, year, reprt_code=reprt,
-                                                 fs_div=fs)
-            except Exception:
-                df = None
-            if df is not None and len(df) > 0:
-                return self._parse(df, year, reprt, fs)
+            rows = self._finstate(corp, year, reprt, fs)
+            if rows:
+                return self._parse(rows, year, reprt, fs)
         return None
 
-    def _parse(self, df, year: int, reprt: str,
+    def _parse(self, rows: List[dict], year: int, reprt: str,
                fs_div: str = "CFS") -> Optional[FinancialRow]:
-        """Map a finstate_all DataFrame → one FinancialRow via account names."""
-        fields = match_accounts(r for _, r in df.iterrows())
+        """Map one report's rows → one FinancialRow, dated by its receipt
+        number (rcept_no starts with the receipt day, YYYYMMDD)."""
+        fields = match_accounts(rows)
         if not fields:
             return None
+        rcept = str(rows[0].get("rcept_no") or "")
+        filed = f"{rcept[:4]}-{rcept[4:6]}-{rcept[6:8]}" if rcept[:8].isdigit() else None
         return FinancialRow(
             period=f"{year}{REPRT[reprt]}", fs_div=fs_div,
             report_date=f"{year}-12-31" if reprt == "11011" else "",
-            source="dart", **fields,
+            source="dart", filed_at=filed, **fields,
         )

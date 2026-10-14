@@ -83,10 +83,9 @@ def sanity_check(symbol_id: str) -> List[str]:
 def financials(symbol_id: str, years: int = 4) -> int:
     market, _ = split_symbol(symbol_id)
     if market == "KR":
-        try:
-            rows = _dart_source().get_financials(symbol_id, years=years)
-        except Exception:
-            rows = []
+        # A DART failure raises (dart_source.DartError) and the job records
+        # the symbol as failed; it used to become "no statements" here.
+        rows = _dart_source().get_financials(symbol_id, years=years)
     else:
         # EDGAR first (full filing history), yfinance as the fallback —
         # its quarterly frames stop around 6 quarters.

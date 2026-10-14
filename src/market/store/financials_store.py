@@ -39,10 +39,11 @@ def write(symbol_id: str, rows: Iterable[FinancialRow],
           filed_at: Optional[str] = None) -> int:
     """Upsert on period (re-fetch overwrites). Returns number of NEW periods.
 
-    `filed_at` is the disclosure receipt date, stamped on every row of this
-    batch. The event-driven refresh (DART 공시검색 / SEC daily-index) passes it
-    so a later run can tell "we already have this filing" from "the company
-    restated"; the plain backfill leaves it NULL.
+    `filed_at` is the disclosure receipt date: a row's own `filed_at` (DART's
+    receipt number, EDGAR's `filed`) wins, else the batch value. It is what
+    lets a later run tell "we already have this filing" from "a new one
+    landed" (analyze.due's filing trigger); a row without one leaves the
+    stored stamp alone.
     """
     rows = list(rows)
     if not rows:
@@ -64,7 +65,7 @@ def write(symbol_id: str, rows: Iterable[FinancialRow],
             f"INSERT INTO financials (symbol_id, {', '.join(COLS)}, filed_at) "
             f"VALUES ({placeholders}) "
             f"ON CONFLICT(symbol_id, period) DO UPDATE SET {updates}",
-            [(symbol_id, *[d[k] for k in COLS], filed_at)
+            [(symbol_id, *[d[k] for k in COLS], d.get("filed_at") or filed_at)
              for d in by_period.values()],
         )
         c.commit()

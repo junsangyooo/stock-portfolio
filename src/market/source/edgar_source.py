@@ -179,7 +179,10 @@ def rows_from_facts(facts: dict, years: int = 6) -> List[FinancialRow]:
                 if (label, f) in cells}
         if "net_income" not in vals and "revenue" not in vals:
             continue                # a period with only stray BS facts
+        filed = max((cells[(label, f)][0] for f in _CONCEPTS
+                     if (label, f) in cells), default="") or None
         rows.append(FinancialRow(
             period=label, fs_div="CFS",
-            report_date=str(ends.get(label, "")), source="edgar", **vals))
+            report_date=str(ends.get(label, "")), source="edgar",
+            filed_at=filed, **vals))
     return rows
