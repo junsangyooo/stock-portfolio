@@ -70,3 +70,42 @@ def test_sources_file_reads_per_source_caps():
     assert feeds["aitimes"].max_items is None
     assert "fiercebiotech" not in feeds and "recyclingtoday" not in feeds
     assert "B0000502" in feeds["bok_press"].url
+
+
+def _sweep(monkeypatch, published, cursor, now):
+    items = [RawItem(source_id="s1", kind="rss", title=f"t{i}", url=f"http://x/{i}",
+                     published=p, summary="") for i, p in enumerate(published)]
+    monkeypatch.setattr(collect_all, "fetch_rss", lambda *a, **k: items)
+    monkeypatch.setattr(collect_all, "enrich_images", lambda items, **kw: 0)
+    feed = Feed(source_id="s1", kind="rss", group="news", url="http://x")
+    return collect_all.collect_one(feed, [], cursor, now=now)
+
+
+def _cursor():
+    from src.research.news.db import connect
+    with connect() as c:
+        return c.execute("SELECT last_fetched_at FROM source_cursor "
+                         "WHERE source_id='s1'").fetchone()[0]
+
+
+def test_a_future_dated_item_does_not_carry_the_cursor_past_now(monkeypatch):
+    """Finextra dated an item 2026-10-21; until then every real article sorted
+    before the cursor and was skipped as already seen."""
+    now = datetime(2026, 10, 9, 17, 0, tzinfo=KST)
+    _sweep(monkeypatch, ["2026-10-21T15:00:00+00:00", "2026-10-09T08:00:00+00:00"],
+           None, now)
+    assert _cursor() == "2026-10-09T17:00:00+09:00"
+
+
+def test_a_stored_future_cursor_is_dropped_and_the_hidden_week_comes_back(monkeypatch):
+    now = datetime(2026, 10, 14, 17, 0, tzinfo=KST)
+    st = _sweep(monkeypatch, ["2026-10-14T03:00:00+00:00", "2026-10-10T03:00:00+00:00"],
+                "2026-10-21T15:00:00+00:00", now)
+    assert st["written"] == 2 and _cursor() == "2026-10-14T12:00:00+09:00"
+
+
+def test_offsets_compare_as_one_clock(monkeypatch):
+    """06:00 KST written without an offset is after 20:00 UTC the day before."""
+    now = datetime(2026, 10, 14, 17, 0, tzinfo=KST)
+    st = _sweep(monkeypatch, ["2026-10-14T06:00:00"], "2026-10-13T20:00:00+00:00", now)
+    assert st["written"] == 1

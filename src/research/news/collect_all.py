@@ -61,6 +61,25 @@ def _keyword_hit(title: str, summary: str, keywords: list[str]) -> bool:
     return False
 
 
+def _kst_iso(iso: Optional[str], now: datetime) -> Optional[str]:
+    """A feed time or a stored cursor in one comparable form (KST), or None
+    when it is missing or later than now. Feeds mix offsets (+00:00, +09:00,
+    none — Korean feeds leave it off), and ISO strings only compare correctly
+    in one offset. A future time is not trusted: Finextra dated an item
+    2026-10-21, the cursor followed it, and every real article until that day
+    sorted before the cursor and was skipped as already seen. A future item
+    is treated as undated (dedup still holds it), and a future cursor as no
+    cursor — the first-sweep window then brings back what it hid."""
+    if not iso:
+        return None
+    try:
+        t = datetime.fromisoformat(iso)
+    except ValueError:
+        return None
+    t = t.replace(tzinfo=KST) if t.tzinfo is None else t.astimezone(KST)
+    return t.isoformat() if t <= now else None
+
+
 def _cursors() -> dict[str, Optional[str]]:
     with connect() as c:
         return {r["source_id"]: r["last_fetched_at"]
@@ -90,8 +109,8 @@ def _mark(source_id: str, *, newest: Optional[str], ok: bool,
                 "INSERT INTO source_cursor (source_id, last_fetched_at, "
                 "last_ok_at, last_error, n_consecutive_fail) "
                 "VALUES (?,?,?,NULL,0) ON CONFLICT(source_id) DO UPDATE SET "
-                "last_fetched_at = MAX(COALESCE(excluded.last_fetched_at,''), "
-                "                      COALESCE(last_fetched_at,'')), "
+                "last_fetched_at = COALESCE(excluded.last_fetched_at, "
+                "                           last_fetched_at), "
                 "last_ok_at = excluded.last_ok_at, last_error = NULL, "
                 "n_consecutive_fail = 0",
                 (source_id, newest, now_iso))
@@ -112,7 +131,9 @@ def collect_one(feed: Feed, keywords: list[str], cursor: Optional[str],
     """Fetch one feed and store what is new. Never raises."""
     stat = {"source": feed.source_id, "written": 0, "filtered": 0,
             "stale": 0, "dup": 0, "over": 0, "error": None}
+    now = now if now.tzinfo else now.replace(tzinfo=KST)
     now_iso = now.isoformat()
+    cursor = _kst_iso(cursor, now)
     try:
         if feed.kind == "rss":
             items = fetch_rss(feed.url, feed.source_id, timeout=timeout)
@@ -134,17 +155,18 @@ def collect_one(feed: Feed, keywords: list[str], cursor: Optional[str],
     # Past the cap the rest is dropped; count the dropped ones that were new
     # (newer than the cursor, or undated), so a cap that loses news shows.
     stat["over"] = sum(1 for it in items[cap:]
-                       if (p := published_iso(it.published)) is None
+                       if (p := _kst_iso(published_iso(it.published), now)) is None
                        or p > (cursor or floor))
     items = items[:cap]
     fresh, newest = [], cursor or ""
     for it in items:
         pub = published_iso(it.published)
+        seen = _kst_iso(pub, now)
         # An item the feed dates at or before our cursor was seen last cycle;
         # a feed with no cursor yet stops at the first-sweep floor. Undated
         # items fall through to the dedup check rather than being dropped —
         # plenty of feeds omit the field entirely.
-        if pub and (pub <= cursor if cursor else pub < floor):
+        if seen and (seen <= cursor if cursor else seen < floor):
             stat["stale"] += 1
             continue
         if feed.broad and keywords and not _keyword_hit(it.title, it.summary,
@@ -152,8 +174,8 @@ def collect_one(feed: Feed, keywords: list[str], cursor: Optional[str],
             stat["filtered"] += 1
             continue
         fresh.append((it, pub))
-        if pub and pub > newest:
-            newest = pub
+        if seen and seen > newest:
+            newest = seen
 
     if fresh:
         known = _known_keys([it.dedup_key() for it, _ in fresh])
