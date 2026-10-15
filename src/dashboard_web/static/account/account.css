@@ -224,7 +224,10 @@ a { color: inherit; }
 .r-eval b { font-weight: 700; }
 .r-basis { color: var(--text-muted); font-size: var(--type-caption-size); }
 .r-weight { grid-area: weight; }
-.r-pnl { grid-area: pnl; text-align: right; font-weight: 700; }
+.r-pnl { grid-area: pnl; display: flex; align-items: baseline; justify-content: flex-end; gap: var(--space-gap-xs);
+         text-align: right; white-space: nowrap; }
+.r-pnl b { font-weight: 700; }
+.r-pnl-pct { font-size: var(--type-caption-size); }
 .r-vd { grid-area: vd; min-width: 0; }
 .r-coords { grid-area: coords; color: var(--text-muted); font-size: var(--type-caption-size); min-width: 0;
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -305,7 +308,7 @@ a { color: inherit; }
   .ls-tabs { margin-right: 0; }
   .ls-group { padding-left: var(--space-card); padding-right: var(--space-card); }
   .ls-cols, .ls-row {
-    grid-template-columns: minmax(120px, 1.6fr) 56px minmax(120px, 1.3fr) minmax(100px, 1fr) 84px 64px minmax(160px, 1.6fr);
+    grid-template-columns: minmax(120px, 1.6fr) 56px minmax(120px, 1.3fr) minmax(100px, 1fr) 84px minmax(104px, 1fr) minmax(150px, 1.4fr);
     grid-template-areas: "name spark price eval weight pnl vd" "coords coords coords coords coords coords coords";
     column-gap: var(--space-gap-md);
     padding-left: var(--space-card); padding-right: var(--space-card);
@@ -317,6 +320,7 @@ a { color: inherit; }
   .r-price { flex-wrap: nowrap; }
   .r-nm { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .r-vd { justify-self: end; }
+  .r-pnl { flex-direction: column; align-items: flex-end; gap: 0; }
   .r-weight { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-gap-xs); color: var(--text-muted);
               font-size: var(--type-caption-size); }
   .w-bar { width: 24px; height: 4px; border-radius: var(--radius-chip); background: var(--bg-subtle); overflow: hidden; }

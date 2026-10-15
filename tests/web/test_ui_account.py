@@ -228,3 +228,13 @@ def test_settings_and_chat_follow_the_query():
     assert "function syncPanels" in core
     assert "ACC.openPanel('settings')" in _src("account/settings.js")
     assert "ACC.openPanel('chat')" in _src("account/chat.js")
+
+
+def test_each_holding_row_shows_its_pnl_amount_and_percent():
+    """He asked for every holding's unrealized P&L in money, not only the %,
+    whatever the market phase (2026-10-15)."""
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[2] / "src/dashboard_web/static/account/view-account.js").read_text()
+    assert "const pnlAmt = h =>" in src and "(h.price - h.avg_cost) * h.qty" in src
+    assert "S.fmtPnl(pa, c)" in src and "'r-pnl-pct'" in src
+    assert "{ value: 'pnl_amt', label: '손익금액' }" in src

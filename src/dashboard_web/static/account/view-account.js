@@ -14,7 +14,7 @@
   const PERIODS = [{ value: '30', label: '1M' }, { value: '90', label: '3M' }, { value: '180', label: '6M' },
     { value: '365', label: '1Y' }, { value: '3650', label: '전체' }];
   const SORTS = [
-    { value: 'eval', label: '평가금액' }, { value: 'pnl', label: '손익률' },
+    { value: 'eval', label: '평가금액' }, { value: 'pnl_amt', label: '손익금액' }, { value: 'pnl', label: '손익률' },
     { value: 'day', label: '오늘 등락' }, { value: 'name', label: '이름' }, { value: 'verdict', label: '판정' }];
   const AXES = [{ value: 'name', label: '종목' }, { value: 'market', label: '시장' },
     { value: 'sector', label: '업종' }, { value: 'type', label: '유형' }, { value: 'contrib', label: '기여' }];
@@ -38,6 +38,8 @@
   const regionOfCcy = c => (c === 'USD' ? 'US' : 'KR');
   const evalOf = h => (h.held && h.price != null && h.q && h.q.inTotal ? h.price * h.qty : null);
   const costOf = h => (h.held && h.avg_cost != null ? h.avg_cost * h.qty : null);
+  // unrealized P&L against the average cost — always, not only while the market is open
+  const pnlAmt = h => (h.held && h.price != null && h.avg_cost != null ? (h.price - h.avg_cost) * h.qty : null);
   const dayOf = h => (h.held && h.price != null && h.prev_close != null && h.q && h.q.inToday
     ? (h.price - h.prev_close) * h.qty : null);
   const chgPct = h => (h.price != null && h.prev_close ? (h.price / h.prev_close - 1) * 100 : null);
@@ -649,6 +651,7 @@
     const key = st.sort;
     const val = h => {
       if (key === 'pnl') return pnlPct(h);
+      if (key === 'pnl_amt') return pnlAmt(h);
       if (key === 'day') return chgPct(h);
       if (key === 'verdict') { const a = st.summary[h.symbol_id]; return a && a.score != null ? +a.score : null; }
       if (key === 'eval') return h.held ? (evalOf(h) != null ? evalOf(h) : costOf(h)) : null;
@@ -758,7 +761,11 @@
     const weightEl = el('span', { className: 'r-weight sm-up' }, h.held && w != null ? [
       el('span', { className: 'w-bar', 'aria-hidden': 'true' }, [el('i', { style: 'width:' + Math.max(4, Math.min(100, w * 2)) + '%' })]),
       el('span', { className: 't-num' }, [w.toFixed(1) + '%'])] : [el('span', { className: 't-muted' }, [h.held ? '—' : ''])]);
-    const pnlEl = el('span', { className: 'r-pnl t-num ' + (pp != null ? trendCls(pp) : 't-muted') }, [h.held ? (pp != null && !none ? S.fmtPnlPct(pp) : '—') : '']);
+    const pa = pnlAmt(h);
+    const pnlEl = el('span', { className: 'r-pnl t-num ' + (pp != null && !none ? trendCls(pp) : 't-muted') },
+      h.held && pa != null && !none
+        ? [el('b', {}, [S.fmtPnl(pa, c)]), el('span', { className: 'r-pnl-pct' }, [S.fmtPnlPct(pp)])]
+        : [h.held ? '—' : '']);
     const coords = coordLine(h);
     const kids = [
       nameEl,
