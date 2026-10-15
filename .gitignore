@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .DS_Store
 .env
+STATUS.md
 
 
 # ── Runtime data (Oracle 단방향, NEVER git add) ─────────────────────
