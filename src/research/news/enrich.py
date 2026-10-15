@@ -35,7 +35,8 @@ from datetime import datetime
 from typing import Optional
 
 from ...core import kst
-from ...core.llm import FAST_MODEL, ClaudeCliBackend, LocalLlamaBackend, _parse_json
+from ...core.llm import (EFFORT_LOW, FAST_MODEL, ClaudeCliBackend,
+                          LocalLlamaBackend, _parse_json)
 from .catalog import Catalog, load_catalog
 from .db import connect
 from .read import window_start
@@ -213,7 +214,7 @@ def run(*, catalog: Optional[Catalog] = None, date: Optional[str] = None,
         backend = LocalLlamaBackend(max_tokens=_LOCAL_MAX_TOKENS,
                                     stage="news:enrich")
         batch = _LOCAL_BATCH
-    backend = backend or ClaudeCliBackend(model=FAST_MODEL,
+    backend = backend or ClaudeCliBackend(model=FAST_MODEL, effort=EFFORT_LOW,
                                           stage="news:enrich")
     now_iso = (now or kst.now()).isoformat()
     enriched = batches = failed = 0

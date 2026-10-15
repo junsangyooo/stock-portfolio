@@ -193,8 +193,11 @@ def run_analysis(market: str, code: str) -> dict:
     def _fn():
         # Imported on the worker thread: it pulls pandas and spawns claude,
         # neither of which belongs on the request path.
+        from ..core.llm import EFFORT_LOW
         from ..research import analyze
-        return analyze.run(symbol_id, name)
+        # low like the 18:00 run (his choice, 2026-10-15): the same budget, and
+        # a 93-second wait instead of 330
+        return analyze.run(symbol_id, name, effort=EFFORT_LOW)
 
     _, started = _RUNS.start(symbol_id, _fn)
     job = ({"state": "started"} if started else

@@ -19,7 +19,7 @@ import os
 import re
 
 from ...core import jobs, paths
-from ...core.llm import SLOW_MODEL, ClaudeCliBackend
+from ...core.llm import CHAT_MODEL, EFFORT_MEDIUM, ClaudeCliBackend
 from .. import security
 from ..store import chat_store
 from . import prompt
@@ -71,7 +71,7 @@ def ask(account_id: str, thread: dict, message: str) -> str:
     def _turn() -> str:
         system, user = prompt.build(account_id, message, seeded, history)
         paths.CHAT_CWD.mkdir(parents=True, exist_ok=True)
-        reply = ClaudeCliBackend(model=SLOW_MODEL, stage="chat").call(
+        reply = ClaudeCliBackend(model=CHAT_MODEL, effort=EFFORT_MEDIUM, stage="chat").call(
             system, user, extra_args=prompt.TOOL_ARGS + session_args,
             cwd=str(paths.CHAT_CWD),
             env_extra={"PYTHONPATH": str(paths.ROOT),

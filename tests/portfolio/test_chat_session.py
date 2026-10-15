@@ -153,3 +153,26 @@ def test_session_lookup_reads_only_the_sandbox_project(monkeypatch, tmp_path):
         (proj / name / f"{sid}.jsonl").write_text("")
     assert session.cli_session_exists("new")
     assert not session.cli_session_exists("old")
+
+
+def test_a_backend_effort_reaches_the_cli_unless_the_call_names_one(monkeypatch):
+    """Per-task budgets (2026-10-15): enrich low, chat Opus medium, analysis low."""
+    b, seen = _run_capture(monkeypatch)
+    b.effort = "low"
+    _REAL_CALL(b, "sys", "user")
+    assert _flag(seen["argv"], "--effort") == "low"
+    _REAL_CALL(b, "sys", "user", extra_args=["--effort", "medium"])
+    assert seen["argv"].count("--effort") == 1 and _flag(seen["argv"], "--effort") == "medium"
+
+
+def test_each_task_names_its_model_and_budget():
+    from pathlib import Path
+    src = Path(__file__).resolve().parents[2] / "src"
+    read = lambda p: (src / p).read_text()
+    assert "effort=EFFORT_LOW" in read("research/news/enrich.py")
+    assert "effort=EFFORT_LOW" in read("research/news/mapping.py")
+    assert "model=CHAT_MODEL, effort=EFFORT_MEDIUM" in read("portfolio/chat/session.py")
+    assert "analyze.run(symbol_id, name, effort=EFFORT_LOW)" in read("api/analysis.py")
+    from src.core import llm
+    assert (llm.FAST_MODEL, llm.SLOW_MODEL, llm.CHAT_MODEL) == (
+        "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5")

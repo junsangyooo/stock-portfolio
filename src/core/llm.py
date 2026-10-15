@@ -63,6 +63,16 @@ def _find_claude() -> str | None:
             return hits[-1]
     return None
 SLOW_MODEL = "claude-sonnet-5-5"
+# The chat agent: Opus 5.5 at medium effort (his choice, 2026-10-15) — it reads
+# with tools over several turns and answers a person who is waiting.
+CHAT_MODEL = "claude-opus-5-5"
+
+# Reasoning budget per task (2026-10-15, his choice). Thinking is not saved;
+# a summary or a label does not get better with more of it.
+#   news:enrich · daily fallback · news:mapping   low
+#   analyze (18:00 and the 다시 분석 button)       low
+#   chat                                          medium (Opus)
+EFFORT_LOW, EFFORT_MEDIUM = "low", "medium"
 
 # Credential-shaped env vars never passed to claude / its tool children.
 _SENSITIVE_ENV = re.compile(
@@ -83,9 +93,11 @@ class ClaudeCliBackend:
 
     name = "claude_cli"
 
-    def __init__(self, model: str = SLOW_MODEL, stage: str = "?"):
+    def __init__(self, model: str = SLOW_MODEL, stage: str = "?",
+                 effort: str | None = None):
         self.model = model
         self.stage = stage      # what the usage ledger calls this call site
+        self.effort = effort    # --effort for every call, unless the call names one
         self.bin = _find_claude()
         if not self.bin:
             raise RuntimeError("`claude` CLI not found (PATH or nvm/usr/local)")
@@ -126,6 +138,9 @@ class ClaudeCliBackend:
         # built-in read-only commands (head, cat, ls), which it allows inside
         # the working directory — only an empty cwd confines those
         # (`chat_cwd`). A call that asks for no tools gets none.
+        effort = getattr(self, "effort", None)   # tests build bare instances
+        if effort and "--effort" not in args:
+            args += ["--effort", effort]
         args = ["--restricted", "--permission-mode", "dontAsk"] + args
         if "--tools" not in args:
             args += ["--tools", ""]
@@ -310,7 +325,7 @@ def local_or_claude(system: str, user: str, *, claude_model: str,
                 f"— {'retrying locally' if retrying else f'falling back to Claude ({claude_model})'}")
             if not retrying:
                 break
-    out = ClaudeCliBackend(model=claude_model,
+    out = ClaudeCliBackend(model=claude_model, effort=EFFORT_LOW,
                            stage=f"{ledger}:fallback").call(
                                system, user, model=claude_model)
     _get_log().warning(f"[{stage}] served by claude_cli ({claude_model})")

@@ -15,7 +15,7 @@ import logging
 from typing import Optional
 
 from .catalog import Catalog, Theme
-from ...core.llm import ClaudeCliBackend, SLOW_MODEL, _parse_json
+from ...core.llm import EFFORT_LOW, ClaudeCliBackend, SLOW_MODEL, _parse_json
 
 log = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ def tag_stock_by_llm(name: str, market: str, catalog: Catalog,
     `backend` must expose ``call(system, user, model=...)``; defaults to
     ClaudeCliBackend. Returns {"primary": [...], "related": [...]}.
     """
-    backend = backend or ClaudeCliBackend(model=SLOW_MODEL,
+    backend = backend or ClaudeCliBackend(model=SLOW_MODEL, effort=EFFORT_LOW,
                                           stage="news:mapping")
     raw = backend.call(_SYSTEM, _build_user_prompt(name, market, catalog),
                        model=SLOW_MODEL)
