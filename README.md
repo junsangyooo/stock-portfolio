@@ -111,4 +111,4 @@ pytest tests/autotrade     # 새 quant만 (자기 pytest.ini·conftest)
 
 ## 문서
 
-- **`docs/`** — 개인 Obsidian Vault `001_projects/portfolio-dashboard/`의 설계 문서 심링크. 프로젝트 맥락은 같은 폴더의 `LOG.md`, 할 일은 `TODO.md`. gitignore라 Oracle에는 없다
+- **`docs/`** — 개인 Obsidian Vault `001_projects/portfolio-dashboard/`의 설계 문서 심링크. 그 폴더에는 지금 맞는 문서(정의서·디자인 기록)와 할 일(`TODO.md`), 지난 경과를 모은 `시행착오.md`만 둔다(2026-10-15 정리). 자동매매 문서는 옆 폴더 `quant-dashboard/`. gitignore라 Oracle에는 없다
