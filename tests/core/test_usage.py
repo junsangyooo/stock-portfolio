@@ -177,3 +177,16 @@ def test_a_dead_local_model_leaves_a_row_too(log_file, monkeypatch):
     row = json.loads(log_file.read_text(encoding="utf-8").strip())
     assert row["backend"] == "local_llama" and row["stage"] == "daily"
     assert row["ok"] is False and "unreachable" in row["error"]
+
+
+def test_a_fork_or_resumed_turn_records_only_its_own_dollars():
+    """total_cost_usd is the session's running total (measured 2026-10-15)."""
+    from src.core import llm
+    llm._session_cost.clear()
+    assert llm._own_cost(["--session-id", "R"], 0.12) == 0.12
+    assert abs(llm._own_cost(["--resume", "R", "--fork-session"], 0.20) - 0.08) < 1e-9
+    assert abs(llm._own_cost(["--resume", "R", "--fork-session"], 0.19) - 0.07) < 1e-9
+    assert llm._own_cost(["--session-id", "C"], 0.10) == 0.10
+    assert abs(llm._own_cost(["--resume", "C"], 0.25) - 0.15) < 1e-9
+    assert abs(llm._own_cost(["--resume", "C"], 0.30) - 0.05) < 1e-9
+    assert llm._own_cost([], 0.4) == 0.4 and llm._own_cost([], None) is None

@@ -79,6 +79,38 @@ _SENSITIVE_ENV = re.compile(
     r"(_KEY|_TOKEN|_SECRET|_PW|_PASSWORD|_WEBHOOK_URL)$|^(KIS_|KRX_)")
 
 
+# The CLI's total_cost_usd is the whole session's, not the call's: a fork of
+# the analysis root carried the root's $0.12 again (five forks, measured
+# 2026-10-15) and a resumed chat turn carries every earlier turn. The tokens are
+# the call's own; only the dollar figure needs the session's previous total
+# taken off. Kept in memory: after a restart the first resumed turn of an old
+# chat is counted whole once.
+_session_cost: dict[str, float] = {}
+
+
+def _own_cost(args: list[str], total) -> float | None:
+    if total is None:
+        return None
+    try:
+        total = float(total)
+    except (TypeError, ValueError):
+        return None
+
+    def flag(name):
+        return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else None
+
+    root, parent = flag("--session-id"), flag("--resume")
+    if root:                                   # a new session: all of it is this call
+        _session_cost[root] = total
+        return total
+    if parent:
+        own = max(0.0, total - _session_cost.get(parent, 0.0))
+        if "--fork-session" not in args:       # the same session goes on
+            _session_cost[parent] = total
+        return own
+    return total
+
+
 class ClaudeCliBackend:
     """Subprocess wrapper around ``claude -p``.
 
@@ -186,7 +218,7 @@ class ClaudeCliBackend:
             # shape it needs. `stop_reason` is the honest answer to "was this
             # cut off at the output ceiling" — the plan pass has to guess.
             usage.record(self.stage, m, usage=data.get("usage"),
-                         cost_usd=data.get("total_cost_usd"),
+                         cost_usd=_own_cost(args, data.get("total_cost_usd")),
                          elapsed_s=elapsed, ok=not data.get("is_error"),
                          error=data.get("subtype") if data.get("is_error") else None,
                          extra={"turns": data.get("num_turns"),
