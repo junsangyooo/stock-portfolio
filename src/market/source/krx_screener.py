@@ -8,9 +8,10 @@ screen of the day pays the ~2-5s fetch, the rest read the file.
 Columns: per, pbr, eps, bps, div (배당수익률 %), dps, mcap_eok (시총 억원),
 value_eok (거래대금 억원). Index = 6-digit ticker.
 
-Per §10.1 source-failure rule: an empty fetch raises instead of silently
-returning an empty table (the 2026 "pykrx fundamental death" went unnoticed
-for weeks exactly because of silent empties).
+Per the source-failure rule (ops notes §11 소스 실패): an empty fetch
+raises instead of silently returning an empty table (the 2026 "pykrx
+fundamental death" went unnoticed for weeks exactly because of silent
+empties).
 """
 from __future__ import annotations
 

@@ -209,3 +209,28 @@ def test_labels_and_tokens_reach_js():
     # the old Ink wash names ('cyan', 'space-1') no longer resolve: text/primary · ''
     assert out == ["#D42A36", "#0B7A6B", "#191F28", "600px", "", "--type-heading-1-size",
                    "heart-pulse", "newspaper", "디일렉", "no_such_feed"]
+
+
+def test_the_page_helpers_live_in_shared_js_once():
+    """parseNum · niceTicks · trendCls · fmtScore · kstDay had two or three
+    copies across the pages, and the copies had drifted (a typed '−5' was a
+    number in one dialog and NaN in the next)."""
+    assert run([
+        ["parseNum", ["1,234"]], ["parseNum", ["−5"]], ["parseNum", ["₩ 70,000"]],
+        ["parseNum", [""]], ["parseNum", ["-"]], ["parseNum", [None]],
+        ["fmtScore", [0.384]], ["fmtScore", [-0.004]], ["fmtScore", [None]],
+        ["trendCls", [3]], ["trendCls", [-1]], ["trendCls", [0]],
+        ["niceTicks", [0, 10, 5]], ["niceTicks", [5, 5, 4]],
+        ["kstDay", ["2026-10-14T16:00:00Z"]], ["kstDay", [1792000000]], ["kstDay", [""]],
+    ]) == [1234, -5, 70000, None, None, None,
+           "+0.38", "0.00", "—",
+           "t-up", "t-down", "",
+           [0, 2, 4, 6, 8, 10], [],
+           "2026-10-15", "2026-10-15", ""]
+    # a definition with a body, not an alias (`const kstDay = S.kstDay`)
+    defs = re.compile(r"(?:function|const)\s+(parseNum|niceTicks|trendCls|fmtScore|kstDay)\s*(?:\(|=(?!\s*S\.))")
+    others = [p for p in STATIC.rglob("*") if p.suffix in (".js", ".html") and p.name != "shared.js"]
+    copies = {(p.relative_to(STATIC).as_posix(), m.group(1)) for p in others
+              for m in defs.finditer(p.read_text(encoding="utf-8"))}
+    # the asset chart's wrapper keeps both ends labelled; it calls S.niceTicks
+    assert copies <= {("account/view-account.js", "niceTicks")}

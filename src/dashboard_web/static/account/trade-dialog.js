@@ -10,10 +10,9 @@
   const S = window.S;
   const ACC = window.ACC;
   if (!S || !ACC) return;
-  const { el, clear, svgIco, LABELS } = S;
+  const { el, clear, svgIco, LABELS, parseNum } = S;
   const stk = ACC.stk;
   const CLOSE = { KR: [15, 30], US: [16, 0] };
-  const parseNum = s => { const t = String(s == null ? '' : s).replace(/[,\s]/g, ''); return t === '' ? null : Number(t); };
   const EPS = 1e-9;
   // 198400 → '198,400' (inputs keep every digit the person or the quote gave)
   const GROUP = new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 });
@@ -348,9 +347,8 @@
       verify: async () => {
         const b = st.sent;
         if (!b) return false;
-        const kstDay = sec => S.marketToday('KR', new Date(sec * 1000));
-        const since = kstDay(b.traded_at != null ? b.traded_at : opened);
-        const until = kstDay(b.traded_at != null ? b.traded_at : Math.floor(Date.now() / 1000));
+        const since = S.kstDay(b.traded_at != null ? b.traded_at : opened);
+        const until = S.kstDay(b.traded_at != null ? b.traded_at : Math.floor(Date.now() / 1000));
         const r = await S.api(ACC.path('/trades') + '?symbol_id=' + encodeURIComponent(b.symbol_id) +
           '&since=' + since + '&until=' + until + '&limit=50', { toast: false, gate: false });
         const hit = (r.trades || []).find(t => t.side === b.side && Math.abs(t.qty - b.qty) < EPS && Math.abs(t.price - b.price) < 1e-6

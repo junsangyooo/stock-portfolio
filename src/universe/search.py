@@ -6,6 +6,7 @@ nightly refreshes). All searches hit memory — no external API call.
 API:
   search(q, region=None, limit=20) → list[item]
   get(symbol_id) → item | None
+  currency_of(symbol_id, meta=None) → 'KRW' | 'USD' | …
 """
 from __future__ import annotations
 
@@ -58,6 +59,19 @@ def _ensure_loaded() -> None:
 def get(symbol_id: str) -> Optional[dict]:
     _ensure_loaded()
     return _by_id.get(symbol_id)
+
+
+def currency_of(symbol_id: str, meta: Optional[dict] = None) -> str:
+    """The currency a symbol trades and settles in — the one rule for it.
+    Its universe record first (`meta`, or looked up); else the symbol_id's
+    market (US → USD, anything else KRW). A trade's cash leg and an
+    account's per-currency totals both ask here, so they never disagree."""
+    if meta is None:
+        meta = get(symbol_id) or {}
+    ccy = meta.get("currency")
+    if ccy:
+        return str(ccy).upper()
+    return "USD" if symbol_id.split(":", 1)[0].upper() == "US" else "KRW"
 
 
 def search(q: str, region: Optional[str] = None, limit: int = 20) -> List[dict]:

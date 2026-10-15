@@ -173,7 +173,7 @@ def test_aggregate_draws_sparklines_from_one_read(monkeypatch):
                         lambda aid: [{"symbol_id": s, "qty": 1, "avg_cost": 1}
                                      for s in sids])
     monkeypatch.setattr(service.balance_store, "get_all", lambda aid: {})
-    monkeypatch.setattr(service.snapshot_store, "maybe_snapshot_today",
+    monkeypatch.setattr(service.snapshot_store, "write_if_absent",
                         lambda *a, **k: None)
     monkeypatch.setattr(service.uni_search, "get", lambda sid: {})
     monkeypatch.setattr(service.quote_store, "get", lambda sid, **kw: None)

@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api import accounts
+from src.portfolio import service
 from src.portfolio.store import account_store, balance_store, holding_store, db as pdb
 from src.api.accounts import require_account
 
@@ -30,7 +31,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(accounts.uni_search, "get", fake_get)
 
     # skip real market backfill (network)
-    monkeypatch.setattr(accounts.gap_filler, "fill_one", lambda sid: 0)
+    monkeypatch.setattr(service.gap_filler, "fill_one", lambda sid: 0)
 
     app = FastAPI()
     app.include_router(accounts.router)

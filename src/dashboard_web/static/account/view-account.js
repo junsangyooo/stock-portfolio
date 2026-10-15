@@ -71,7 +71,7 @@
     return el('a', { className: cls, href, 'aria-label': label || null,
       onClick: e => { if (e.metaKey || e.ctrlKey || e.shiftKey) return; e.preventDefault(); ACC.go(params); } }, kids);
   }
-  const trendCls = v => ({ up: 't-up', down: 't-down', flat: '' })[S.trend(v)];
+  const { trendCls } = S;
   function spark(values, cls) {
     const w = 52, h = 20;
     if (!values || values.length < 2) return el('span', { className: 'spark is-empty ' + (cls || ''), 'aria-hidden': 'true' });
@@ -440,13 +440,9 @@
     plot.addEventListener('pointerdown', e => show(e.clientX));
     plot.addEventListener('pointerleave', hide);
   }
+  // the asset chart wants both ends labelled when the range holds one tick
   function niceTicks(lo, hi, n) {
-    const span = hi - lo;
-    const raw = span / n;
-    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-    const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw) || raw;
-    const out = [];
-    for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(v);
+    const out = S.niceTicks(lo, hi, n);
     return out.length >= 2 ? out : [lo, hi];
   }
 

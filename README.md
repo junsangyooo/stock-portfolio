@@ -83,7 +83,7 @@ pytest tests/autotrade     # 새 quant만 (자기 pytest.ini·conftest)
 
 옛 테스트 파일과 `tests/autotrade`의 파일을 한 명령에 섞어 넘기지 않는다. 그러면 `tests/autotrade/pytest.ini`가 루트가 되어 `tests/conftest.py`(라이브 호출 차단)가 실리지 않는다.
 
-구조 불변식: `test_layering.py`(공유 → 앱 import 금지) · `test_api_gate.py`(`/api` 게이트, PIN 없는 계좌는 닫힘) · `test_ui_invariants.py`(화면 파일 전부 — 색·글자 크기 리터럴 0건, mobile-first 브레이크포인트, `.btn` 4종, 인라인 `style`/`on*` 0건, 금지 낱말, quant로 가는 링크 0건)와 `test_ui_{news,account,stock,sources}.py` · `test_server_csp.py`(nonce). 실패하면 코드가 아니라 설계가 틀어진 것이다.
+구조 불변식: `test_layering.py`(공유 → 앱 import 금지) · `web/test_server_gate.py`(`/api` 게이트, PIN 없는 계좌는 닫힘) · `test_ui_invariants.py`(화면 파일 전부 — 색·글자 크기 리터럴 0건, mobile-first 브레이크포인트, `.btn` 4종, 인라인 `style`/`on*` 0건, 금지 낱말, quant로 가는 링크 0건)와 `test_ui_{news,account,stock,sources}.py` · `test_server_csp.py`(nonce). 실패하면 코드가 아니라 설계가 틀어진 것이다.
 
 ### 배포
 

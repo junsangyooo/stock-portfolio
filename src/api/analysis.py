@@ -104,31 +104,13 @@ def news_signals(market: str, code: str) -> dict:
 
 @router.get("/fundamental/{market}/{code}/facts")
 def get_fundamental_facts(market: str, code: str) -> dict:
-    """Cheap, read-only fundamental facts (NO LLM). Powers the default 재무 tab
-    view: assembled valuation + financial-statement series + derived metrics +
-    trend + quality + sector. Shown on tab open before any AI interpretation,
-    mirroring how the chart tab shows facts and the news tab shows signals.
-    Collection is the daily batch's job; this only reads what is stored.
-    """
+    """Cheap, read-only fundamental facts (NO LLM) for the 재무 tab: the
+    statements, metrics, peer percentiles and the ETF snapshot
+    (research/fundamental/assemble.assemble_page). Collection is the daily
+    batch's job; this only reads what is stored."""
+    from ..research.fundamental.assemble import assemble_page
     symbol_id = _sid(market, code)
-    try:
-        from ..research.fundamental.assemble import assemble_display
-        from ..market import peer
-        from ..market.store import etf_store
-        facts = assemble_display(symbol_id, name=_display_name(symbol_id))
-        # the stock page's tiles: where it sits among its peers, and for an
-        # ETF its NAV snapshot instead of company statements
-        try:
-            facts["peer"] = peer.percentiles(symbol_id)
-        except Exception as e:  # noqa: BLE001 — a tile, not the tab
-            facts["peer"] = {"error": str(e)[:200]}
-        facts["etf"] = etf_store.read(symbol_id)
-        facts["queried_at"] = _stamp()
-        return facts
-    except Exception as e:  # noqa: BLE001 — a missing store must not 500 the tab
-        log.warning("fundamental facts %s failed: %s", symbol_id, e)
-        return {"kind": "fundamental_facts", "symbol_id": symbol_id,
-                "error": str(e)[:300], "queried_at": _stamp()}
+    return {**assemble_page(symbol_id, name=_display_name(symbol_id)), "queried_at": _stamp()}
 
 
 @router.get("/chart/{market}/{code}")

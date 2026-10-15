@@ -458,7 +458,7 @@ function md(iso) {
 }
 function hm(iso) { const d = kst(iso); return d ? pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) : ''; }
 function mdhm(iso) { return iso ? md(iso) + ' ' + hm(iso) : ''; }
-function kstDay(iso) { const d = kst(iso); return d ? d.toISOString().slice(0, 10) : ''; }
+const kstDay = S.kstDay;
 function weekday(iso) { const d = kst(iso); return d ? WEEKDAY[d.getUTCDay()] + '요일' : ''; }
 function short(s, max) { s = String(s || ''); return s.length > max ? s.slice(0, max - 1) + '…' : s; }
 

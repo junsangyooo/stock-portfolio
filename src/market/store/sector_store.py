@@ -1,9 +1,9 @@
 """Sector/industry tag store — data/market.db, table `sector`.
 
 Sector is (nearly) static, so the daily batch only refetches when the cache is
-missing or stale. The fundamental agent reads it to apply the rulebook's §E
-sector-relative norms (we do NOT compute live peer medians — see the design
-doc's scope boundary).
+missing or stale. The comprehensive analysis reads it (research/fundamental
+assembles it) next to fundamental_rules.md §E's sector-relative norms, and
+market/peer.py groups peers by it.
 """
 from __future__ import annotations
 

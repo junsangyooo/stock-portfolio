@@ -16,7 +16,7 @@ EnvironmentFile=/home/ubuntu/dotclaude/secrets/.env
 # the one directive systemd applies after everything else.
 #
 #   ANTHROPIC_API_KEY  a present key routes the Claude CLI to paid API
-#                      billing (ops notes §7). llm_backend.py pops it from
+#                      billing (ops notes §7). src/core/llm.py pops it from
 #                      every subprocess env, which is what actually held the
 #                      line; this is the second layer, now real.
 #   KRX_ID / KRX_PW    pykrx logs into KRX at import time whenever these are

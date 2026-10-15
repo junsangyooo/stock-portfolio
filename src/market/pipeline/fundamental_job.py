@@ -8,10 +8,11 @@ This only collects (sources → market.db). Judgment is the comprehensive
 analysis (src/research/analyze), which reads what is stored here.
 
 Usage:
-  python -m src.market.pipeline.fundamental_job [--symbol KR:005930] [--years 4]
+  python -m src.market.pipeline.fundamental_job --symbols KR:005930,US:NVDA [--years 4]
 
 Designed for cron — exits 0 on partial success, non-zero only if every symbol
-failed.
+failed. A symbol whose sector tag could not be fetched keeps its stored tag
+and is named in `sector_failed` (the sources page counts it as a problem).
 """
 from __future__ import annotations
 
@@ -24,19 +25,21 @@ from ...core import kst
 from . import fundamental_backfill
 
 
-def _refresh_sector(sid: str) -> Optional[str]:
-    """Refetch the sector tag if the cache is missing/stale. Best-effort —
-    returns the resolved sector (or None) and never raises."""
+def _refresh_sector(sid: str) -> tuple[Optional[str], Optional[str]]:
+    """Refetch the sector tag if the cache is missing/stale. Returns
+    (sector, error): on a failed fetch the stored tag stays as it was — an
+    error is not "no sector" — and the error is the caller's to report."""
     from ..store import sector_store
+    stored = (sector_store.read(sid) or {}).get("sector")
     if sector_store.is_fresh(sid):
-        return (sector_store.read(sid) or {}).get("sector")
+        return stored, None
+    from ..source import sector_source
     try:
-        from ..source import sector_source
         tag = sector_source.fetch(sid)
-        sector_store.write(sid, tag.get("sector"), tag.get("industry"))
-        return tag.get("sector")
-    except Exception:  # noqa: BLE001
-        return None
+    except Exception as e:  # noqa: BLE001 — SourceError and kin, per symbol
+        return stored, str(e)[:200]
+    sector_store.write(sid, tag.get("sector"), tag.get("industry"))
+    return tag.get("sector"), None
 
 
 def run(symbols, years: int = 4) -> dict:
@@ -44,20 +47,23 @@ def run(symbols, years: int = 4) -> dict:
 
     `symbols` is required. This module belongs to the shared market layer and
     does not get to ask an account book what it holds — whoever schedules the
-    job supplies the list (src/portfolio/jobs.py for the human accounts).
+    job supplies the list (src/portfolio/supply_job.py for the human accounts).
     """
     symbols = list(symbols)
     results, ok = [], 0
     for sid in symbols:
         try:
             r = fundamental_backfill.fill_one(sid, years=years)
-            r["sector"] = _refresh_sector(sid)
+            r["sector"], err = _refresh_sector(sid)
+            if err:
+                r["sector_error"] = err
             results.append(r)
             ok += 1
         except Exception as e:  # noqa: BLE001 — keep going, report per-symbol
             results.append({"symbol_id": sid, "fatal": str(e)[:200]})
     return {"date": kst.today(), "total": len(symbols), "ok": ok,
             "failed": [r["symbol_id"] for r in results if "fatal" in r],
+            "sector_failed": [r["symbol_id"] for r in results if "sector_error" in r],
             "results": results}
 
 

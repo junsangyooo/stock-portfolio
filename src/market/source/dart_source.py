@@ -192,10 +192,11 @@ class DartSource:
     # ── lazy client ────────────────────────────────────────────────
     def _client(self):
         if self._dart is None:
-            try:
-                from opendartreader import OpenDartReader  # v0.3+
-            except ImportError:  # pragma: no cover - legacy fallback
-                import OpenDartReader  # type: ignore
+            # OpenDartReader==0.2.2 (requirements.lock.txt): the package
+            # import itself is the client class. The lowercase
+            # `opendartreader` module this used to try first does not exist
+            # in that release: the "legacy fallback" was the only path taken.
+            import OpenDartReader  # type: ignore
             key = _api_key()
             if not key:
                 raise RuntimeError("DART API key not found (env or ~/.claude/secrets/.env)")

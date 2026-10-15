@@ -13,8 +13,8 @@ path for no gain: the schema, the growth profile and the blast radius are the
 same on both sides. Only the *source* differs, and that is a pipeline concern.
 
 Not here:
-  - the symbol master. data/universe/{kr,us}.json already is it (§10.1: daily
-    batch, searched in memory). A copy in SQLite would be a second truth.
+  - the symbol master. data/universe/{kr,us}.json already is it (ops notes §3.3:
+    refreshed daily, searched in memory). A copy in SQLite would be a second truth.
   - live quotes. quote_store stays an in-memory dict with a JSON flush; it is
     written on every poll and would only buy disk writes here.
 

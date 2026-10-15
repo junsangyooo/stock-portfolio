@@ -8,9 +8,8 @@
   const S = window.S;
   const ACC = window.ACC;
   if (!S || !ACC) return;
-  const { el, svgIco, LABELS } = S;
+  const { el, svgIco, LABELS, parseNum } = S;
   const stk = ACC.stk;
-  const parseNum = s => { const t = String(s == null ? '' : s).replace(/[,\s]/g, ''); return t === '' ? null : Number(t); };
 
   ACC.openHoldFix = function (sid, opts) {
     opts = opts || {};

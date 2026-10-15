@@ -46,7 +46,7 @@ class _StubBackend:
     def __init__(self, payload: str):
         self._payload = payload
 
-    def call(self, system, user, timeout_s=60, model=None):
+    def call(self, system, user, model=None):
         return self._payload
 
 

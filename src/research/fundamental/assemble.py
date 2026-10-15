@@ -10,19 +10,24 @@ and shapes them for two readers:
                          src/research/analyze, which reads it next to chart
                          and news with fundamental_rules.md as the dictionary.
   assemble_etf_inputs  — the ETF shape of the same (snapshot + holdings).
-  assemble_display     — the 재무 tab's default view
-                         (GET /api/analysis/fundamental/{m}/{c}/facts).
+  assemble_display     — the 재무 tab's statements and metrics.
+  assemble_page        — assemble_display + the stock page's tiles (peer
+                         percentiles, the ETF NAV snapshot); what
+                         GET /api/analysis/fundamental/{m}/{c}/facts returns.
 
 Judgment does not happen here: a domain judged alone hardens a one-dimensional
 conclusion the later merge cannot undo.
 """
 from __future__ import annotations
 
+import logging
 import math
 from typing import Optional
 
 from ...market.store import valuation_store, financials_store, sector_store, etf_store
-from ...market import fundamental_metrics
+from ...market import fundamental_metrics, peer
+
+log = logging.getLogger(__name__)
 
 
 def _valuation_band(symbol_id: str, valuation: dict) -> dict:
@@ -154,3 +159,25 @@ def assemble_display(symbol_id: str, name: Optional[str] = None,
     rows = financials_store.rows_as_dicts(symbol_id)
     series = rows[-n_periods_table:] if n_periods_table > 0 else rows
     return {**head, "financials_series": series, **assemble_inputs(symbol_id, rows)}
+
+
+def assemble_page(symbol_id: str, name: Optional[str] = None) -> dict:
+    """The stock page's 재무 facts (no LLM): assemble_display, plus where the
+    symbol sits among its peers and, for an ETF, its NAV snapshot. Never
+    raises — a missing store or a failed tile comes back as `error` beside
+    what could be read, so the tab still opens."""
+    try:
+        facts = assemble_display(symbol_id, name=name)
+    except Exception as e:  # noqa: BLE001 — a missing store must not 500 the tab
+        log.warning("fundamental facts %s failed: %s", symbol_id, e)
+        return {"kind": "fundamental_facts", "symbol_id": symbol_id, "error": str(e)[:300]}
+    try:
+        facts["peer"] = peer.percentiles(symbol_id)
+    except Exception as e:  # noqa: BLE001 — a tile, not the tab
+        facts["peer"] = {"error": str(e)[:200]}
+    try:
+        facts["etf"] = etf_store.read(symbol_id)
+    except Exception as e:  # noqa: BLE001 — a tile, not the tab
+        log.warning("etf snapshot %s failed: %s", symbol_id, e)
+        facts["etf"] = None
+    return facts

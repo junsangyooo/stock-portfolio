@@ -79,14 +79,15 @@ def test_adding_a_holding_survives_a_dead_price_source(monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from src.api import accounts
+    from src.portfolio import service
     from src.portfolio import security
     from src.portfolio.store import account_store, holding_store
     account_store.create("a", "a", "GENERAL")
     account_store.set_pin_hash("a", security.hash_pin("a", "123456"))
     monkeypatch.setattr(accounts, "_universe_meta", lambda sid: {"currency": "KRW"})
-    monkeypatch.setattr(accounts.gap_filler, "fill_one",
+    monkeypatch.setattr(service.gap_filler, "fill_one",
                         lambda sid: (_ for _ in ()).throw(SourceError("KRX down")))
-    monkeypatch.setattr(accounts, "ensure_theme_mapping", lambda sid: None)
+    monkeypatch.setattr(service, "ensure_theme_mapping", lambda sid: None)
     app = FastAPI(); app.include_router(accounts.router)
     c = TestClient(app)
     c.cookies.set(security.COOKIE_PREFIX + "a", security.make_session_token("a"))
@@ -112,3 +113,24 @@ def test_arxiv_html_error_page_is_a_failure(monkeypatch):
                             "__exit__": lambda self, *x: None})())
     with pytest.raises(rss.NotAFeed):
         arxiv.fetch_arxiv("cat:cs.AI", "arxiv_ai")
+
+
+def test_a_failed_sector_fetch_keeps_the_stored_tag_and_is_named(monkeypatch):
+    """It used to come back as {sector: None} and the job wrote that over the
+    stored tag — a dead source read as a symbol without a sector."""
+    from src.market.pipeline import fundamental_backfill, fundamental_job
+    from src.market.source import sector_source
+    from src.market.store import sector_store
+    sector_store.write("US:AAA", "Technology", "Semiconductors")
+    monkeypatch.setattr(sector_store, "is_fresh", lambda sid, max_age_days=30: False)
+    monkeypatch.setattr(fundamental_backfill, "fill_one",
+                        lambda sid, years=4: {"symbol_id": sid})
+
+    class Down:
+        def Ticker(self, t):
+            raise ConnectionError("yahoo down")
+    monkeypatch.setattr(sector_source, "yf", Down())
+    out = fundamental_job.run(["US:AAA"])
+    assert out["sector_failed"] == ["US:AAA"] and out["ok"] == 1
+    assert out["results"][0]["sector"] == "Technology"
+    assert sector_store.read("US:AAA")["sector"] == "Technology"

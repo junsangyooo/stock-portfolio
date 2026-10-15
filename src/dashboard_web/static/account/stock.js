@@ -97,11 +97,10 @@
   // ── 표기 ───────────────────────────────────────────────────────────
   const fmtPrice = (v, ccy) => S.fmtPrice(v, ccy);
   const fmtPct = (p, d) => S.fmtPnlPct(p, d == null ? 1 : d);
-  const trendCls = v => ({ up: 't-up', down: 't-down', flat: '' })[S.trend(v)];
+  const { trendCls, fmtScore, niceTicks } = S;
   const LABEL_ORDER = ['strong_sell', 'sell', 'neutral', 'buy', 'strong_buy'];
   const LABEL_KO = { strong_buy: '적극 긍정', buy: '긍정', neutral: '중립', sell: '부정', strong_sell: '적극 부정' };
   const LABEL_ARROW = { strong_buy: '▲▲', buy: '▲', neutral: '●', sell: '▼', strong_sell: '▼▼' };
-  const fmtScore = v => (v == null || isNaN(v) ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(+v).toFixed(2));
   const PERIODS = [
     { value: '1D', label: '1일', q: 'period=5m&n=80', meta: '1일 · 5분봉' },
     { value: '3M', label: '3M', q: 'period=day&n=63', meta: '3개월 · 일봉' },
@@ -171,15 +170,6 @@
     for (const k in (attrs || {})) if (attrs[k] != null) n.setAttribute(k === 'cls' ? 'class' : k, attrs[k]);
     (kids || []).forEach(c => { if (c != null) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
     return n;
-  }
-  function niceTicks(lo, hi, want) {
-    const span = hi - lo || Math.abs(hi) || 1;
-    const raw = span / Math.max(1, want);
-    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-    const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => span / s <= want) || 10 * mag;
-    const out = [];
-    for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(10));
-    return out;
   }
   // measure text without a canvas font mismatch — the labels are short and
   // Pretendard's figures are tabular, so a per-char estimate is enough

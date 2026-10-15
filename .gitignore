@@ -20,6 +20,9 @@ data/market/
 data/analysis/
 data/logs/
 data/backup/
+# the deleted listing collector's output (2026-10-13). No code writes it any more, but
+# this laptop still has the folder: keep the line until the folder is gone, or
+# `git add -A` (qdc) would commit it.
 data/listings/
 models/
 docs_cache/
@@ -37,8 +40,6 @@ docs/
 
 # session signing secret (Oracle-generated, never commit)
 data/.session_secret
-
-# deprecated per-theme jsonl (migrated into news.db)
 
 # local research caches (large, never committed)
 tmp/

@@ -34,23 +34,9 @@ const $ = id => document.getElementById(id);
 const main = $('main');
 
 // ── chrome ──────────────────────────────────────────────────────────
-function openAccounts(btn) {
-  if (window.AccountsMenu && typeof window.AccountsMenu.open === 'function') { window.AccountsMenu.open(btn); return; }
-  fallbackAccountsMenu(btn);
-}
-// Used only until common/accounts-menu.js (계좌 담당) is in place: names
-// and the lock, never amounts.
-async function fallbackAccountsMenu(btn) {
-  let list = [], open = [];
-  try {
-    [list, open] = await Promise.all([
-      S.api('/api/accounts', { toast: false }).then(d => d.accounts || []),
-      S.api('/api/accounts/session', { toast: false }).then(d => (d.open || []).map(o => o.account_id)),
-    ]);
-  } catch (e) { S.toast('계좌 목록을 불러오지 못했어요', 'err'); return; }
-  S.menu(btn, list.map(a => ({ label: a.name || a.account_id, sub: S.accountSub(a),
-    icon: open.includes(a.account_id) ? 'chart-line' : 'lock', href: '/a/' + encodeURIComponent(a.account_id) })));
-}
+// the account menu (common/accounts-menu.js, included before this file):
+// names and the lock, never amounts
+function openAccounts(btn) { window.AccountsMenu.open(btn); }
 const mineBtns = [];
 function mineButton(extra) {
   const b = el('button', { type: 'button', className: 'btn chip mine-btn ' + (extra || ''), 'aria-pressed': 'false',

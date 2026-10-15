@@ -204,6 +204,36 @@ function fmtAxisMan(v) {
 }
 // Colour class for a signed value: 'up' | 'down' | 'flat' (CSS .t-up/.t-down).
 function trend(v) { return bad(v) || +v === 0 ? 'flat' : +v > 0 ? 'up' : 'down'; }
+// the text class of a change: t-up · t-down · '' (flat)
+function trendCls(v) { return ({ up: 't-up', down: 't-down', flat: '' })[trend(v)]; }
+// a score (analysis, a field's mood) → '+0.38' / '−0.41' / '—'; rounded
+// first, so −0.004 reads 0.00, not −0.00
+function fmtScore(v) {
+  if (v == null || isNaN(v)) return '—';
+  const n = Math.round(+v * 100) / 100;
+  return (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toFixed(2);
+}
+// a typed number: commas, spaces, ₩ $ dropped and the minus look-alikes
+// (− –) read as '-'. Nothing typed ('' or a lone '-') is null; anything else
+// that is not a number is NaN, so a form can tell 'empty' from 'wrong'.
+function parseNum(s) {
+  if (s == null) return null;
+  const t = String(s).replace(/[,\s₩$]/g, '').replace(/[−–]/g, '-');
+  if (t === '' || t === '-') return null;
+  const v = Number(t);
+  return isFinite(v) ? v : NaN;
+}
+// axis ticks between lo and hi: steps of 1 · 2 · 2.5 · 5 · 10 × 10^k, at
+// span / step ≤ `want` (a flat range still gets a step)
+function niceTicks(lo, hi, want) {
+  const span = hi - lo || Math.abs(hi) || 1;
+  const raw = span / Math.max(1, want);
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => span / s <= want) || 10 * mag;
+  const out = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(10));
+  return out;
+}
 
 // ── dates (KST unless a market says otherwise) ───────────────────────
 const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
@@ -247,6 +277,8 @@ function fmtTime(t, tz) {
 }
 // 'YYYY-MM-DD' of `now` in the market's own calendar
 function marketToday(market, now) { const p = parts(now || new Date(), TZ[market] || TZ.KR); return p ? p.date : ''; }
+// 'YYYY-MM-DD' of an instant (Date | ISO | epoch seconds) in KST; '' for none
+function kstDay(t) { const p = parts(t, TZ.KR); return p ? p.date : ''; }
 // Trading days from date a (exclusive) to date b (inclusive): weekdays, minus
 // the exchange holidays when the caller has them (GET /api/market/session
 // .holidays); without them a holiday counts as a session.
@@ -268,7 +300,8 @@ function prevWeekday(date) {
 }
 // ── where a market stands (GET /api/market/session, src/market/calendar.py) ──
 // The server knows the exchanges' holidays; the pages read its answer
-//   { phase: 'pre'|'open'|'post'|'closed', today, today_is_session, last_session, covered }
+//   { phase: 'pre'|'open'|'post'|'closed', today, today_is_session, last_session, covered,
+//     open, close ('HH:MM' today, market-local; null when closed), holidays }
 // per market and hand it to pnlLabel / quoteState. marketState() is the same
 // shape from the clock alone — only for when that route could not be read: it
 // knows weekends, not holidays (a weekday holiday reads as a session day).
@@ -325,7 +358,9 @@ function quoteState(o) {
   const last = lastSessionOf(o.session);
   const phase = o.session && typeof o.session === 'object' ? o.session.phase : o.phase;
   const p = parts(ms / 1000, TZ[market] || TZ.KR);
-  const open = (SESSION[market] || SESSION.KR)[0];
+  // today's open from the server when it differs (수능 day opens at 10:00)
+  const so = o.session && typeof o.session === 'object' && o.session.today === p.date ? o.session.open : null;
+  const open = so ? +so.slice(0, 2) * 60 + +so.slice(3, 5) : (SESSION[market] || SESSION.KR)[0];
   let qs = p.date;
   if (p.wd === 0 || p.wd === 6 || p.hh * 60 + p.mm < open) qs = prevWeekday(p.date);
   if (last && qs < last) {
@@ -1189,7 +1224,8 @@ window.S = {
   el, clear, svgIco, spinner, designColor, designRgba, designToken, cssVar, newsThemeIcon, srcName, LABELS,
   // numbers · dates · rules (인계 §3.1–3.5)
   fmtPrice, fmtMoney, fmtPnl, fmtPnlPct, fmtChange, fmtChangePct, fmtQty, fmtCount, fmtAxisMan, trend,
-  fmtDate, fmtDateTime, fmtTime, marketToday, marketState, tradingDaysBetween, safeUrl,
+  trendCls, fmtScore, parseNum, niceTicks,
+  fmtDate, fmtDateTime, fmtTime, marketToday, kstDay, marketState, tradingDaysBetween, safeUrl,
   pnlLabel, quoteState, analysisState, depthLabel, verdictTone, LABEL_KO, moodBand,
   // feedback · requests
   toast, api, banner, stateBlock, skeleton,

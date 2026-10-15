@@ -13,7 +13,6 @@ account's session.
 """
 from __future__ import annotations
 
-import logging
 import re
 
 from typing import Dict, List, Optional
@@ -23,15 +22,11 @@ from fastapi import (
 )
 from pydantic import BaseModel
 
-from ..core.paths import split_symbol
-from ..market.pipeline import gap_filler
 from ..portfolio import security, service
 from ..portfolio.store import (account_store, balance_store, holding_store,
                                snapshot_store, trade_store)
-from ..research.news.mapping import ensure_theme_mapping
 from ..universe import search as uni_search
 
-log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
 
@@ -241,16 +236,6 @@ def _universe_meta(symbol_id: str) -> dict:
     return meta
 
 
-def _currency_of(symbol_id: str, meta: dict) -> str:
-    """Resolve the cash currency a symbol settles in. Prefer its universe
-    record; fall back to the symbol_id region prefix (KR→KRW, US→USD)."""
-    ccy = meta.get("currency")
-    if ccy:
-        return str(ccy).upper()
-    region, _ = split_symbol(symbol_id)
-    return "USD" if region == "US" else "KRW"
-
-
 @router.post("/{account_id}/holdings")
 def add_holding(account_id: str, body: HoldingUpsert,
                 background: BackgroundTasks,
@@ -262,19 +247,12 @@ def add_holding(account_id: str, body: HoldingUpsert,
         # POST /holdings writes what it is sent; the add dialog would overwrite
         # a held row's quantity with an empty one. Editing goes through 보유 정정.
         raise HTTPException(409, "이미 목록에 있는 종목이에요")
-    # The holding is the person's record; a price source being down must not
-    # lose it. The bars come with the next refresh or snapshot instead.
-    try:
-        backfill_bars, backfill_failed = gap_filler.fill_one(body.symbol_id), False
-    except Exception as e:  # noqa: BLE001 — SourceError and kin
-        log.warning("backfill %s on add failed: %s", body.symbol_id, e)
-        backfill_bars, backfill_failed = 0, True
+    backfill_bars, backfill_failed = service.fill_new_bars(body.symbol_id)
     holding_store.upsert(
         account_id, body.symbol_id,
         avg_cost=body.avg_cost, qty=body.qty, note=body.note, name=body.name,
     )
-    # Map the symbol into themes off the request path (may make an LLM call).
-    background.add_task(ensure_theme_mapping, body.symbol_id)
+    background.add_task(service.map_new_themes, body.symbol_id)
     return {"ok": True, "backfill_bars": backfill_bars,
             "backfill_failed": backfill_failed}
 
@@ -325,16 +303,15 @@ def record_trade(account_id: str, body: TradeBody,
         out = trade_store.record(
             account_id, symbol_id=symbol_id, side=side,
             qty=body.qty, price=body.price, fee=body.fee,
-            currency=_currency_of(symbol_id, meta),
+            currency=uni_search.currency_of(symbol_id, meta),
             name=meta.get("name_kr") or meta.get("name_en") or symbol_id,
             traded_at=body.traded_at,
             note=(body.note or "").strip() or None)
     except ValueError as e:
         raise HTTPException(400, str(e))
     if side == "buy" and out["holding"]["qty"] == body.qty:
-        # a freshly opened position: same background work as POST /holdings
-        background.add_task(gap_filler.fill_one, symbol_id)
-        background.add_task(ensure_theme_mapping, symbol_id)
+        # a freshly opened position: its bars and themes, off the request path
+        background.add_task(service.after_new_holding, symbol_id)
     out["ok"] = True
     return out
 

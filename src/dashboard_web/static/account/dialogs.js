@@ -12,21 +12,13 @@
   'use strict';
   const S = window.S;
   const ACC = window.ACC;
-  const { el, clear, svgIco } = S;
+  const { el, clear, svgIco, parseNum } = S;
 
-  function parseNum(s) {
-    if (s == null) return null;
-    const t = String(s).replace(/[,\s₩$]/g, '').replace(/[−–]/g, '-');
-    if (t === '' || t === '-') return null;
-    const v = Number(t);
-    return isFinite(v) ? v : NaN;
-  }
   function fmtPlain(v, ccy) {
     if (v == null || isNaN(v)) return '';
     const digits = ccy === 'USD' ? 2 : 0;
     return Number(v).toLocaleString('en-US', { maximumFractionDigits: ccy === 'qty' ? 4 : digits });
   }
-  ACC.parseNum = parseNum;
 
   // a money / quantity box with a prefix (₩ $) or suffix (주), comma-formatted on blur
   ACC.numberInput = function (o) {

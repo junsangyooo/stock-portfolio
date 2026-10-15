@@ -228,7 +228,7 @@ class _Backend:
         self.payload = payload
         self.calls = []
 
-    def call(self, system, user, timeout_s=0, model=None):
+    def call(self, system, user, model=None):
         self.calls.append(user)
         return json.dumps(self.payload)
 

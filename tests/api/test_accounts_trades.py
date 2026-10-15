@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api import accounts
+from src.portfolio import service
 from src.portfolio import security
 from src.portfolio.store import (account_store, balance_store, db as pdb,
                                  holding_store, trade_store)
@@ -21,7 +22,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(accounts.uni_search, "get", lambda sid: {
         "currency": "USD" if sid.startswith("US:") else "KRW",
         "name_kr": "이름 " + sid, "market": sid.split(":")[0]})
-    monkeypatch.setattr(accounts.gap_filler, "fill_one", lambda sid: 0)
+    monkeypatch.setattr(service.gap_filler, "fill_one", lambda sid: 0)
     for aid in ("alice", "bob"):
         account_store.create(aid, aid, "GENERAL")
         account_store.set_pin_hash(aid, security.hash_pin(aid, "123456"))
@@ -256,7 +257,7 @@ def test_buy_onto_unknown_cost_starts_at_the_buy_price(client):
 
 def test_side_case_is_normalised_everywhere(client, monkeypatch):
     filled = []
-    monkeypatch.setattr(accounts.gap_filler, "fill_one",
+    monkeypatch.setattr(service.gap_filler, "fill_one",
                         lambda sid: filled.append(sid))
     r = _trade(client, side="BUY")
     assert r.status_code == 200, r.text

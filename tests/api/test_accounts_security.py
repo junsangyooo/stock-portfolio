@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api import accounts
+from src.portfolio import service
 from src.portfolio import security
 from src.portfolio.store import account_store, db as pdb, holding_store
 
@@ -15,8 +16,8 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(pdb, "_initialized", False)
     monkeypatch.setattr(security, "_fails", {})
     monkeypatch.setattr(accounts.uni_search, "get", lambda sid: {"currency": "KRW"})
-    monkeypatch.setattr(accounts.gap_filler, "fill_one", lambda sid: 0)
-    monkeypatch.setattr(accounts, "ensure_theme_mapping", lambda sid: None)
+    monkeypatch.setattr(service.gap_filler, "fill_one", lambda sid: 0)
+    monkeypatch.setattr(service, "ensure_theme_mapping", lambda sid: None)
     for aid in ("alice", "bob"):
         account_store.create(aid, aid, "GENERAL")
         account_store.set_pin_hash(aid, security.hash_pin(aid, "123456"))

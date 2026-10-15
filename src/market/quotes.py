@@ -1,8 +1,8 @@
 """Latest prices — the quote cache, topped up from the source when stale.
 
-The market router's GET /quotes and the chat agent's `quote` tool both answer
-from here, so a caller that wants a price never assembles the cache rule
-itself.
+The market router's GET /quotes, the chat agent's `quote` tool, the ↻ button
+and the snapshot job all answer from here, so a caller that wants a price
+never assembles the cache rule itself.
 """
 from __future__ import annotations
 
@@ -15,26 +15,38 @@ from .store import quote_store
 log = logging.getLogger(__name__)
 
 
-def warm(symbol_ids, max_age_s: int) -> dict:
+def warm(symbol_ids, max_age_s: int, *, failed: dict | None = None) -> dict:
     """{symbol_id: Quote | None}: cached when fresh enough, else fetched —
-    and every fetched quote stored with one flush. Never raises."""
+    and every fetched quote stored with one flush. Never raises.
+
+    `failed`, when given, is filled with {symbol_id: why} for each symbol it
+    could not price. A batch names them in its summary: a dead source does
+    not look like one — the previous quote stays in the cache, so it shows
+    up as a plausible number rather than a missing one."""
     out = {sid: quote_store.get(sid, max_age_s=max_age_s) for sid in symbol_ids}
+    why: dict = {}
     fetched = []
     for sid, q in out.items():
         if q is not None:
             continue
         src = for_symbol(sid)
         if src is None:
+            why[sid] = "no source"
             continue
         try:
             q = src.get_quote(sid)
         except Exception as e:  # noqa: BLE001 — a dead source must not 500
             log.warning("quote fetch %s failed: %s", sid, e)
+            why[sid] = str(e)[:80]
             continue
-        if q is not None:
-            out[sid] = q
-            fetched.append(q)
+        if q is None:
+            why[sid] = "source returned nothing"
+            continue
+        out[sid] = q
+        fetched.append(q)
     quote_store.set_many(fetched)
+    if failed is not None:
+        failed.update(why)
     return out
 
 

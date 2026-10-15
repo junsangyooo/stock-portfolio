@@ -10,8 +10,8 @@ function addDays(date, n) {
   const t = new Date(Date.UTC(y, m - 1, d + n));
   return t.toISOString().slice(0, 10);
 }
-// the KST calendar day of an instant
-function kstDay(t) { return S.marketToday('KR', t instanceof Date ? t : new Date(t)); }
+// the KST calendar day of an instant (Date | ISO)
+const kstDay = S.kstDay;
 function kstNow() {
   const f = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' })
     .formatToParts(new Date());
@@ -30,11 +30,7 @@ function itemTs(x) {
 function itemDay(x) { return x.fetched_at ? kstDay(x.fetched_at) : (itemTs(x) ? kstDay(itemTs(x)) : ''); }
 
 // mood score → '+0.38' / '−0.41' / '—'
-function fmtScore(v) {
-  if (v == null || isNaN(v)) return '—';
-  const n = Math.round(+v * 100) / 100;
-  return (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toFixed(2);
-}
+const fmtScore = S.fmtScore;
 // text tone of a score: same boundaries as the cell (인계 §3.5)
 function scoreTone(v) {
   const b = S.moodBand(v).band;

@@ -42,3 +42,16 @@ def test_block_is_replaced_and_the_rest_kept():
 def test_a_crontab_without_the_block_is_refused():
     with pytest.raises(SystemExit):
         install_cron.replace_block("0 1 * * * other app\n", _CRON)
+
+
+def test_the_sources_page_watches_every_scheduled_job():
+    """portfolio/health.JOBS reads each job's log; a cron line it does not
+    know is never checked, and a job it lists without a cron line reads as
+    late forever."""
+    from src.portfolio import health
+    cron_logs = {m for l in _JOBS for m in re.findall(r">> data/logs/([\w.-]+\.log) 2>&1", l)}
+    assert cron_logs == {j[1] for j in health.JOBS}
+    # every logged job writes its @run line to the same log it appends to
+    for l in _JOBS:
+        logs = set(re.findall(r"data/logs/([\w.-]+\.log)", l))
+        assert len(logs) <= 1, l
