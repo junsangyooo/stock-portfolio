@@ -11,7 +11,7 @@ Contents:
   - ``LocalLlamaBackend``  HTTP client for the on-host llama.cpp server
   - ``_parse_json``        lenient JSON extractor — FIRST object, raises
   - ``extract_json``       lenient JSON extractor — LAST fence, returns None
-  - constants              ``FAST_MODEL`` (Haiku 4.5), ``SLOW_MODEL`` (Sonnet 4.6),
+  - constants              ``FAST_MODEL`` (Haiku 5.5), ``SLOW_MODEL`` (Sonnet 5.5),
                            ``LOCAL_URL``
 
 No timeouts by default. A failed ``claude -p`` exits 1 with a message (Oracle
@@ -36,7 +36,7 @@ import urllib.request
 from . import usage
 
 
-FAST_MODEL = "claude-haiku-4-5-20251001"
+FAST_MODEL = "claude-haiku-5-5"
 
 # On-host llama.cpp server (docker, 127.0.0.1 only — never exposed).
 LOCAL_URL = os.getenv("LOCAL_LLM_URL", "http://127.0.0.1:8080")
@@ -62,7 +62,7 @@ def _find_claude() -> str | None:
         if hits:
             return hits[-1]
     return None
-SLOW_MODEL = "claude-sonnet-4-6"
+SLOW_MODEL = "claude-sonnet-5-5"
 
 # Credential-shaped env vars never passed to claude / its tool children.
 _SENSITIVE_ENV = re.compile(
