@@ -1,4 +1,4 @@
-"""FastAPI dashboard server for portfolio-dashboard.
+"""FastAPI dashboard server for stock-portfolio.
 
 Routes:
   GET /              — news.html (수집: 분야 분위기 · 오늘의 핵심 · 흐름)
@@ -38,7 +38,7 @@ _CHARSET_RE = re.compile(r"<meta\s+charset=[^>]*>", re.IGNORECASE)
 
 # Interactive docs off: they sit outside /api/* so the PIN gate never sees them,
 # and on a public origin they would publish the whole API surface.
-app = FastAPI(title="portfolio-dashboard",
+app = FastAPI(title="stock-portfolio",
               docs_url=None, redoc_url=None, openapi_url=None)
 
 # All /api/* routes live behind a single aggregate router.

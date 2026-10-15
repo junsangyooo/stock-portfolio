@@ -35,7 +35,7 @@ from ...core.paths import UNIVERSE_DIR, split_symbol
 
 log = logging.getLogger(__name__)
 
-_UA = {"User-Agent": "portfolio-dashboard/1.0 (contact: admin@jsyoo.dev)"}
+_UA = {"User-Agent": "stock-portfolio/1.0 (contact: admin@jsyoo.dev)"}
 _TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 _FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
 _CIK_CACHE = UNIVERSE_DIR / "edgar_ciks.json"

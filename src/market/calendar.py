@@ -8,11 +8,10 @@ together with the days whose hours differ (KRX opens at 10:00 on the year's
 first trading day and on 수능 day, which also closes at 16:30; NYSE closes at
 13:00 before some holidays).
 
-The values are a copy of autotrade/market/calendar.py (2025-2027 KRX and
-NYSE; its header lists the sources and which 2027 entries are provisional).
-This app may not import that one (design decision D14: src/ and autotrade/
-stand apart), so tests/market/test_calendar.py reads both and fails when they
-differ — change both together.
+The values cover 2025-2027 for KRX and NYSE, taken from the exchanges'
+published calendars; some 2027 entries are provisional until the exchanges
+confirm them. The quant engine on the same server keeps its own copy of this
+table in its own repository: when a year is added here, add it there too.
 
 The list covers whole years. `covered(year)` is checked by the sources page
 health and a test (a missing next year shows up in December, not as a silent

@@ -1,11 +1,12 @@
-"""deploy/nginx-portfolio.conf takes Cloudflare's edges only, like nginx-quant.conf.
+"""deploy/nginx-portfolio.conf takes Cloudflare's edges only and sends HSTS.
 
-Both files list Cloudflare's ranges; a range one of them lacks turns that edge's visitors
-away from one site and not the other. tests/autotrade checks the quant file against itself;
-this checks the two files against each other.
+A visitor that does not come through Cloudflare (a direct hit on the server's address) gets the
+connection closed (444), on port 80 and 443 alike. The quant site on the same nginx keeps the same
+list of ranges in its own repository: when Cloudflare publishes a change, update both.
 """
 from __future__ import annotations
 
+import ipaddress
 import re
 from pathlib import Path
 
@@ -25,13 +26,15 @@ def _code(text: str) -> str:
     return "\n".join(l for l in text.splitlines() if not l.strip().startswith("#"))
 
 
-def test_both_sites_take_the_same_cloudflare_ranges():
-    p_var, portfolio = _geo((_DEPLOY / "nginx-portfolio.conf").read_text())
-    q_var, quant = _geo((_DEPLOY / "nginx-quant.conf").read_text())
-    assert portfolio - _LOCAL and portfolio == quant
-    assert _LOCAL <= portfolio                     # the server's own checks
-    # one http block holds both files: a second geo of the same name would clash
-    assert p_var != q_var
+def test_only_cloudflare_ranges_and_the_server_itself_are_let_in():
+    conf = _code((_DEPLOY / "nginx-portfolio.conf").read_text())
+    assert re.search(r"^\s*default 0;", conf, re.M)  # everyone else is refused
+    _, allowed = _geo(conf)
+    assert _LOCAL <= allowed                       # the server's own checks
+    ranges = allowed - _LOCAL
+    assert len(ranges) >= 10                       # Cloudflare publishes 15 IPv4 + 7 IPv6
+    for r in ranges:
+        ipaddress.ip_network(r)                    # every entry is a valid range
 
 
 def test_portfolio_closes_on_non_cloudflare_and_sends_hsts():

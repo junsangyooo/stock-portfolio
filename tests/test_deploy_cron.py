@@ -31,11 +31,11 @@ def test_no_unescaped_percent():
 def test_block_is_replaced_and_the_rest_kept():
     old = ("0 1 * * * other app\n"
            "# >>> portfolio (old) >>>\n0 2 * * * stale job\n# <<< portfolio <<<\n"
-           "*/5 * * * * autotrade tick\n")
+           "*/5 * * * * other app tick\n")
     new = install_cron.replace_block(old, _CRON)
     assert "stale job" not in new
     assert new.startswith("0 1 * * * other app\n")
-    assert new.rstrip().endswith("autotrade tick")
+    assert new.rstrip().endswith("other app tick")
     assert new.count("src.research.news.cycle_job") == 2
 
 

@@ -1,12 +1,12 @@
-# /etc/logrotate.d/portfolio-dashboard
+# /etc/logrotate.d/stock-portfolio
 #
 # Nothing rotated data/logs, so every file only ever grew — dashboard.log
 # reached 10MB / 81k lines and fundamental.log 5MB by 2026-09. Install:
 #
 #   sudo apt-get install -y logrotate            # not present by default here
-#   sudo cp deploy/logrotate-dashboard /etc/logrotate.d/portfolio-dashboard
-#   sudo chown ubuntu:ubuntu ~/portfolio-dashboard/data/logs/dashboard.log
-#   sudo logrotate -d /etc/logrotate.d/portfolio-dashboard   # dry run
+#   sudo cp deploy/logrotate-stock-portfolio /etc/logrotate.d/stock-portfolio
+#   sudo chown ubuntu:ubuntu ~/stock-portfolio/data/logs/dashboard.log
+#   sudo logrotate -d /etc/logrotate.d/stock-portfolio   # dry run
 #
 # One glob, not one block per file: a path may appear in only one stanza and
 # dashboard.log is inside this directory like the rest.
@@ -22,7 +22,7 @@
 # ubuntu — systemd creates it as root, and copytruncate needs write access to
 # the file itself. The chown holds: `append:` never re-creates an existing
 # file, and copytruncate never unlinks one.
-/home/ubuntu/portfolio-dashboard/data/logs/*.log {
+/home/ubuntu/stock-portfolio/data/logs/*.log {
     daily
     rotate 7
     missingok

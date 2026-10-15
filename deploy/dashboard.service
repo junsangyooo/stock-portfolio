@@ -1,12 +1,12 @@
 [Unit]
-Description=portfolio-dashboard (FastAPI)
+Description=stock-portfolio — portfolio.jsyoo.dev (FastAPI)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/portfolio-dashboard
+WorkingDirectory=/home/ubuntu/stock-portfolio
 EnvironmentFile=/home/ubuntu/dotclaude/secrets/.env
 # UnsetEnvironment=, NOT Environment="X=". EnvironmentFile= is read at exec
 # and its values win over every Environment= line regardless of the order
@@ -28,10 +28,11 @@ EnvironmentFile=/home/ubuntu/dotclaude/secrets/.env
 #
 #   TOSS_CLIENT_ID / TOSS_CLIENT_SECRET / TOSS_ACCOUNT_NO
 #                      the live Toss account's keys (2026-10-13). Nothing in
-#                      this app calls Toss; only the new engine's tick (its own
-#                      cron line) reads them. Out of this internet-facing
-#                      process, nothing here can mint a token (one token per
-#                      client: it would revoke the tick's) or reach the account.
+#                      this app calls Toss; only the quant engine on the same
+#                      server (its own folder and cron line) reads them. Out
+#                      of this internet-facing process, nothing here can mint
+#                      a token (one token per client: it would revoke the
+#                      tick's) or reach the account.
 #
 # core.secrets.get() falls back to reading the .env file itself when the
 # environment lacks a name, so unsetting alone would not keep the Toss keys
@@ -41,13 +42,17 @@ EnvironmentFile=/home/ubuntu/dotclaude/secrets/.env
 # name unset here is out of reach for the web process, on purpose or not.
 # The names it does read through core.secrets (DISCORD_WEBHOOK_URL, KIS_*,
 # DART_API_KEY) still come from the environment.
+#
+# The quant engine's folder (/home/ubuntu/quant-dashboard: its ledger, PIN
+# secret and Toss token cache) is hidden as well: this process has no reason
+# to read another app's files.
 UnsetEnvironment=ANTHROPIC_API_KEY KRX_ID KRX_PW TOSS_CLIENT_ID TOSS_CLIENT_SECRET TOSS_ACCOUNT_NO
-InaccessiblePaths=-/home/ubuntu/dotclaude/secrets -/home/ubuntu/.claude/secrets
-ExecStart=/home/ubuntu/portfolio-dashboard/.venv/bin/python -m src.dashboard_web.server --port 8888 --host 127.0.0.1
+InaccessiblePaths=-/home/ubuntu/dotclaude/secrets -/home/ubuntu/.claude/secrets -/home/ubuntu/quant-dashboard
+ExecStart=/home/ubuntu/stock-portfolio/.venv/bin/python -m src.dashboard_web.server --port 8888 --host 127.0.0.1
 Restart=on-failure
 RestartSec=10
-StandardOutput=append:/home/ubuntu/portfolio-dashboard/data/logs/dashboard.log
-StandardError=append:/home/ubuntu/portfolio-dashboard/data/logs/dashboard.log
+StandardOutput=append:/home/ubuntu/stock-portfolio/data/logs/dashboard.log
+StandardError=append:/home/ubuntu/stock-portfolio/data/logs/dashboard.log
 
 [Install]
 WantedBy=multi-user.target

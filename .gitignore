@@ -5,13 +5,9 @@ __pycache__/
 .env
 STATUS.md
 
-
 # ── Runtime data (Oracle 단방향, NEVER git add) ─────────────────────
 data/portfolio.db
 data/portfolio.db-*
-data/quant.db
-data/quant.db-*
-data/quant/
 data/universe/
 data/market.db
 data/market.db-*
@@ -45,18 +41,5 @@ data/.session_secret
 # local research caches (large, never committed)
 tmp/
 
-# ── 새 quant (autotrade/ + web/) ───────────────────────────────
-data/autotrade.db
-data/autotrade.db-*
-data/autotrade.secret
-data/autotrade-toss/
+# deploy history on the server (deploy/deploy.sh)
 data/deploy/
-web/node_modules/
-# On the server web/dist is a symlink to web/releases/<id> (deploy/deploy.sh): no trailing slash,
-# or the link would not match.
-web/dist
-web/releases/
-web/test-results/
-web/playwright-report/
-web/coverage/
-!web/public/**/*.png

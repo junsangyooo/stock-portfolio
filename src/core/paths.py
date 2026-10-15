@@ -1,4 +1,4 @@
-"""Filesystem layout for the new portfolio-dashboard.
+"""Filesystem layout for stock-portfolio.
 
   data/portfolio.db                                 — SQLite (ledger: accounts, holdings, trades, cash, snapshots + chat_sessions)
   data/market.db                                    — SQLite (ohlcv, valuation, financials, sector, etf, symbol_themes)

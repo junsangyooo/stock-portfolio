@@ -32,7 +32,7 @@ def _post(payload: dict, what: str) -> bool:
         return False
 
 
-def send(text: str, username: str = "portfolio-dashboard") -> bool:
+def send(text: str, username: str = "stock-portfolio") -> bool:
     """Send plain-text message. Discord max 2000 chars."""
     return _post({"content": text[:1990], "username": username}, "send")
 
@@ -40,7 +40,7 @@ def send(text: str, username: str = "portfolio-dashboard") -> bool:
 def send_embed(title: str, description: str = "",
                fields: list[dict] | None = None,
                color: int = 0x00E5FF,
-               username: str = "portfolio-dashboard",
+               username: str = "stock-portfolio",
                footer: str | None = None) -> bool:
     """Send a rich embed. fields = [{name, value, inline?}, ...]"""
     embed: dict = {"title": title[:256], "description": description[:4000],

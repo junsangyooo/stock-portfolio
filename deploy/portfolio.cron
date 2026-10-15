@@ -1,10 +1,10 @@
 # >>> portfolio (deploy/portfolio.cron) >>>
 # portfolio.jsyoo.dev — the crontab block for user ubuntu on the Oracle server.
-# This file is the truth (정의서 §1.1 규칙 6); ops notes §8 explains it. Install or update:
+# This file is the truth of this app's schedule (정의서 §1.1 규칙 6). Install or update:
 #   crontab -l > ~/crontab.bak.$(date +\%F)
 #   crontab -l | python3 deploy/install_cron.py deploy/portfolio.cron | crontab -
 # The script replaces only the lines between the >>> and <<< markers; the quant block
-# (deploy/autotrade.cron) and other apps' lines are left as they are. It refuses a crontab
+# and other apps' lines are left as they are. It refuses a crontab
 # without the markers: the first install (2026-10-14) replaced the old unmarked lines by hand.
 #
 # Times are UTC (KST − 9h). `%` must be written `\%` in a crontab line.
@@ -15,27 +15,27 @@
 
 # ── data collection ────────────────────────────────────────────────────────────
 # news cycle ×2 (06:00 / 17:00 KST): collect → enrich → daily (→ Sunday roll-ups)
-0 21 * * * cd /home/ubuntu/portfolio-dashboard && echo "@run $(date -Is)" >> data/logs/news.log && .venv/bin/python -m src.research.news.cycle_job >> data/logs/news.log 2>&1
-0 8 * * * cd /home/ubuntu/portfolio-dashboard && echo "@run $(date -Is)" >> data/logs/news.log && .venv/bin/python -m src.research.news.cycle_job >> data/logs/news.log 2>&1
+0 21 * * * cd /home/ubuntu/stock-portfolio && echo "@run $(date -Is)" >> data/logs/news.log && .venv/bin/python -m src.research.news.cycle_job >> data/logs/news.log 2>&1
+0 8 * * * cd /home/ubuntu/stock-portfolio && echo "@run $(date -Is)" >> data/logs/news.log && .venv/bin/python -m src.research.news.cycle_job >> data/logs/news.log 2>&1
 # fundamentals / ETF facts for held symbols (06:10 / 06:15 KST)
-10 21 * * * cd /home/ubuntu/portfolio-dashboard && echo "@run $(date -Is)" >> data/logs/fundamental.log && set -a && . /home/ubuntu/dotclaude/secrets/.env && set +a && export ANTHROPIC_API_KEY= && .venv/bin/python -m src.portfolio.supply_job fundamental >> data/logs/fundamental.log 2>&1
-15 21 * * * cd /home/ubuntu/portfolio-dashboard && echo "@run $(date -Is)" >> data/logs/etf.log && set -a && . /home/ubuntu/dotclaude/secrets/.env && set +a && export ANTHROPIC_API_KEY= && .venv/bin/python -m src.portfolio.supply_job etf >> data/logs/etf.log 2>&1
+10 21 * * * cd /home/ubuntu/stock-portfolio && echo "@run $(date -Is)" >> data/logs/fundamental.log && set -a && . /home/ubuntu/dotclaude/secrets/.env && set +a && export ANTHROPIC_API_KEY= && .venv/bin/python -m src.portfolio.supply_job fundamental >> data/logs/fundamental.log 2>&1
+15 21 * * * cd /home/ubuntu/stock-portfolio && echo "@run $(date -Is)" >> data/logs/etf.log && set -a && . /home/ubuntu/dotclaude/secrets/.env && set +a && export ANTHROPIC_API_KEY= && .venv/bin/python -m src.portfolio.supply_job etf >> data/logs/etf.log 2>&1
 # closing snapshots: US close (06:20 KST) and KR close (16:35 KST) — gap-fill + quotes + snapshot
-20 21 * * * cd /home/ubuntu/portfolio-dashboard && echo "@run $(date -Is)" >> data/logs/snapshot.log && set -a && . /home/ubuntu/dotclaude/secrets/.env && set +a && export ANTHROPIC_API_KEY= && .venv/bin/python -m src.portfolio.snapshot_job >> data/logs/snapshot.log 2>&1
-35 7 * * * cd /home/ubuntu/portfolio-dashboard && echo "@run $(date -Is)" >> data/logs/snapshot.log && set -a && . /home/ubuntu/dotclaude/secrets/.env && set +a && export ANTHROPIC_API_KEY= && .venv/bin/python -m src.portfolio.snapshot_job >> data/logs/snapshot.log 2>&1
+20 21 * * * cd /home/ubuntu/stock-portfolio && echo "@run $(date -Is)" >> data/logs/snapshot.log && set -a && . /home/ubuntu/dotclaude/secrets/.env && set +a && export ANTHROPIC_API_KEY= && .venv/bin/python -m src.portfolio.snapshot_job >> data/logs/snapshot.log 2>&1
+35 7 * * * cd /home/ubuntu/stock-portfolio && echo "@run $(date -Is)" >> data/logs/snapshot.log && set -a && . /home/ubuntu/dotclaude/secrets/.env && set +a && export ANTHROPIC_API_KEY= && .venv/bin/python -m src.portfolio.snapshot_job >> data/logs/snapshot.log 2>&1
 # KRX screener cache with the day's close (16:40 KST), logged in
-40 7 * * * cd /home/ubuntu/portfolio-dashboard && echo "@run $(date -Is)" >> data/logs/screener.log && set -a && . /home/ubuntu/dotclaude/secrets/.env && set +a && export ANTHROPIC_API_KEY= && .venv/bin/python -m src.market.source.krx_screener >> data/logs/screener.log 2>&1
+40 7 * * * cd /home/ubuntu/stock-portfolio && echo "@run $(date -Is)" >> data/logs/screener.log && set -a && . /home/ubuntu/dotclaude/secrets/.env && set +a && export ANTHROPIC_API_KEY= && .venv/bin/python -m src.market.source.krx_screener >> data/logs/screener.log 2>&1
 # symbol master (07:30 KST); KOSPI/KOSDAQ need the KRX login
-30 22 * * * cd /home/ubuntu/portfolio-dashboard && echo "@run $(date -Is)" >> data/logs/universe.log && set -a && . /home/ubuntu/dotclaude/secrets/.env && set +a && .venv/bin/python -m src.universe.refresh_job >> data/logs/universe.log 2>&1
+30 22 * * * cd /home/ubuntu/stock-portfolio && echo "@run $(date -Is)" >> data/logs/universe.log && set -a && . /home/ubuntu/dotclaude/secrets/.env && set +a && .venv/bin/python -m src.universe.refresh_job >> data/logs/universe.log 2>&1
 
 # ── analysis ───────────────────────────────────────────────────────────────────
 # held symbols that changed, KST Mon–Fri 18:00 — after the KR close, the screener and the
 # second news cycle, so the next morning reads a same-day result (analyze.due_among, ≤20/day)
-0 9 * * 1-5 cd /home/ubuntu/portfolio-dashboard && echo "@run $(date -Is)" >> data/logs/analysis.log && set -a && . /home/ubuntu/dotclaude/secrets/.env && set +a && export ANTHROPIC_API_KEY= && .venv/bin/python -m src.portfolio.supply_job analysis --workers 2 >> data/logs/analysis.log 2>&1
+0 9 * * 1-5 cd /home/ubuntu/stock-portfolio && echo "@run $(date -Is)" >> data/logs/analysis.log && set -a && . /home/ubuntu/dotclaude/secrets/.env && set +a && export ANTHROPIC_API_KEY= && .venv/bin/python -m src.portfolio.supply_job analysis --workers 2 >> data/logs/analysis.log 2>&1
 
 # ── housekeeping ───────────────────────────────────────────────────────────────
 # DB backup (06:05 KST): portfolio + news weekday rotation, market.db single copy (src/core/backup.py)
-5 21 * * * cd /home/ubuntu/portfolio-dashboard && echo "@run $(date -Is)" >> data/logs/backup.log && .venv/bin/python -m src.core.backup >> data/logs/backup.log 2>&1
+5 21 * * * cd /home/ubuntu/stock-portfolio && echo "@run $(date -Is)" >> data/logs/backup.log && .venv/bin/python -m src.core.backup >> data/logs/backup.log 2>&1
 # midnight KST: wipe this app's Claude CLI transcripts — batch and chat (chats carry on from saved messages)
-0 15 * * * find /home/ubuntu/.claude/projects/-home-ubuntu-portfolio-dashboard /home/ubuntu/.claude/projects/-home-ubuntu-portfolio-dashboard-data-chat-sandbox -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+0 15 * * * find /home/ubuntu/.claude/projects/-home-ubuntu-stock-portfolio /home/ubuntu/.claude/projects/-home-ubuntu-stock-portfolio-data-chat-sandbox -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 # <<< portfolio <<<

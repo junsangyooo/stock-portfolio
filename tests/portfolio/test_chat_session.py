@@ -145,10 +145,10 @@ def test_session_lookup_reads_only_the_sandbox_project(monkeypatch, tmp_path):
     from pathlib import Path
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(paths, "CHAT_CWD",
-                        Path("/home/ubuntu/portfolio-dashboard/data/chat_sandbox"))
+                        Path("/home/ubuntu/stock-portfolio/data/chat_sandbox"))
     proj = tmp_path / ".claude" / "projects"
-    for name, sid in (("-home-ubuntu-portfolio-dashboard", "old"),
-                      ("-home-ubuntu-portfolio-dashboard-data-chat-sandbox", "new")):
+    for name, sid in (("-home-ubuntu-stock-portfolio", "old"),
+                      ("-home-ubuntu-stock-portfolio-data-chat-sandbox", "new")):
         (proj / name).mkdir(parents=True)
         (proj / name / f"{sid}.jsonl").write_text("")
     assert session.cli_session_exists("new")

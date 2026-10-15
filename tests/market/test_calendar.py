@@ -47,17 +47,3 @@ def test_constitution_day_and_the_neighbour_years_are_listed():
     assert not calendar.is_session("US", date(2025, 1, 9))          # National Day of Mourning
     assert calendar.covered(2025) and calendar.covered(2027)
 
-
-def test_the_table_matches_the_new_quant_calendar():
-    """src/ may not import autotrade/ (D14), so the values are copied; this
-    is the one place that reads both and says when they drift apart."""
-    from autotrade.market import calendar as at
-
-    assert calendar.HOLIDAYS["KR"] == at.KRX_HOLIDAYS
-    assert calendar.HOLIDAYS["US"] == at.NYSE_HOLIDAYS
-    for mine, theirs in ((calendar.SPECIAL["KR"], at.KRX_SPECIAL),
-                         (calendar.SPECIAL["US"], at.NYSE_SPECIAL)):
-        assert {d: v[:2] for d, v in mine.items()} == {d: (h.open, h.close) for d, h in theirs.items()}
-    assert (calendar.hours("KR", date(2026, 10, 14)), calendar.hours("US", date(2026, 10, 14))) == (
-        (at.KRX.regular_open, at.KRX.regular_close), (at.NYSE.regular_open, at.NYSE.regular_close))
-    assert calendar.YEARS == set(range(at.COVERAGE_START.year, at.COVERAGE_END.year + 1))

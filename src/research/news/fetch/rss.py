@@ -20,7 +20,7 @@ from .base import RawItem
 # to any browser; identifying as one is what makes them reachable.
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36")
-_UA_BOT = "portfolio-dashboard/1.0 (+news-agent)"
+_UA_BOT = "stock-portfolio/1.0 (+news-agent)"
 _IMG_EXT = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 _IMG_IN_HTML = re.compile(r'<img[^>]+src=["\']([^"\']+)', re.I)
 

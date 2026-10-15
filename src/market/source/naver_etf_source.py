@@ -30,7 +30,7 @@ import urllib.request
 from typing import Optional
 
 _URL = "https://finance.naver.com/api/sise/etfItemList.nhn"
-_UA = "portfolio-dashboard/1.0 (+etf-snapshot)"
+_UA = "stock-portfolio/1.0 (+etf-snapshot)"
 
 # Naver's etfTabCode -> human label (used as 'category' fallback when KRX
 # theme tagging is unavailable).

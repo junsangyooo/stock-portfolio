@@ -1,75 +1,32 @@
 #!/usr/bin/env bash
 # Deploy the laptop's HEAD to Oracle, or roll Oracle back to an earlier commit. Run from the laptop.
 #
-#   ./deploy/deploy.sh                  push, then pull on Oracle; nothing restarts
-#   ./deploy/deploy.sh dashboard        … then restart the old app (dashboard.service) + health
-#   ./deploy/deploy.sh autotrade        the new quant (quant.jsyoo.dev), in this order:
-#       1. build web/ of the pushed commit OUTSIDE the live tree (git archive -> npm ci
-#          --ignore-scripts -> npm run build) into web/releases/<id>. A failed build changes
-#          nothing on the server: the live web/dist, code and database are untouched.
-#       2. move Oracle's tree to the commit (git pull --ff-only; after a rollback, from the detached
-#          HEAD straight to the new commit, which must descend from main)
-#       3. back up the old app's books (src.core.backup, as before)
-#       4.-5. python -m autotrade.jobs migrate --predeploy: holding the tick's and the AI
-#          runner's locks, it copies the database to data/backup/autotrade/
-#          autotrade-predeploy-<UTC>.db (stop if that fails: nothing migrated), then migrates
-#          (the only command that migrates). A lock that stays busy changes nothing: deploy again.
-#       6. web/dist -> releases/<id>: one atomic rename; the previous releases stay (rollback) and
-#          the new one carries their hashed assets (pages loaded before the switch keep working)
-#       7. restart autotrade.service; /api/healthz (503 unless the schema matches), / and the
-#          origin rule must answer as expected
-#     Between steps 2 and 7 the running API still has the old code: once the database is
-#     migrated (5) it answers 503 schema until the restart (7), and the 5-minute tick refuses to
-#     run against a schema its code was not written for. A failure after step 2 prints the exact
-#     rollback command.
-#   ./deploy/deploy.sh rollback [<commit>] [--yes] [--drop-live]
+#   ./deploy/deploy.sh                  push, then pull on Oracle and back up the books; nothing restarts
+#   ./deploy/deploy.sh dashboard        … then restart dashboard.service and check its health
+#   ./deploy/deploy.sh rollback [<commit>] [--yes]
 #       Back to <commit>, by default the commit before the last deploy (data/deploy/history.jsonl
-#       on Oracle). It shows the plan first. When the autotrade database is at a newer schema than
-#       that commit's code, it restores the newest predeploy backup at that commit's schema: what
-#       was written since then (runs, orders, fills, snapshots, events, AI calls, logins, PIN and
-#       lockout changes) leaves the live database, which is moved aside (never deleted), and every
-#       session is closed. That restore asks you to type 'restore' unless --yes is given. When no
-#       predeploy backup has that schema (older ones are pruned), it names the daily copies that
-#       do and how to use one.
-#       The live ledger (실전): while the database has it (a live start, the mode 'live', or an
-#       order still open at Toss or waiting for its cancel), a restore refuses unless --drop-live
-#       is given (--yes does not cover it): the restored copy predates its record, and code before
-#       schema 6 has no Toss link to cancel or book what is open there. Turn live off on the mode
-#       screen and wait for its cancels (the next tick, within 5 minutes) first; with --drop-live
-#       the live ledger stays in the moved-aside database. Then:
-#       ticks and the AI runner are held off (their locks), autotrade.service is stopped, the tree
-#       is checked out at <commit> (a detached HEAD: main keeps the rolled-back commit, so the next
-#       deploy fast-forwards from it), web/dist goes back to that commit's release (built first if
-#       it is gone), autotrade.service is started again, and dashboard.service is restarted only if
-#       the old app's code (src/, its unit) differs between the two commits.
-#
-# The server-side steps live in autotrade/api/release.py, which this script pipes to Oracle's
-# Python (so a rollback runs this laptop's version, not the one of the commit it checks out).
+#       on Oracle). It shows the plan and asks first unless --yes is given. The tree is checked out
+#       at <commit> (a detached HEAD: main keeps the rolled-back commit, so the next deploy
+#       fast-forwards from it) and dashboard.service is restarted. The books are not touched:
+#       their schema only ever grows (store/schema.py), so older code reads them as they are.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 HOST="oracle-instance"
+DIR="~/stock-portfolio"
 HEALTH_URL="http://127.0.0.1:8888/api/accounts"
 PAGE_URL="http://127.0.0.1:8888/"          # served page = theme + shared fragments injected
-HELPER="autotrade/api/release.py"
 
 fail() { echo "[deploy] FAIL: $*" >&2; exit 1; }
 
-# A release.py command on Oracle; prints its JSON line.
-helper() { ssh "$HOST" "cd ~/portfolio-dashboard && .venv/bin/python - $*" < "$HELPER"; }
-
-# One field of a JSON object on stdin (booleans as true/false, null as nothing).
-field() {
-  python3 -c 'import json, sys
-v = json.load(sys.stdin).get(sys.argv[1])
-print("" if v is None else json.dumps(v) if isinstance(v, bool) else v)' "$1"
-}
-
-# The 'error' of a failed helper call, or the raw output.
-why() { field error <<<"$1" 2>/dev/null || echo "$1"; }
+on_server() { ssh "$HOST" "cd $DIR && $1"; }
 
 record() {
-  helper record "'$1'" >/dev/null || echo "[deploy] WARN: could not write data/deploy/history.jsonl"
+  local entry
+  entry=$(printf '{"at": "%s", "kind": "%s", "service": "dashboard", "from": "%s", "to": "%s"}' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$3")
+  on_server "mkdir -p data/deploy && echo '$entry' >> data/deploy/history.jsonl" \
+    || echo "[deploy] WARN: could not write data/deploy/history.jsonl"
 }
 
 restart_dashboard() {
@@ -80,187 +37,105 @@ restart_dashboard() {
   echo "[deploy] health OK ($HEALTH_URL, $PAGE_URL -> 200)"
 }
 
-autotrade_health() {
-  # $2 (rollbacks): --origin-optional, since the code rolled back to may predate the origin rule
-  local out
-  out=$(helper health ${2:-}) || fail "autotrade health check failed: $(why "$out") — $1"
-  echo "[deploy] health OK (autotrade :8890 $out)"
-}
+server_head() { on_server 'git rev-parse HEAD'; }
+server_branch() { on_server 'git symbolic-ref -q --short HEAD || true'; }
 
 rollback() {
-  local target="" yes="" drop="" plan out
+  local target="" yes=""
   for arg in "$@"; do
     case "$arg" in
       --yes) yes=1 ;;
-      --drop-live) drop=1 ;;   # a restore may set the live ledger aside (release.py live_refusal)
       -*) fail "unknown option $arg" ;;
       *) target="$arg" ;;
     esac
   done
-  [ -z "$target" ] || target=$(git rev-parse --verify "$target^{commit}") || fail "no commit $target here"
-  plan=$(helper rollback-plan ${target:+"$target"} ${drop:+--drop-live}) || fail "cannot roll back: $(why "$plan") (nothing changed)"
-  python3 -c 'import json, sys
-for line in json.load(sys.stdin)["say"]: print("[rollback] " + line)' <<<"$plan"
-  local head to restore release live
-  head=$(field head <<<"$plan")
-  to=$(field target <<<"$plan")
-  restore=$(field restore <<<"$plan")
-  release=$(field release <<<"$plan")
-  live=$(field live <<<"$plan")   # set only when --drop-live lets the live ledger go
-  if [ -n "$restore" ] && [ -z "$yes" ]; then
-    local what="that backup"
-    [ -z "$live" ] || what="that backup, the live ledger (실전) leaving with the replaced one"
-    read -r -p "[rollback] type 'restore' to replace the live autotrade DB with $what: " answer \
+  local head
+  head=$(server_head) || fail "cannot read Oracle's HEAD (nothing changed)"
+  if [ -z "$target" ]; then
+    target=$(on_server 'cat data/deploy/history.jsonl 2>/dev/null' \
+      | python3 -c 'import json, sys
+head = sys.argv[1]   # the last deploy that moved Oracle to where it is now
+moves = [e for e in map(json.loads, filter(str.strip, sys.stdin))
+         if e.get("kind") == "deploy" and e.get("to") == head and e.get("from") != head]
+print(moves[-1]["from"] if moves else "")' "$head") || true
+    [ -n "$target" ] || fail "no deploy recorded on Oracle: name the commit (nothing changed)"
+  fi
+  target=$(git rev-parse --verify "$target^{commit}") || fail "no commit $target here (nothing changed)"
+  [ "$target" != "$head" ] || fail "Oracle is already at ${target:0:7} (nothing changed)"
+  on_server "git cat-file -e $target^{commit}" || fail "Oracle does not have ${target:0:7}: push it first (nothing changed)"
+  echo "[rollback] Oracle ${head:0:7} -> ${target:0:7}: $(git log -1 --format=%s "$target")"
+  git diff --stat "$target" "$head" -- src deploy | tail -1 | sed 's/^/[rollback] /'
+  if [ -z "$yes" ]; then
+    read -r -p "[rollback] type 'yes' to check out ${target:0:7} and restart dashboard.service: " answer \
       || answer=""   # no terminal (end of input): not a yes
-    [ "$answer" = "restore" ] || fail "rollback cancelled (nothing changed)"
+    [ "$answer" = "yes" ] || fail "rollback cancelled (nothing changed)"
   fi
-  if [ "$(field autotrade <<<"$plan")" = "true" ] && [ -z "$release" ]; then
-    echo "[rollback] building web of ${to:0:7} (no release of it is left)..."
-    out=$(helper web-build "$to") || fail "web build failed: $(why "$out") (nothing changed)"
-    release=$(field release <<<"$out")
-  fi
-  echo "[rollback] holding off the jobs, stopping autotrade, checking out ${to:0:7}..."
-  out=$(helper rollback-apply "$to" ${restore:+--restore "$restore"} ${release:+--release "$release"} ${drop:+--drop-live}) \
-    || fail "rollback stopped: $(why "$out")"
-  record "{\"kind\": \"rollback\", \"from\": \"$head\", \"to\": \"$to\", \"release\": \"$release\"}"
-  local hint="the tree is at ${to:0:7}; fix and deploy again, or roll back to another commit"
-  if [ "$(field wasActive <<<"$out")" = "true" ]; then
-    echo "[rollback] starting autotrade.service..."
-    ssh "$HOST" "sudo systemctl start autotrade.service" || fail "autotrade start failed — $hint"
-    autotrade_health "$hint" --origin-optional
-  fi
-  if [ "$(field dashboardChanged <<<"$plan")" = "true" ]; then
-    restart_dashboard "$hint"
-  fi
-  if [ -n "$restore" ]; then
-    python3 -c 'import json, sys
-out = json.load(sys.stdin)
-print("[rollback] restored {backup} (schema {schema}); the replaced database is kept at"
-      " {setAside}; {closedSessions} sessions closed: log in again, with the PIN of that"
-      " backup".format(**out["restored"]))
-live = out.get("liveDropped")
-if live:
-    print("[rollback] the live ledger (실전) left the live DB: it is in {}{}".format(
-        out["restored"]["setAside"],
-        "; orders may still be open at Toss: cancel them in the Toss app"
-        if live["on"] or live["openOrders"] else ""))' <<<"$out"
-  fi
-  echo "[rollback] done: Oracle at ${to:0:7} (detached; the next ./deploy/deploy.sh returns to main)"
+  on_server "test -z \"\$(git status --porcelain --untracked-files=no)\"" \
+    || fail "Oracle's tree has local changes (nothing changed)"
+  on_server "git checkout -q --detach $target" || fail "checkout failed on Oracle (nothing changed)"
+  record rollback "$head" "$target"
+  restart_dashboard "the tree is at ${target:0:7}; fix and deploy again, or roll back to another commit"
+  echo "[rollback] done: Oracle at ${target:0:7} (detached; the next ./deploy/deploy.sh returns to main)"
 }
 
 MODE="${1:-}"
 case "$MODE" in
   rollback) shift; rollback "$@"; exit 0 ;;
-  ""|dashboard*|autotrade) ;;  # dashboard* as before (qdd)
-  *) fail "unknown service '$MODE' (dashboard, autotrade, or rollback)" ;;
+  ""|dashboard) ;;
+  *) fail "unknown mode '$MODE' (dashboard or rollback)" ;;
 esac
-SERVICE="$MODE"
 
 echo "[deploy] pushing local git..."
 git push 2>&1 | tail -3
 LOCAL_HEAD=$(git rev-parse HEAD)
 
-STATUS=$(helper status) || fail "cannot read Oracle's state: $(why "$STATUS")"
-PREV_HEAD=$(field head <<<"$STATUS")
-BRANCH=$(field branch <<<"$STATUS")   # empty: a detached HEAD, left by a rollback
+PREV_HEAD=$(server_head) || fail "cannot read Oracle's HEAD (nothing changed)"
+BRANCH=$(server_branch)   # empty: a detached HEAD, left by a rollback
 
-ssh "$HOST" 'git -C ~/portfolio-dashboard fetch -q origin' || fail "git fetch failed on Oracle (nothing changed)"
-ORIGIN_MAIN=$(ssh "$HOST" 'git -C ~/portfolio-dashboard rev-parse refs/remotes/origin/main')
+on_server 'git fetch -q origin' || fail "git fetch failed on Oracle (nothing changed)"
+ORIGIN_MAIN=$(on_server 'git rev-parse refs/remotes/origin/main')
 [ "$ORIGIN_MAIN" = "$LOCAL_HEAD" ] \
   || fail "origin/main is ${ORIGIN_MAIN:0:7}, this laptop's HEAD ${LOCAL_HEAD:0:7}: push main first (nothing changed)"
 ROLLBACK="./deploy/deploy.sh rollback $PREV_HEAD"
-
-RELEASE=""
-if [ "$SERVICE" = "autotrade" ]; then
-  echo "[deploy] building web of ${LOCAL_HEAD:0:7} outside the live tree..."
-  BUILD=$(helper web-build "$LOCAL_HEAD") || fail "web build failed: $(why "$BUILD") (nothing changed on the server)"
-  RELEASE=$(field release <<<"$BUILD")
-  echo "[deploy] built web/releases/$RELEASE"
-fi
 
 echo "[deploy] moving Oracle to ${LOCAL_HEAD:0:7}..."
 if [ -z "$BRANCH" ]; then
   # After a rollback main still names the rolled-back commit; go straight to the new one (no
   # moment on the broken code) if it descends from main, as a fast-forward pull would.
-  ssh "$HOST" "cd ~/portfolio-dashboard && git merge-base --is-ancestor refs/heads/main $LOCAL_HEAD && git checkout -q -B main $LOCAL_HEAD" \
+  on_server "git merge-base --is-ancestor refs/heads/main $LOCAL_HEAD && git checkout -q -B main $LOCAL_HEAD" \
     || fail "cannot leave the rolled-back state: main on Oracle is not an ancestor of ${LOCAL_HEAD:0:7} (nothing changed)"
 else
-  ssh "$HOST" 'set -o pipefail; cd ~/portfolio-dashboard && git pull --ff-only 2>&1 | tail -5' \
+  ssh "$HOST" "set -o pipefail; cd $DIR && git pull --ff-only 2>&1 | tail -5" \
     || fail "git pull failed on Oracle (nothing changed on server)"
 fi
 ssh "$HOST" 'set -o pipefail; cd ~/dotclaude && git pull --ff-only 2>&1 | tail -3' \
   || fail "dotclaude (secrets) pull failed on Oracle"
 
-REMOTE_HEAD=$(ssh "$HOST" 'git -C ~/portfolio-dashboard rev-parse HEAD')
+REMOTE_HEAD=$(server_head)
 [ "$LOCAL_HEAD" = "$REMOTE_HEAD" ] \
   || fail "HEAD mismatch after pull: local=$LOCAL_HEAD oracle=$REMOTE_HEAD — rollback: $ROLLBACK"
 echo "[deploy] HEAD verified: ${REMOTE_HEAD:0:7}"
-record "{\"kind\": \"deploy\", \"service\": \"$SERVICE\", \"from\": \"$PREV_HEAD\", \"to\": \"$LOCAL_HEAD\", \"release\": \"$RELEASE\"}"
+record deploy "$PREV_HEAD" "$LOCAL_HEAD"
 
-# Backup every book of the old app before anything restarts on the new code. Runs after the
-# pull so the module exists on Oracle; a failure leaves the services untouched.
-echo "[deploy] backing up the old app's DBs on Oracle..."
-ssh "$HOST" 'cd ~/portfolio-dashboard && .venv/bin/python -m src.core.backup --only portfolio news' \
+# Back up the books before anything restarts on the new code. Runs after the pull so the module
+# exists on Oracle; a failure leaves the service untouched.
+echo "[deploy] backing up the books on Oracle..."
+on_server '.venv/bin/python -m src.core.backup --only portfolio news' \
   || fail "DB backup failed on Oracle (service not restarted) — rollback: $ROLLBACK"
 
-# Config drift (warn only — never auto-apply): nginx and the autotrade unit are installed by hand.
-ssh "$HOST" 'sudo -n diff -q ~/portfolio-dashboard/deploy/nginx-portfolio.conf /etc/nginx/sites-available/portfolio >/dev/null 2>&1' \
-  || echo "[deploy] WARN: nginx config drift (deployed != git) — review manually"
-ssh "$HOST" 'test ! -e /etc/nginx/sites-available/quant || sudo -n diff -q ~/portfolio-dashboard/deploy/nginx-quant.conf /etc/nginx/sites-available/quant >/dev/null 2>&1' \
-  || echo "[deploy] WARN: nginx quant config drift (deployed != git) — see deploy/nginx-quant.conf"
-ssh "$HOST" 'test ! -e /etc/systemd/system/autotrade.service || diff -q ~/portfolio-dashboard/deploy/autotrade.service /etc/systemd/system/autotrade.service >/dev/null 2>&1' \
-  || echo "[deploy] WARN: autotrade.service drift (installed != git) — see deploy/autotrade.service"
+# Config drift (warn only — never auto-apply): these are installed by hand.
+ssh "$HOST" "sudo -n diff -q $DIR/deploy/nginx-portfolio.conf /etc/nginx/sites-available/portfolio >/dev/null 2>&1" \
+  || echo "[deploy] WARN: nginx config drift (deployed != git) — see deploy/nginx-portfolio.conf"
+ssh "$HOST" "diff -q $DIR/deploy/dashboard.service /etc/systemd/system/dashboard.service >/dev/null 2>&1" \
+  || echo "[deploy] WARN: dashboard.service drift (installed != git) — see deploy/dashboard.service"
+ssh "$HOST" "diff -q $DIR/deploy/logrotate-stock-portfolio /etc/logrotate.d/stock-portfolio >/dev/null 2>&1" \
+  || echo "[deploy] WARN: logrotate drift (installed != git) — see deploy/logrotate-stock-portfolio"
 
-if [[ "$SERVICE" != dashboard* ]] \
-  && git cat-file -e "$PREV_HEAD^{commit}" 2>/dev/null \
+if [ "$MODE" = "dashboard" ]; then
+  restart_dashboard "rollback: $ROLLBACK"
+elif git cat-file -e "$PREV_HEAD^{commit}" 2>/dev/null \
   && ! git diff --quiet "$PREV_HEAD" "$LOCAL_HEAD" -- src deploy/dashboard.service; then
-  echo "[deploy] WARN: the old app's code (src/) changed but dashboard.service was not restarted: ./deploy/deploy.sh dashboard"
+  echo "[deploy] WARN: src/ changed but dashboard.service was not restarted: ./deploy/deploy.sh dashboard"
 fi
-
-if [ "$SERVICE" = "autotrade" ]; then
-  # One command under the tick's and the AI runner's locks: the predeploy copy, then the
-  # migration, so nothing either job writes can fall between the copy and the schema change.
-  echo "[deploy] predeploy backup and migration of the autotrade DB..."
-  if ! MIGRATE=$(ssh "$HOST" 'cd ~/portfolio-dashboard && .venv/bin/python -m autotrade.jobs migrate --predeploy'); then
-    LAST=$(tail -n 1 <<<"$MIGRATE")
-    case "$(field job <<<"$LAST" 2>/dev/null || true) $(field result <<<"$LAST" 2>/dev/null || true)" in
-      "migrate busy")
-        fail "migrate: the $(field lock <<<"$LAST") lock stayed busy — nothing was copied or migrated and the service was not restarted; ticks pause until this deploy runs again: ./deploy/deploy.sh autotrade (or roll back: $ROLLBACK)" ;;
-      "backup failed")
-        fail "predeploy backup failed: $(field error <<<"$LAST") — nothing migrated, service not restarted; ticks pause until a deploy migrates (or roll back: $ROLLBACK)" ;;
-    esac
-    fail "autotrade migration failed (service not restarted): $LAST — rollback: $ROLLBACK (restores the predeploy backup)"
-  fi
-  echo "[deploy] $MIGRATE"
-  STATUS=$(helper status) || fail "cannot read Oracle's state after the migration — rollback: $ROLLBACK"
-  python3 -c 'import json, sys
-s = json.load(sys.stdin)["schema"]
-sys.exit(0 if s["stored"] == s["code"] else f"schema {s} after migrate")' <<<"$STATUS" \
-    || fail "the database is not at the code's schema after migrate — rollback: $ROLLBACK"
-  echo "[deploy] switching web/dist to $RELEASE..."
-  SWITCH=$(helper web-switch "$RELEASE") || fail "web switch failed: $(why "$SWITCH") — rollback: $ROLLBACK"
-else
-  # Ticks run whatever code is on disk: a pulled schema change pauses them (and the site answers
-  # 503) until the autotrade deploy migrates.
-  STATUS=$(helper status) || STATUS='{"schema": {}}'
-  python3 -c 'import json, sys
-s = json.load(sys.stdin)["schema"]
-sys.exit(0 if s.get("stored") in (None, s.get("code")) else 1)' <<<"$STATUS" \
-    || echo "[deploy] WARN: the autotrade schema changed: ticks refuse to run and quant answers 503 until ./deploy/deploy.sh autotrade"
-fi
-
-case "$SERVICE" in
-  "") ;;
-  dashboard*) restart_dashboard "rollback: $ROLLBACK" ;;
-  autotrade)
-    if ! ssh "$HOST" 'systemctl cat autotrade.service >/dev/null 2>&1'; then
-      echo "[deploy] autotrade.service is not installed (see deploy/autotrade.service): code, DB and web are in place, nothing restarted"
-    else
-      echo "[deploy] restarting autotrade.service..."
-      ssh "$HOST" "sudo systemctl restart autotrade.service" || fail "restart failed — rollback: $ROLLBACK"
-      autotrade_health "rollback: $ROLLBACK"
-    fi
-    ;;
-esac
 
 echo "[deploy] done. deployed ${LOCAL_HEAD:0:7} (prev ${PREV_HEAD:0:7})"
