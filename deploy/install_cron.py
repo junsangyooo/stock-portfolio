@@ -1,6 +1,6 @@
 """Replace one app's block of a crontab with that app's block file.
 
-    crontab -l | python3 deploy/install_cron.py deploy/autotrade.cron | crontab -
+    crontab -l | python3 deploy/install_cron.py deploy/portfolio.cron | crontab -
 
 The block file starts with a `# >>> NAME ...` marker line and ends with `# <<< NAME ...`. Reads
 the current crontab on stdin and writes the new one to stdout: only the lines from the crontab's
