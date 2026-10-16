@@ -1,9 +1,10 @@
 """/api/accounts — account-aware portfolio CRUD + per-account PIN auth.
 
 Auth model: every account has a 6-digit PIN (pin_hash); creating one requires
-it. Hitting a protected route requires a valid session cookie (pdash_a_{id});
-you get one by POSTing the PIN to /api/accounts/{id}/auth. The cookie lives
-for security.SESSION_TTL. A book without a PIN is closed (403, no cookie) —
+it, and the owner's creation key once (security.attempt_create_key). Hitting
+a protected route requires a valid session cookie (pdash_a_{id}); you get one
+by POSTing the PIN to /api/accounts/{id}/auth. The cookie lives for
+security.SESSION_TTL. A book without a PIN is closed (403, no cookie) —
 never "open until assigned".
 
 Two gates stack. The server-wide /api middleware (dashboard_web.server) opens
@@ -57,6 +58,7 @@ class AccountCreate(BaseModel):
     base_currency: str = "KRW"
     note: Optional[str] = None
     pin: str                         # 6-digit; set once at creation — a book is never open
+    create_key: str = ""             # the owner's creation key, this request only — never stored
 
 
 class AccountUpdate(BaseModel):
@@ -87,6 +89,7 @@ def _check_current_pin(account_id: str, pin: str) -> None:
 
 
 PIN_WRONG = "PIN이 맞지 않아요"
+CREATE_KEY_WRONG = "신설 키가 맞지 않아요"
 RESERVED_IDS = {"session", "new", "lock", "auth"}
 ACCOUNT_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,40}")
 
@@ -124,6 +127,15 @@ def opened_accounts(request: Request) -> dict:
 
 @router.post("")
 def create_account(body: AccountCreate) -> dict:
+    # The key first: without it the request learns nothing, not even whether
+    # the id is free.
+    if not security.create_key_set():
+        raise HTTPException(403, security.NO_CREATE_KEY)
+    ok, wait = security.attempt_create_key(body.create_key)
+    if wait:
+        raise HTTPException(429, f"신설 키를 너무 많이 틀렸어요 · {wait // 60 + 1}분 뒤에 다시 해 주세요")
+    if not ok:
+        raise HTTPException(403, CREATE_KEY_WRONG)
     # an id that is also a path under /api/accounts would never open
     if body.account_id.lower() in RESERVED_IDS or not ACCOUNT_ID_RE.fullmatch(body.account_id):
         raise HTTPException(400, "쓸 수 없는 ID예요 · 영문·숫자·_·-만, 예약어 제외")

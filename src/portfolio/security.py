@@ -161,6 +161,52 @@ def check_pin(account_id: str, pin: str, stored_hash: str | None,
     return False
 
 
+# ── creation key ─────────────────────────────────────────────────────────────
+# Opening a new account takes the owner's creation key, typed once in the add
+# dialog; after that the account's own PIN is all it needs. The key is set on
+# the server (`python -m src.portfolio.security set-create-key`) and kept as a
+# secret-salted hash in data/. No file = no account can be created from the
+# site, the same closed default as a book without a PIN. It shares the PIN
+# helpers under its own slot: account ids are [A-Za-z0-9_-], so the NUL keeps
+# its hash and its attempt count apart from every account's.
+_CREATE_KEY_FILE = DATA / ".create_key"
+CREATE_SLOT = "\x00create"
+CREATE_KEY_MIN = 8
+NO_CREATE_KEY = "계좌 신설 키가 아직 없어요 · 서버에서 먼저 정해 주세요"
+
+
+def create_key_set() -> bool:
+    return _CREATE_KEY_FILE.exists()
+
+
+def set_create_key(key: str) -> None:
+    _CREATE_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _CREATE_KEY_FILE.write_text(hash_pin(CREATE_SLOT, key))
+    try:
+        os.chmod(_CREATE_KEY_FILE, 0o600)
+    except OSError:
+        pass
+    _fails.pop(CREATE_SLOT, None)
+
+
+def attempt_create_key(key: str, now: float | None = None) -> tuple[bool, int]:
+    """(matched, seconds locked), counted like a PIN: MAX_TRIES wrong keys
+    close account creation for LOCK_S."""
+    stored = _CREATE_KEY_FILE.read_text().strip() if create_key_set() else None
+    return attempt_pin(CREATE_SLOT, key or "", stored, now)
+
+
+def _set_create_key_cli() -> int:
+    import getpass
+    key = getpass.getpass(f"계좌 신설 키 ({CREATE_KEY_MIN}자 이상): ")
+    if len(key) < CREATE_KEY_MIN or getpass.getpass("한 번 더: ") != key:
+        print(f"{CREATE_KEY_MIN}자보다 짧거나 두 번이 달라요")
+        return 1
+    set_create_key(key)
+    print("계좌 신설 키를 정했어요")
+    return 0
+
+
 def _reset_pin_cli(account_id: str) -> int:
     """`python -m src.portfolio.security reset-pin ACCOUNT` on the server —
     the procedure '계좌 주인에게 재설정을 부탁해요' points to. Every session of
@@ -186,5 +232,7 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) == 3 and sys.argv[1] == "reset-pin":
         sys.exit(_reset_pin_cli(sys.argv[2]))
-    print("usage: python -m src.portfolio.security reset-pin ACCOUNT")
+    if len(sys.argv) == 2 and sys.argv[1] == "set-create-key":
+        sys.exit(_set_create_key_cli())
+    print("usage: python -m src.portfolio.security reset-pin ACCOUNT | set-create-key")
     sys.exit(2)

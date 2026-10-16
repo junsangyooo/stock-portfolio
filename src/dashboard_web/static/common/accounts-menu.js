@@ -127,11 +127,11 @@
 
   // ── SCR-ACC-NEW 계좌 추가 ─────────────────────────────────────────────
   function openNew() {
-    let nameIn, idIn, typeSel, brokerIn, ccySeg, memoIn, pin1, pin2, idHint, pinMsg;
+    let nameIn, idIn, typeSel, brokerIn, ccySeg, memoIn, pin1, pin2, idHint, pinMsg, keyIn;
     let p1 = '', p2 = '';
     let idTouched = false;
     const mk = (p) => p + '-' + Math.random().toString(36).slice(2, 7);
-    const ids = { name: mk('an'), id: mk('ai'), type: mk('at'), broker: mk('ab'), memo: mk('am') };
+    const ids = { name: mk('an'), id: mk('ai'), type: mk('at'), broker: mk('ab'), memo: mk('am'), key: mk('ak') };
     function field(label, control, id, hint) {
       return el('div', { className: 'field' }, [el('label', { className: 'field-label', for: id }, [label]), control, hint || null]);
     }
@@ -140,7 +140,7 @@
     }
     let d;
     function ready() {
-      const ok = nameIn.value.trim() && /^[A-Za-z0-9_-]{2,32}$/.test(idIn.value.trim()) && /^\d{6}$/.test(p1) && p1 === p2;
+      const ok = nameIn.value.trim() && /^[A-Za-z0-9_-]{2,32}$/.test(idIn.value.trim()) && /^\d{6}$/.test(p1) && p1 === p2 && keyIn.value.length > 0;
       const main = d && d.el.querySelector('.dlg-main');
       if (main) main.disabled = !ok;
     }
@@ -157,6 +157,9 @@
         brokerIn = el('input', { className: 'input', id: ids.broker, maxlength: '30', autocomplete: 'off', placeholder: '예: 토스증권' });
         ccySeg = S.segmented({ items: [{ value: 'KRW', label: 'KRW' }, { value: 'USD', label: 'USD' }], value: 'KRW', label: '기본 통화' });
         memoIn = el('input', { className: 'input', id: ids.memo, maxlength: '200', autocomplete: 'off', placeholder: '선택' });
+        // the owner's creation key: asked here once, never stored on the device
+        keyIn = el('input', { className: 'input', id: ids.key, type: 'password', autocomplete: 'off', spellcheck: 'false' });
+        keyIn.addEventListener('input', () => ready());
         pinMsg = el('p', { className: 'field-error', role: 'alert' });
         pinMsg.hidden = true;
         pin1 = S.pinInput({ label: 'PIN', onComplete: v => { p1 = v; check(); pin2.focus(); } });
@@ -197,13 +200,15 @@
           field('메모', memoIn, ids.memo),
           el('div', { className: 'field' }, [el('span', { className: 'field-label' }, ['PIN 6자리']), pin1.el]),
           el('div', { className: 'field' }, [el('span', { className: 'field-label' }, ['PIN 다시']), pin2.el, pinMsg]),
+          field('계좌 신설 키', keyIn, ids.key, el('p', { className: 'field-hint' }, ['계좌를 만들 때만 넣어요 · 이후에는 PIN으로 열어요'])),
         ]);
       },
       failText: { title: '계좌를 만들지 못했어요' },
       onSubmit: async ctx => {
         const id = idIn.value.trim();
         const body = { account_id: id, name: nameIn.value.trim(), account_type: typeSel.value,
-          broker: brokerIn.value.trim() || null, base_currency: ccySeg.value, note: memoIn.value.trim() || null, pin: p1 };
+          broker: brokerIn.value.trim() || null, base_currency: ccySeg.value, note: memoIn.value.trim() || null, pin: p1,
+          create_key: keyIn.value };
         try {
           await ctx.api('/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         } catch (e) {

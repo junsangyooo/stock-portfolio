@@ -35,8 +35,9 @@ docs_cache/
 # ── Docs symlinked to Obsidian Vault (local-only, breaks on Oracle) ──
 docs/
 
-# session signing secret (Oracle-generated, never commit)
+# session signing secret and the creation-key hash (Oracle-only, never commit)
 data/.session_secret
+data/.create_key
 
 # local research caches (large, never committed)
 tmp/

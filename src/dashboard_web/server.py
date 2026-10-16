@@ -55,7 +55,7 @@ except Exception as exc:  # pragma: no cover
 # the entry points that have to work before you own a cookie.
 _OPEN_API = {
     ("GET", "/api/accounts"),                 # account list — names only
-    ("POST", "/api/accounts"),                # account creation — own PIN set in-form
+    ("POST", "/api/accounts"),                # account creation — the route checks the creation key
     ("GET", "/api/analysis/news/feed"),       # news page cards, no PII
     ("GET", "/api/analysis/news/themes"),     # the field grid, no PII
     ("GET", "/api/accounts/session"),         # this device's open accounts — [] when none

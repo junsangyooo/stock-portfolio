@@ -31,7 +31,7 @@ class TestApiGate(unittest.TestCase):
 
     def test_open_entry_points(self):
         # needed before you own a cookie: account list, news page feed, PIN post,
-        # and account creation (the new account's own PIN is set in the form)
+        # and account creation (the route itself asks for the owner's creation key)
         for path in ("/api/accounts", "/api/analysis/news/feed"):
             self.assertNotEqual(self.c.get(path).status_code, 403, path)
         r = self.c.post("/api/accounts/nope/auth", json={"pin": "000000"})

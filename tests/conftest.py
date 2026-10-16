@@ -59,6 +59,7 @@ def temp_books(tmp_path, monkeypatch):
     monkeypatch.setattr(quote_store, "_loaded", False)
     monkeypatch.setattr(security, "_SECRET_FILE", tmp_path / ".session_secret")
     monkeypatch.setattr(security, "_secret_cache", None)
+    monkeypatch.setattr(security, "_CREATE_KEY_FILE", tmp_path / ".create_key")
     return tmp_path
 
 

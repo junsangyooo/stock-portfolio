@@ -98,9 +98,48 @@ def test_concurrent_wrong_pins_stop_at_the_limit(client):
 
 
 def test_an_id_that_is_a_route_cannot_be_created(client):
+    security.set_create_key("owner-key-1")
     for bad in ("session", "Session", "a/b", ""):
-        r = client.post("/api/accounts", json={"account_id": bad, "name": "x", "pin": "123456"})
+        r = client.post("/api/accounts", json={"account_id": bad, "name": "x", "pin": "123456",
+                                               "create_key": "owner-key-1"})
         assert r.status_code in (400, 422), bad
+
+
+def _new(client, key, aid="carol"):
+    return client.post("/api/accounts", json={"account_id": aid, "name": aid, "pin": "246802",
+                                              "create_key": key})
+
+
+def test_no_creation_key_set_means_no_account_can_be_created(client):
+    r = _new(client, "anything")
+    assert r.status_code == 403 and r.json()["detail"] == security.NO_CREATE_KEY
+    assert not account_store.get("carol")
+
+
+def test_creating_takes_the_key_once_then_the_pin_opens_it(client):
+    security.set_create_key("owner-key-1")
+    assert _new(client, "wrong-key").status_code == 403
+    assert _new(client, "").status_code == 403
+    assert not account_store.get("carol")
+    assert _new(client, "owner-key-1").status_code == 200
+    # from here on the account's own PIN is all it takes
+    assert client.post("/api/accounts/carol/auth", json={"pin": "246802"}).status_code == 200
+
+
+def test_the_key_is_stored_hashed(client):
+    security.set_create_key("owner-key-1")
+    assert "owner-key-1" not in security._CREATE_KEY_FILE.read_text()
+
+
+def test_five_wrong_keys_close_creation_for_a_while(client):
+    security.set_create_key("owner-key-1")
+    for _ in range(security.MAX_TRIES):
+        assert _new(client, "wrong-key").status_code == 403
+    r = _new(client, "owner-key-1")
+    assert r.status_code == 429 and "분 뒤" in r.json()["detail"]
+    assert not account_store.get("carol")
+    # the accounts' own PINs are counted apart
+    assert client.post("/api/accounts/alice/auth", json={"pin": "123456"}).status_code == 200
 
 
 def test_an_optional_field_can_be_cleared(client):
